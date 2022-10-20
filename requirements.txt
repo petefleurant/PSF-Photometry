@@ -1,0 +1,13 @@
+black==22.1.0
+isort==5.10.1
+bandit==1.7.2
+saftey==1.10.3
+mypy==.931
+numpy
+pandas
+scipy
+astropy
+pillow
+astroquery
+matplotlib
+photutils
