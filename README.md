@@ -13,7 +13,7 @@ AstroImageJ (University of Louisville).
 MAOPhot uses PSF (point spread function) modeling which is well suited for measuring stellar magnitudes in 
 crowded fields, or a particular star that has a close companion, e.g., Z Tau.
 
-See "PSF Photometry" (https://photutils.readthedocs.io/en/stable/psf.html) whcih describes many of the classes 
+See "PSF Photometry" (https://photutils.readthedocs.io/en/stable/psf.html) which describes many of the classes 
 and methods used in MAOPhot
 
 
