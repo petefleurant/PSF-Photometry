@@ -1,3 +1,6 @@
+# Based on
+#   https://web.archive.org/web/20170514022131id_/http://tkinter.unpythonic.net/wiki/VerticalScrolledFrame
+
 try:  # Python 2
     import tkinter as tk
     import tkinter.ttk as ttk
@@ -8,24 +11,23 @@ except ImportError:  # Python 2
     from tkinter.constants import *
 
 
-# Based on
-#   https://web.archive.org/web/20170514022131id_/http://tkinter.unpythonic.net/wiki/VerticalScrolledFrame
-
 class VerticalScrolledFrame(ttk.Frame):
     """A pure Tkinter scrollable frame that actually works!
     * Use the 'interior' attribute to place widgets inside the scrollable frame.
     * Construct and pack/place/grid normally.
     * This frame only allows vertical scrolling.
     """
-    def __init__(self, parent, *args, **kw):
+    def __init__(self, parent, height, *args, **kw):
         ttk.Frame.__init__(self, parent, *args, **kw)
 
         # Create a canvas object and a vertical scrollbar for scrolling it.
         vscrollbar = ttk.Scrollbar(self, orient=VERTICAL)
         vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
-        canvas = tk.Canvas(self, bd=0, highlightthickness=0,
-                           yscrollcommand=vscrollbar.set)
-        canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        #canvas = tk.Canvas(self, bd=0, highlightthickness=0,yscrollcommand=vscrollbar.set)
+        canvas = tk.Canvas(self, bd=0, height=height, highlightthickness=0,yscrollcommand=vscrollbar.set)
+        #canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        canvas.pack(side=LEFT, fill=NONE, expand=FALSE)
+        canvas.configure(background='black')
         vscrollbar.config(command=canvas.yview)
 
         # Reset the view
@@ -33,9 +35,8 @@ class VerticalScrolledFrame(ttk.Frame):
         canvas.yview_moveto(0)
 
         # Create a frame inside the canvas which will be scrolled with it.
-        self.interior = interior = ttk.Frame(canvas)
-        interior_id = canvas.create_window(0, 0, window=interior,
-                                           anchor=NW)
+        self.interior = interior = ttk.Frame(canvas, height=height)
+        interior_id = canvas.create_window(0, 0, window=interior, anchor=NW)
 
         # Track changes to the canvas and frame width and sync them,
         # also updating the scrollbar.
@@ -46,6 +47,9 @@ class VerticalScrolledFrame(ttk.Frame):
             if interior.winfo_reqwidth() != canvas.winfo_width():
                 # Update the canvas's width to fit the inner frame.
                 canvas.config(width=interior.winfo_reqwidth())
+            #if interior.winfo_reqheight() != canvas.winfo_height():
+            #    # Update the canvas's width to fit the inner frame.
+            #    canvas.config(height=interior.winfo_reqheight())
         interior.bind('<Configure>', _configure_interior)
 
         def _configure_canvas(event):
@@ -66,49 +70,9 @@ if __name__ == "__main__":
             self.label = ttk.Label(self, text="Shrink the window to activate the scrollbar.")
             self.label.pack()
             buttons = []
-            for i in range(10):
+            for i in range(100):
                 buttons.append(ttk.Button(self.frame.interior, text="Button " + str(i)))
                 buttons[-1].pack()
 
     app = SampleApp()
     app.mainloop()
-
-
-
-
-
-            """
-        # Method to apply a scrollbar to the settings_frame
-        # Frames are not inherently scrollable, but a Canvas is.
-        #Use an intermediate frame called aux_settings_frame that will have a Canvas
-
-        # Frame to hold settings grid
-        self.aux_settings_frame = tk.Frame(self.left_frame)
-        self.aux_settings_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
-
-        #Create a Canvas
-        self.settings_canvas = tk.Canvas(self.aux_settings_frame)
-        self.settings_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
-
-        #Add the scrollbar
-        self.settings_scrollbar = tk.Scrollbar(self.aux_settings_frame, orient=tk.VERTICAL,
-                                                command=self.settings_canvas.yview )
-        self.settings_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, expand=1)                                                
-
-        #Configure the Canvas
-        self.settings_canvas.configure(yscrollcommand=self.settings_scrollbar.set)
-        self.settings_canvas.bind("<Configure>", lambda e: self.settings_canvas.configure(scrollregion=self.settings_canvas.bbox("all")))
-
-        #self.settings_canvas.config(scrollregion=self.settings_canvas.bbox(tk.ALL))
-        #self.settings_canvas.bind("<Button-1>", self.mouse_click)
-
-
-        #Create another Frame inside the Canvas
-        self.settings_frame = tk.Frame(self.settings_canvas)
-
-        #Add the new Frame to the Window in Canvas
-        self.settings_canvas.create_window(0, 0, window=self.settings_frame, anchor=tk.NW)
-
-        #self.settings_frame.grid(row=2, rowspan=2, column=0, sticky=tk.NS)
-
-        """

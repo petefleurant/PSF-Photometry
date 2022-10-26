@@ -6,7 +6,7 @@
     It has the option of producing an extended AAVSO (American Association of Variable Star Observers)
     report which can then be submitted to the AAVSO using an online tool WebObs (http://www.aavso.org/webobs).
 
-    There are many photometry measuring programs available such as VPhot (http://www.aavso.org/vphot) 
+    There are many photometry measureing programs available such as VPhot (http://www.aavso.org/vphot) 
     and AstroImageJ (University of Louisville).
 
     MAOPhot uses PSF (point spread function) modeling which is well suited for measuring stellar magnitudes
@@ -19,11 +19,11 @@
  
 
 
-    General Workflow for Two Color Photometry and AAVSO report generation:
+    General Workflow for Two Color Phtometry and AAVSO report generation:
         - load Settings
         - Open B color fits file
         - Solve Image if not done already
-        - Photometry->Interatively Subtracted PSF Photometry
+        - Photometry->Interatively Subtracted PSF Phtometry
         - Photometry->Get Comparison Stars
         - Repeat last 4 steps for V color
         - Two Color Photometry->Two Color Photometry (B,V)
@@ -63,7 +63,7 @@
         MAJOR CHANGE
         
         Modifications made to basically have MAOPhot mimic VPhot's "Two
-        Color Photometry" (Usually B and V)
+        Color Phtometry" (Usually B and V)
             
         See spreadsheet: 
             E:\Astronomy\Processing MAO images\ProcessingMaoImages_202281V1117Her.xlsx
@@ -182,7 +182,7 @@ import os.path
 import numpy as np
 import warnings
 import datetime
-import VerticalScrolledFrame as vsf
+
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
@@ -2021,7 +2021,6 @@ class MyGUI:
         self.right_frame = tk.Frame(self.right_half)
         # Place right_frame into the top of the main canvas row, right next to it
         self.right_frame.grid(row=1, column=2, sticky=tk.N)
-        
         self.plotname_label = tk.Label(self.right_frame, text="Plot:")
         self.plotname_label.grid(row=0, column=0)  # Place label
         #self.psf_canvas = tk.Canvas(self.right_frame, bg='grey', width=300, height=300) # Small PSF canvas
@@ -2036,33 +2035,32 @@ class MyGUI:
             width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.psf_canvas.grid(row=1, column=0)   #was row0
-        
-        # We will lay out interface things into the new left_frame grid
+
+        self.fig = Figure()
+        self.linreg_plot = self.fig.add_subplot(111)
+        # Linear regression canvas - Matplotlib wrapper for Tk
+        self.plot_canvas = FigureCanvasTkAgg(self.fig, self.right_frame)
+        self.plot_canvas.draw()
+        self.linreg_canvas = self.plot_canvas.get_tk_widget()
+        self.linreg_canvas.config(
+            width=int(self.screen_width/8.5), height=int(self.screen_width/12))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.linreg_canvas.grid(row=2, column=0) #was row1
+
+        # We will lay out interface things into the new right_frame grid
         self.left_frame = tk.Frame(self.left_half)
         # Place right_frame into the top of the main canvas row, right next to it
-        self.left_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        
+        self.left_frame.grid(row=0, column=0, sticky=tk.N)
 
         # Frame to hold settings grid
-        #self.settings_frame = tk.Frame(self.left_frame)
-        self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.7))
+        self.settings_frame = tk.Frame(self.left_frame)
         # Settings_frame under the canvas in the right_frame
-        ##self.settings_frame_aux.grid(row=2, rowspan=2, column=0, sticky=tk.NSEW)
-        # Expand settings_frame column that holds labels
-        ##tk.Grid.columnconfigure(self.settings_frame_aux, 0, weight=1)
-        ##self.settings_frame_aux.pack(fill=tk.BOTH, expand=tk.YES)
-        self.settings_frame_aux.pack()
-        
-        #Keep the same name "settings_frame"
-        self.settings_frame = self.settings_frame_aux.interior
-
+        self.settings_frame.grid(row=2, column=0, sticky=tk.NSEW)
         # Expand settings_frame column that holds labels
         tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
 
         settings_entry_width = 6
-        settings_entry_pad = 0#20
         extended_settings_entry_width = 30
-        extended_settings_entry_pad = 40
 
         row = 0
 
@@ -2071,7 +2069,7 @@ class MyGUI:
         self.photometry_aperture_label.grid(row=row, column=0, sticky=tk.W)
         self.photometry_aperture_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.photometry_aperture_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.photometry_aperture_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.photometry_aperture_entry, self.fit_shape)
         row += 1
 
@@ -2080,7 +2078,7 @@ class MyGUI:
         self.min_ensemble_magnitude_label.grid(row=row, column=0, sticky=tk.W)
         self.min_ensemble_magnitude_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.min_ensemble_magnitude_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.min_ensemble_magnitude_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.min_ensemble_magnitude_entry, "7")
         row += 1
 
@@ -2089,23 +2087,26 @@ class MyGUI:
         self.max_ensemble_magnitude_label.grid(row=row, column=0, sticky=tk.W)
         self.max_ensemble_magnitude_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.max_ensemble_magnitude_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.max_ensemble_magnitude_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.max_ensemble_magnitude_entry, "20")
         row += 1
 
         self.fwhm_label = tk.Label(self.settings_frame, text="FWHM, px:")
         self.fwhm_label.grid(row=row, column=0, sticky=tk.W)
-        self.fwhm_entry = tk.Entry(self.settings_frame, width=settings_entry_width)
-        self.fwhm_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.fwhm_entry = tk.Entry(
+            self.settings_frame, width=settings_entry_width)
+        self.fwhm_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.fwhm_entry, "4")
         row += 1
 
         self.star_detection_threshold_label = tk.Label(
             self.settings_frame, text="StarFinder Threshold k in (k * std):")
-        self.star_detection_threshold_label.grid(row=row, column=0, sticky=tk.W)
+        self.star_detection_threshold_label.grid(
+            row=row, column=0, sticky=tk.W)
         self.star_detection_threshold_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.star_detection_threshold_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.star_detection_threshold_entry.grid(
+            row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.star_detection_threshold_entry, "3.5")
         row += 1
 
@@ -2114,7 +2115,7 @@ class MyGUI:
         self.photometry_iterations_label.grid(row=row, column=0, sticky=tk.W)
         self.photometry_iterations_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.photometry_iterations_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.photometry_iterations_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.photometry_iterations_entry, "1")
         row += 1
 
@@ -2123,7 +2124,7 @@ class MyGUI:
         self.sharplo_label.grid(row=row, column=0, sticky=tk.W)
         self.sharplo_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.sharplo_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.sharplo_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.sharplo_entry, "0.5")
         row += 1
 
@@ -2132,7 +2133,7 @@ class MyGUI:
         self.bkg_filter_size_label.grid(row=row, column=0, sticky=tk.W)
         self.bkg_filter_size_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.bkg_filter_size_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.bkg_filter_size_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.bkg_filter_size_entry, "1")
         row += 1
 
@@ -2140,7 +2141,7 @@ class MyGUI:
         self.filter_label.grid(row=row, column=0, sticky=tk.W)
         self.filter_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.filter_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.filter_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.filter_entry, "")
         row += 1
 
@@ -2149,7 +2150,7 @@ class MyGUI:
         self.exposure_label.grid(row=row, column=0, sticky=tk.W)
         self.exposure_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.exposure_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.exposure_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.exposure_entry, "0")
         row += 1
 
@@ -2158,7 +2159,7 @@ class MyGUI:
         self.matching_radius_label.grid(row=row, column=0, sticky=tk.W)
         self.matching_radius_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.matching_radius_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.matching_radius_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.matching_radius_entry, "2")
         row += 1
 
@@ -2167,7 +2168,7 @@ class MyGUI:
         self.ensemble_limit_label.grid(row=row, column=0, sticky=tk.W)
         self.ensemble_limit_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.ensemble_limit_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.ensemble_limit_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.ensemble_limit_entry, "1000")
         row += 1
 
@@ -2176,7 +2177,7 @@ class MyGUI:
         self.decimal_places_label.grid(row=row, column=0, sticky=tk.W)
         self.decimal_places_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.decimal_places_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.decimal_places_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.decimal_places_entry, "3")
         row += 1
 
@@ -2185,7 +2186,7 @@ class MyGUI:
         self.crop_fits_label.grid(row=row, column=0, sticky=tk.W)
         self.crop_fits_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
-        self.crop_fits_entry.grid(row=row, column=1, ipadx=settings_entry_pad)
+        self.crop_fits_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.crop_fits_entry, "100")
         row += 1
 
@@ -2194,7 +2195,7 @@ class MyGUI:
         self.astrometrynet_label.grid(row=row, column=0, stick=tk.W)
         self.astrometrynet_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width)
-        self.astrometrynet_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.astrometrynet_entry.grid(row=row, column=1, sticky=tk.E)
         self.set_entry_text(self.astrometrynet_entry, "nova.astrometry.net")
         row += 1
 
@@ -2203,7 +2204,7 @@ class MyGUI:
         self.astrometrynet_key_label.grid(row=row, column=0, stick=tk.W)
         self.astrometrynet_key_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width)
-        self.astrometrynet_key_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.astrometrynet_key_entry.grid(row=row, column=1, sticky=tk.E)
         self.astrometrynet_key_entry.config(show="*")
         self.set_entry_text(self.astrometrynet_key_entry, "pwjgdcpwaugkhkln")
         row += 1
@@ -2213,7 +2214,7 @@ class MyGUI:
         self.obscode_label.grid(row=row, column=0, stick=tk.W)
         self.obscode_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.obscode_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.obscode_entry.grid(row=row, column=1, sticky=tk.E)
         row += 1
 
         self.aavso_obscode_label = tk.Label(
@@ -2221,7 +2222,7 @@ class MyGUI:
         self.aavso_obscode_label.grid(row=row, column=0, stick=tk.W)
         self.aavso_obscode_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.aavso_obscode_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.aavso_obscode_entry.grid(row=row, column=1, sticky=tk.E)
         row += 1
 
         self.latitude_label = tk.Label(
@@ -2229,7 +2230,7 @@ class MyGUI:
         self.latitude_label.grid(row=row, column=0, stick=tk.W)
         self.latitude_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.latitude_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.latitude_entry.grid(row=row, column=1, sticky=tk.E)
         row += 1
 
         self.longitude_label = tk.Label(
@@ -2237,7 +2238,7 @@ class MyGUI:
         self.longitude_label.grid(row=row, column=0, stick=tk.W)
         self.longitude_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.longitude_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.longitude_entry.grid(row=row, column=1, sticky=tk.E)
         row += 1
 
         self.height_label = tk.Label(
@@ -2245,7 +2246,7 @@ class MyGUI:
         self.height_label.grid(row=row, column=0, stick=tk.W)
         self.height_entry = tk.Entry(
             self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.height_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
+        self.height_entry.grid(row=row, column=1, sticky=tk.E)
         row += 1
 
         self.telescope_label = tk.Label(self.settings_frame, text="Telescope:")
@@ -2338,7 +2339,6 @@ class MyGUI:
         self.catalog_label = tk.Label(self.settings_frame, text="Comparison Catalog:")
         self.catalog_label.grid(row=row, column=0, sticky=tk.W)
         row += 1
-
         self.catalog_stringvar = tk.StringVar()
         self.catalog_stringvar.set("AAVSO")
         self.catalog_dropdown = tk.OptionMenu(
@@ -2389,7 +2389,6 @@ class MyGUI:
             self.settings_frame, text="Image Stretching:")
         self.stretching_label.grid(row=row, column=0, sticky=tk.W)
         row += 1
-
         self.stretching_stringvar = tk.StringVar()
         self.stretching_stringvar.set("None")
         self.stretching_dropdown = tk.OptionMenu(
@@ -2399,6 +2398,22 @@ class MyGUI:
         self.stretching_stringvar.trace(
             "w", lambda name, index, mode, sv=self.stretching_stringvar: self.update_display())
 
+        # Console below
+        self.console = tk.Text(self.center, #height=40,
+                               bg='black', fg='white', width=200)
+        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
+        self.console_scrollbar = tk.Scrollbar(self.center)
+        self.console_scrollbar.grid(
+            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
+
+        self.console.config(yscrollcommand=self.console_scrollbar.set)
+        self.console_scrollbar.config(command=self.console.yview)
+
+        self.console_msg(self.program_full_name)
+        self.console_msg("Ready")
+
+        # self.initialize_debug()
+        # self.plot_photometry()
         """
         valid_parameter_list facilitates loading from and saving to a settings file
         using File-->Load Settings... and File-->Save Settings...
@@ -2440,22 +2455,6 @@ class MyGUI:
             'object_notes_entry': self.object_notes_entry
             }
 
-        # Console below
-        self.console = tk.Text(self.center, #height=40,
-                               bg='black', fg='white', width=200)
-        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
-        self.console_scrollbar = tk.Scrollbar(self.center)
-        self.console_scrollbar.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
-
-        self.console.config(yscrollcommand=self.console_scrollbar.set)
-        self.console_scrollbar.config(command=self.console.yview)
-
-        self.console_msg(self.program_full_name)
-        self.console_msg("Ready")
-
-        # self.initialize_debug()
-        # self.plot_photometry()
 
         tk.mainloop()
 
