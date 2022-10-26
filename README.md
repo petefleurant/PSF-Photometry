@@ -7,7 +7,7 @@ MAOPhot calculates stellar magnitudes from 2 dimensional digital astrophotograph
 It has the option of producing an extended AAVSO (American Association of Variable Star Observers) 
 report which can then be submitted to the AAVSO using an online tool WebObs (http://www.aavso.org/webobs).
 
-There are many photometry measureing programs available such as VPhot (http://www.aavso.org/vphot) and
+There are many photometry measuring programs available such as VPhot (http://www.aavso.org/vphot) and
 AstroImageJ (University of Louisville). 
 
 MAOPhot uses PSF (point spread function) modeling which is well suited for measuring stellar magnitudes in 
