@@ -448,7 +448,7 @@ class MyGUI:
                 
                 self.load_FITS(image_file)
                 self.display_image()
-                self.clear_psf_linreg_plot()
+                self.clear_psf()
 
                 if self.plate_solve_on_open.get():
                     self.console_msg("Solving via Astrometry.Net...")
@@ -856,14 +856,11 @@ class MyGUI:
             self.error_raised = True
             pass
 
-    def clear_psf_linreg_plot(self):
+    def clear_psf(self):
         #clear plot label
         self.plotname_label['text'] = "Plot: "
         self.psf_plot.clear()
         self.psf_plot_canvas.draw()
-        self.linreg_plot.clear()
-        self.plot_canvas.draw()
-
 
     def update_PSF_canvas_2d(self, x, y):
         global image_data
