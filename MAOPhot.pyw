@@ -514,7 +514,10 @@ class MyGUI:
     def perform_psf_photometry(self):
         global header
         self.console_msg(
-            "Initiating interatively subtracted PSF photometry...")
+            "Initiating iteratively subtracted PSF photometry...")
+        if len(image_data) == 0:
+            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            return
         try:
             bkgrms = MADStdBackgroundRMS()
             std = bkgrms(image_data)
@@ -1184,7 +1187,7 @@ class MyGUI:
                 }, ignore_index=True)                     
             
             self.console_msg("\n")
-            self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + "\n" +
+            self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
                              result_check_star.sort_values(by="label").to_string() +
                              '\n' +
                              ("B* Ave: " + format(B_mean_check, ' >6.3f') +
