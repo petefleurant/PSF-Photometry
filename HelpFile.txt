@@ -1,0 +1,113 @@
+"""
+Welcome to MAOPhot 1.0  a PSF Photometry tool using Iteratively Subtracted PSF Photometry by Astropy and Photutil.psf
+(See: https://photutils.readthedocs.io/en/stable/psf.html#)
+
+This program has been adapted from MetroPSF by M Usatov (maxim.usatov@bcsatellite.net)
+Much of that program has been removed and much remains. 
+
+The objective of MAOPhot is to generate an AAVSO report plain text file in "Extended Format" 
+Two Color Photometry (B and V) with an ensemble of comparison stars is used to generate the 
+report in the same manner as AAVSO VPhot.
+
+
+Preparation:
+- Make available the two B and V FIT images of the Var to be measured. It is best to crop these 
+images to remove any "black" 0 valued edges. These images are calibrated; they need not be plate solved
+- set the Tbv, Tb_bv and Tv_bv transformation coefficients that correspond to the telescope used 
+- set the "Object Name" to the var that is to be reported
+- choose check and comp stars from the corresponding chart specified by the AAVSO Chart ID
+- Save the settings
+
+Settings:
+Load and Save setting using the File->Load Settings and File->Save Settings
+
+Procedure:
+File->Open... the B Fits file (e.g., V1117_Her_B.fit)
+	- this loads the image into MAOPhot
+
+Photometry->Iteratively Subtracted PSF Photometry 
+    - this uses Photutils.psf to 
+    	1) find stars
+    	2) group them
+    	3) determine background level
+    	4) create a Gaussian PSF model
+    	5) perform iterative subtracted PSF photometry
+    	6) write a csv file containing the instrumental magnitudes of stars found along with their pixel coordinate
+
+Photometry->Solve Image (needed if image not plate solve)
+	- this uses Astrometry.net service to plate solve image (inserts WCS data into FITS header)
+
+File->Save
+	- Save loaded FITS file and its updated FITS header containing WCS data
+
+Photometry->Get Comparison Stars
+	- this queries AAVSO with given list of comparison stars and check star
+	- a csv file is then written containing list of comparison stars, check star, and var (Object Name) in 
+	  the appropriate row with their corresponding instrumental magnitudes. 
+
+The proceedings are repeated for the V Fits file (e.g., V1117_Her_V,fit)
+
+Two Color Photometry->Two Color Photometry (B,V)
+	- Select 2 saved csv files (generated from "Get Comparison Stars") 
+	  (e.g, V1117_Her_B.csv and V1117_Her_V.csv)
+	  THE B FILE MUST BE SELETED FIRST (This will not be necessary at a future release)
+	- This generates a Master-Report csv file
+
+Typical Output after running Two Color Photometry->Two Color Photometry (B,V):   (Variable is W Her)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+28 Oct 2022 15:52:45      Check Star Estimates using check star: 144 (B: 14.933) (V: 14.404)
+    star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star     outlier
+0  check   113 -9.625943 -10.379204  12.144  11.277        -0.267405        -0.317142  2.794538  3.061943        0.753261  14.928707  14.380488            
+1  check   132 -7.841239  -8.512675  13.963  13.178        -0.185579        -0.220097  1.009835  1.195414        0.671436  14.966012  14.402247            
+2  check   138 -7.219232  -7.874955  14.560  13.811        -0.169865        -0.201460  0.387828  0.557693        0.655722  14.941583  14.395085            
+3  check   139 -7.089318  -7.820401  14.709  13.873        -0.245227        -0.290839  0.257913  0.503140        0.731083  14.957897  14.414240            
+4  check   141 -6.871317  -7.597812  14.902  14.092        -0.240638        -0.285397  0.039912  0.280550        0.726495  14.933065  14.409937            
+5  check   142 -6.881629  -7.476356  14.892  14.227        -0.108870        -0.129119  0.050224  0.159094        0.594727  14.938222  14.403009            
+6  check   150 -5.915583  -6.694471  15.853  15.024        -0.293032        -0.347536 -0.915822 -0.622790        0.778889  14.926404  14.446737  <--OUTLIER
+                                                                                                           B* Ave: 14.942  V* Ave: 14.407
+                                                                                                           B* Std:  0.015  V* Std:  0.021
+28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for B*: 14.903;14.978
+28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for V*: 14.379;14.432
+28 Oct 2022 15:52:45      
+
+28 Oct 2022 15:52:45      Variable Star Estimates of Var: W Her
+  star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star
+0  var   113 -9.625943 -10.379204  12.144  11.277         0.470010         0.557432  2.470806  2.000796        0.753261  14.632086  13.204772
+1  var   132 -7.841239  -8.512675  13.963  13.178         0.551835         0.654477  0.686102  0.134267        0.671436  14.669391  13.226530
+2  var   138 -7.219232  -7.874955  14.560  13.811         0.567549         0.673113  0.064095 -0.503454        0.655722  14.644962  13.219368
+3  var   139 -7.089318  -7.820401  14.709  13.873         0.492188         0.583735 -0.065819 -0.558007        0.731083  14.661276  13.238523
+4  var   141 -6.871317  -7.597812  14.902  14.092         0.496776         0.589177 -0.283820 -0.780597        0.726495  14.636444  13.234221
+5  var   142 -6.881629  -7.476356  14.892  14.227         0.628545         0.745454 -0.273508 -0.902053        0.594727  14.641601  13.227293
+6  var   150 -5.915583  -6.694471  15.853  15.024         0.444383         0.527038 -1.239554 -1.683937        0.778889  14.629784  13.271021
+                                                                                                           B* Ave: 14.645  V* Ave: 13.232
+                                                                                                           B* Std:  0.015  V* Std:  0.021
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Note the comp star 150 is an outlier (<--OUTLIER). MAOPhot checks for values outside the IQR (interquartile range) to detect outliers
+
+Like in Two Color Photometry, remove outliers from "Select Comp Stars (AAVSO Label)" in the settings and run Two Color Photometry->Two Color Photometry (B,V) again.
+When satisfied proceed to Report->AAVSO: Generate Report; Two Color Photometry
+
+Report->AAVSO: Generate Report; Two Color Photometry
+	- this gerenates the AAVSO report in a subdirectory aavso_reports 
+	-E.g., 
+	#TYPE=Extended
+	#OBSCODE=FPIA
+	#SOFTWARE=MAOPhot; Self-developed using photoutils.psf; DAOPHOT
+	#DELIM=,
+	#DATE=JD
+	#OBSTYPE=CCD
+	#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+	Y And,2459839.71998,13.794,0.02,B,YES,STD,ENSEMBLE,na,130,13.668,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.668|KMAGINS=-7.763|KREFMAG=13.664|Tbv=1.186|VMAGINS=-7.659 
+	Y And,2459839.73034,12.398,0.019,V,YES,STD,ENSEMBLE,na,130,13.012,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.012|KMAGINS=-8.265|KREFMAG=13.019|Tv_bv=-0.131|VMAGINS=-8.782 
+
+"""
+
+
+
+
+
+
+
+
