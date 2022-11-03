@@ -599,7 +599,7 @@ class MyGUI:
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
-            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
+            self.results_tab_df["date-obs"] = float(float(self.date_obs_entry.get()))
             
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry saved to " + str(self.image_file + ".csv"))
@@ -1682,6 +1682,158 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
+    def generate_aavso_report_1image(self):
+        global image_width, image_height
+
+        """
+        Typical Single Image Report is shown below (note only 1 check and 1 comp star)
+
+        Requirements to run:
+         - Fits file loaded, plate solved and comp and vsx star shown and entered in settings
+         If there are more than 1 comp stars in the list 'Select Comp Stars', then the first one in the list
+         is used.
+        """
+
+        self.console_msg("Beginning Generate AAVSO Single Image Photometry Report...")
+
+        var_star_name = self.object_name_entry.get().strip()
+        if len(var_star_name) == 0:
+            self.console_msg(
+                "'Object Name' must be specified; eg. 'W Her'")
+            return
+
+        check_star_name = self.object_kref_entry.get().strip()
+        if len(check_star_name) == 0:
+            self.console_msg(
+                "'Use Check Star (AAVSO Label)' must be specified; eg. '144'")
+            return
+
+        comp_star_list = self.object_sel_comp_entry.get().strip()
+        if len(comp_star_list) == 0:
+            self.console_msg(
+                "'Select Comp Stars (AAVSO Label)' must be specified; eg. '144'")
+            return
+
+        #if there is a list of comp stars, use the first one in the list
+        comp_star_name = comp_star_list.split(",")[0]
+        if len(comp_star_name) == 0:
+            self.console_msg(
+                "Cannot read first comp star in the list as a label; eg. '144'")
+            return
+
+        report_dir = "aavso_reports"
+        if os.path.isdir(os.path.dirname(self.image_file)):
+            os.chdir(os.path.dirname(self.image_file))
+            if not os.path.exists(report_dir):
+                os.mkdir(report_dir)
+        else:
+            self.console_msg("Dir path: \"" + str(self.image_file) + "\" does not exist; check if file loaded")
+            return
+
+        image_basename = os.path.basename(self.image_file)
+        report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
+            image_basename)[0] + " " + str(self.object_name_entry.get()) + "_single.txt")
+        
+        """
+        Report is generated from 'Saved' <image_file>.csv 
+
+        """
+        #Ask user for <image-file>.csv
+
+        options = {}
+        options['defaultextension'] = '.csv'
+        options['filetypes'] = [('CSV', '.csv')]
+        options['title'] = 'Choose the ' + self.image_file + '.csv'
+
+        file_name = fd.askopenfilename(**options)
+
+        if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+            self.console_msg("Loading Single Image data from " + str(file_name))
+            self.results_tab_df_color = pd.read_csv(str(file_name))
+        else:
+            return
+            
+        try:
+            """
+            Typical Single Image Report (note only 1 check and 1 comp star)
+
+            #TYPE=EXTENDED
+            #OBSCODE=FPIA
+            #SOFTWARE=VPhot 4.0.27
+            #DELIM=,
+            #DATE=JD
+            #OBSTYPE=CCD
+            #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+            W Her,2459735.64795,14.599,0.010,B,NO,STD,144,-6.423,139,-6.659,na,na,X27989RA,Mittelman ATMoB Observatory|CMAGINS=-6.423|CREFERR=0.061|CREFMAG=14.933|KMAG=14.697|KMAGINS=-6.659|KREFERR=0.037|KREFMAG=14.709|VMAGINS=-6.757
+            """
+            decimal_places = 3 #report is usually 3
+
+            with open(report_filename, mode='w') as f:
+                f.write("#TYPE=Extended\n")
+                f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
+                f.write("#SOFTWARE=Self-developed using photoutils.psf; DAOPHOT\n") 
+                f.write("#DELIM=,\n")
+                f.write("#DATE=JD\n")
+                f.write("#OBSTYPE=CCD\n")
+                f.write("#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES\n")
+
+                #var_star_name, check_star_name, comp_star_name were determined above
+                var_star = self.results_tab_df_color[self.results_tab_df_color["vsx_id"] == var_star_name].iloc[0]
+                check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(check_star_name)].iloc[0]
+                comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(comp_star_name)].iloc[0]
+
+                comp_IM = comp_star["true_inst_mag"]
+                comp_star_mag = comp_star["match_mag"]
+
+                check_IM = check_star["true_inst_mag"]
+                check_star_mag = check_IM - comp_IM + comp_star_mag
+                check_star_mag_ref = check_star["match_mag"]
+
+                var_IM = var_star["true_inst_mag"]
+
+                #differential phtometry
+                var_star_mag = var_IM - comp_IM + comp_star_mag
+                check_star_mag = check_IM - comp_IM + comp_star_mag
+
+                starid = var_star_name
+                date = format(float(self.date_obs_entry.get()), '.5f') 
+                mag = str(round(var_star_mag, decimal_places))
+                merr = "na"
+                filt = self.filter_entry.get().strip()
+                trans = "NO"
+                mtype = "STD"
+                cname = comp_star_name
+                cmag = str(round(comp_IM, decimal_places))
+                kname = check_star_name
+                kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
+                amass = "na"
+                group = "na"
+                chart = self.vizier_catalog_entry.get().strip()
+                notes = self.object_notes_entry.get().strip()
+                notes += "|CMAGINS=" + cmag + \
+                         "|CREFERR=" + "na" +\
+                         "|CREFMAG=" + str(round(comp_star_mag, decimal_places)) +\
+                         "|KMAG=" + str(round(check_star_mag, decimal_places)) +\
+                         "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
+                         "|KREFERR=" + "na" +\
+                         "|KREFMAG=" + str(round(check_star_mag_ref, decimal_places)) +\
+                         "|VMAGINS=" + str(round(var_IM, decimal_places))
+                
+                # Add " " after notes, because TA clobbers last char
+                f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
+                        cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
+
+            self.console_msg(
+                "AAVSO Photometry report saved to " + str(report_filename))
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+
+        return
+        
+
 
     def generate_aavso_report_2color(self):
         global image_width, image_height
@@ -1849,7 +2001,7 @@ class MyGUI:
                         cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
 
             self.console_msg(
-                "AAVSO Photometry Database report saved to " + str(report_filename))
+                "AAVSO Photometry report saved to " + str(report_filename))
 
         except Exception as e:
             self.error_raised = True
@@ -1974,9 +2126,11 @@ class MyGUI:
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
         self.reportmenu.add_command(
-            label="AAVSO: Generate Report; Two Color Photometry", command=self.generate_aavso_report_2color)
-        self.reportmenu.add_separator()
-        self.menubar.add_cascade(label="Report", menu=self.reportmenu)
+            label="Single Image Photometry", command=self.generate_aavso_report_1image)
+
+        self.reportmenu.add_command(
+            label="Two Color Photometry", command=self.generate_aavso_report_2color)
+        self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
 
         self.window.config(menu=self.menubar)
 
@@ -2060,9 +2214,9 @@ class MyGUI:
         tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
 
         settings_entry_width = 6
-        settings_entry_pad = 0#20
+        settings_entry_pad = 0
         extended_settings_entry_width = 30
-        extended_settings_entry_pad = 40
+        extended_settings_entry_pad = 0
 
         row = 0
 
