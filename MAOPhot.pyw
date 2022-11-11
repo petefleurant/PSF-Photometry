@@ -1,76 +1,225 @@
 # -*- coding: utf-8 -*-
 """
-    MAOPhot 1.0
+	Welcome to MAOPhot 1.0, a PSF Photometry tool using Astropy and Photutil.psf
+
+	MAOPhot calculates stellar magnitudes from 2 dimensional digital 
+	astrophotographs. It can produce an extended AAVSO (American Association of 
+	Variable Star Observers) report which can later be submitted to the AAVSO 
+	using the online tool WebObs (http://www.aavso.org/webobs).
+
+    There are many photometry measuring programs available such as VPhot 
+	(http://www.aavso.org/vphot) and AstroImageJ (University of Louisville). 
+	VPhot uses the aperture photometry method.
+
+    MAOPhot uses the PSF Photometry method exclusively. PSF (point spread 
+	function) modeling is 
+    well suited for measuring stellar magnitudes in crowded fields, or the 
+	magnitude of a star that has a close companion, e.g., Z Tau.
+
+    MAOPhot uses many 'astropy' libraries. The astropy package contains key 
+	functionality and common 
+    tools needed for performing astronomy and astrophysics with Python. Included
+	 in the package is Photutils.psf.
+    See "PSF Photometry" (https://photutils.readthedocs.io/en/stable/psf.html)
+	 which describes many 
+    of the classes and methods used in MAOPhot
+
+    Features:
+        - Generation of Effective PSF model, and ability to pick and choose 
+		which stars can be included
+         in te generation of the model
+        - option to use an IntegratedGaussianPRF as model 
+        - PSF Photometry using iterative algorithm to perform point spread 
+		function photometry in crowded fields
+        - Photometry using an ensemble of comparison stars. 
+        - Generation of Two Color Photometry (B, V) only, and Single Image 
+		Photometry reports in AAVSO extended format 
+        - Use of telescope Transformation Coefficients 
+        - Image display shows comp star AAVSO label number and name of any 
+		found VSX objects 
+        - Intermediate results are saved as .csv files 
+        - User enters AAVSO Chart ID when retrieving comparison stars
+        - User can specify check star and list of comp stars to use
+
+
     
-    MAOPhot calculates stellar magnitudes from 2 dimensional digital astrophotographs.
-    It has the option of producing an extended AAVSO (American Association of Variable Star Observers)
-    report which can then be submitted to the AAVSO using an online tool WebObs (http://www.aavso.org/webobs).
+    This program was derived from MetroPSF by Maxym Usatov. It has been 
+	extensively redesigned and includes 
+    but not limited to the following enhancements:
+    - generation of an Effective PSF (ePSF)
+        - ability to tailor which stars are included in derived ePSF
+    - Use of telescope Transformation Coefficients (e.g., Tvb)
+    - Generation of Two Color Photometry (ensemble) report with Transform
+        - ability to remove comp stars which are outliers
+    - Generation of Single Image Photometry report (non-ensemble)
 
-    There are many photometry measuring programs available such as VPhot (http://www.aavso.org/vphot) 
-    and AstroImageJ (University of Louisville).
+							Single Image Photometry
 
-    MAOPhot uses PSF (point spread function) modeling which is well suited for measuring stellar magnitudes
-    in crowded fields, or a particular star that has a close companion, e.g., Z Tau.
+    General Workflow for Single Image Phtometry and AAVSO report generation:
+        Step 1- Prepare master images 
+            - The master should be calibrated and in proper FIT format. It 
+			should be cropped such that no 'black' or zero value ADU exists at 
+			the edges. The image need not be plate solved but RA and DEC values
+			should exist for proper plate solving in MAOPhot
+        
+        Step 2- 'File->Load Settings...'
+            - Fill in settings and then File->Save Settings As...
 
-    See "PSF Photometry" (https://photutils.readthedocs.io/en/stable/psf.html) whcih describes many of the classes and methods used in MAOPhot
-    
-    Original MetroPSF (C) Copyright 2021, Maxym Usatov 
-    <maxim.usatov@bcsatellite.net> Refer to metropsf.pdf for license information.
- 
+        Step 3- 'File->Open...' 
+		(e.g., 'ZTau_I_300s_30pct.fit')
+            - Adjust Image Stretching and Histogram Stretch if necessary
+            - 'Photometry->Solve Image' to plate solve if necessary
+            - After solving, 'File->Save' to keep WCS data
+        
+        Step 4- [Optional] 'Photometry->Create Effective PSF'
+            - Select stars to be rejected; these are 
+                - stars NOT well isolated from their neighbors
+                - stars NOT with high SNR levels
+            - then select 'Photometry->Create Effective PSF' again and repeat 
+			if necessary
 
+        Step 5- Photometry->Interatively Subtracted PSF Photometry
+        
+        Step 6- Photometry->Get Comparison Stars
+        
+        Step 7- 'Generate AAVSO Report->Single Image Photometry'
+			- Select the <fits filename>.csv file that was generated 
+			by Step 6 (e.g, 'ZTau_I_300s_30pct.fit.csv')
+			- this generates the AAVSO report in a subdirectory aavso_reports/
+
+	-example AAVSO report:
+	#TYPE=Extended
+	#OBSCODE=FPIA
+	#SOFTWARE=Self-developed using photutils.psf; DAOPHOT
+	#DELIM=,
+	#DATE=JD
+	#OBSTYPE=CCD
+	#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+	Z Tau,2459598.66432,11.075,0.040,I,NO,STD,130,-7.922,154,-5.7,na,na,X28313F,Mittelman ATMoB Observatory|
+	CMAGINS=-7.922|CREFERR=na|CREFMAG=12.17|KMAG=14.392|KMAGINS=-5.7|KREFERR=na|KREFMAG=14.342|VMAGINS=-9.017 
+
+
+							Two Color Photometry
 
     General Workflow for Two Color Photometry and AAVSO report generation:
-        - load Settings
-        - Open B color fits file
-        - Solve Image if not done already
-        - Photometry->Interatively Subtracted PSF Photometry
-        - Photometry->Get Comparison Stars
-        - Repeat last 4 steps for V color
-        - Two Color Photometry->Two Color Photometry (B,V)
-        - Report->AAVSO: Generate Report; Two Color Photometry
+        Step 1- Prepare B and V master images 
+            - The B filter and V filter masters should be calibrated and in 
+			proper FIT format. They should be cropped such that no 'black' or 
+			zero value ADU exists at the edges. The images need not be plate
+			solved but RA and DEC values should exist for proper plate solving
+			in MAOPhot 
+        
+        Step 2- 'File->Load Settings...'
+            - Fill in settings and then File->Save Settings As...
+        
+        Step 3- 'File->Open...' B color FIT file 
+		(e.g., 'W Her V CROP_60.fits')
+            - Adjust Image Stretching and Histogram Stretch if necessary
+            - 'Photometry->Solve Image' to plate solve if necessary
+            - After solving, 'File->Save' to keep WCS data
+        
+        Step 4- [Optional] 'Photometry->Create Effective PSF'
+            - Select stars to be rejected; these are 
+                - stars NOT well isolated from their neighbors
+                - stars NOT with high SNR levels
+            - then select 'Photometry->Create Effective PSF' again and repeat 
+			if necessary
+
+        Step 5- Photometry->Interatively Subtracted PSF Photometry
+        
+        Step 6- Photometry->Get Comparison Stars
+        
+        Step 7- Repeat steps 2-6 for V color
+        
+        Step 8- 'Two Color Photometry->Two Color Photometry (B,V)'
+			-Select the 2 csv files that were genertated in step 6 (1 for B
+			and 1 for V; e.g., 'W Her B CROP_60.fits.csv' and
+			'W Her V CROP_60.fits.csv'
+			- If any outliers (comparison stars) noted, delete from 
+			'Select Comp Stars (AAVSO Label)' list;
+				select 'Two Color Photometry->Two Color Photometry (B,V)' again 
+
+Typical Output after running Two Color Photometry->Two Color Photometry (B,V):   (Variable is W Her)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+28 Oct 2022 15:52:45      Check Star Estimates using check star: 144 (B: 14.933) (V: 14.404)
+    star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star     outlier
+0  check   113 -9.625943 -10.379204  12.144  11.277        -0.267405        -0.317142  2.794538  3.061943        0.753261  14.928707  14.380488            
+1  check   132 -7.841239  -8.512675  13.963  13.178        -0.185579        -0.220097  1.009835  1.195414        0.671436  14.966012  14.402247            
+2  check   138 -7.219232  -7.874955  14.560  13.811        -0.169865        -0.201460  0.387828  0.557693        0.655722  14.941583  14.395085            
+3  check   139 -7.089318  -7.820401  14.709  13.873        -0.245227        -0.290839  0.257913  0.503140        0.731083  14.957897  14.414240            
+4  check   141 -6.871317  -7.597812  14.902  14.092        -0.240638        -0.285397  0.039912  0.280550        0.726495  14.933065  14.409937            
+5  check   142 -6.881629  -7.476356  14.892  14.227        -0.108870        -0.129119  0.050224  0.159094        0.594727  14.938222  14.403009            
+6  check   150 -5.915583  -6.694471  15.853  15.024        -0.293032        -0.347536 -0.915822 -0.622790        0.778889  14.926404  14.446737  <--OUTLIER
+                                                                                                           B* Ave: 14.942  V* Ave: 14.407
+                                                                                                           B* Std:  0.015  V* Std:  0.021
+28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for B*: 14.903;14.978
+28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for V*: 14.379;14.432
+28 Oct 2022 15:52:45      
+
+28 Oct 2022 15:52:45      Variable Star Estimates of Var: W Her
+  star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star
+0  var   113 -9.625943 -10.379204  12.144  11.277         0.470010         0.557432  2.470806  2.000796        0.753261  14.632086  13.204772
+1  var   132 -7.841239  -8.512675  13.963  13.178         0.551835         0.654477  0.686102  0.134267        0.671436  14.669391  13.226530
+2  var   138 -7.219232  -7.874955  14.560  13.811         0.567549         0.673113  0.064095 -0.503454        0.655722  14.644962  13.219368
+3  var   139 -7.089318  -7.820401  14.709  13.873         0.492188         0.583735 -0.065819 -0.558007        0.731083  14.661276  13.238523
+4  var   141 -6.871317  -7.597812  14.902  14.092         0.496776         0.589177 -0.283820 -0.780597        0.726495  14.636444  13.234221
+5  var   142 -6.881629  -7.476356  14.892  14.227         0.628545         0.745454 -0.273508 -0.902053        0.594727  14.641601  13.227293
+6  var   150 -5.915583  -6.694471  15.853  15.024         0.444383         0.527038 -1.239554 -1.683937        0.778889  14.629784  13.271021
+                                                                                                           B* Ave: 14.645  V* Ave: 13.232
+                                                                                                           B* Std:  0.015  V* Std:  0.021
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Note the comp star 150 is an outlier (<--OUTLIER). MAOPhot checks for values outside the IQR (interquartile range) to detect outliers
+
+To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO Label)' list, then repeat 'Two Color Photometry->Two Color Photometry (B,V)'
+
+        
+        Step 9- 'Generate AAVSO Report->Two Color Photometry'
+			- Select the Master-Report csv file that was generated 
+			by Step 8 (e.g, 'W Her-Master-Report.csv')
+			- this generates the AAVSO report in a subdirectory aavso_reports/ 
+	-example AAVSO report:
+	#TYPE=Extended
+	#OBSCODE=FPIA
+	#SOFTWARE=MAOPhot; Self-developed using photutils.psf; DAOPHOT
+	#DELIM=,
+	#DATE=JD
+	#OBSTYPE=CCD
+	#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+	Y And,2459839.71998,13.794,0.02,B,YES,STD,ENSEMBLE,na,130,13.668,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.668|KMAGINS=-7.763|KREFMAG=13.664|Tbv=1.186|VMAGINS=-7.659 
+	Y And,2459839.73034,12.398,0.019,V,YES,STD,ENSEMBLE,na,130,13.012,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.012|KMAGINS=-8.265|KREFMAG=13.019|Tv_bv=-0.131|VMAGINS=-8.782 
+    
+	
+	Examine in aavso_reports/ directory and submit to AAVSO using WebObs 
+
+
+    More about Single Image Photometry
+
+        Single Image Photometry does not utilize the Transformation
+        coefficients. Simple differential photometry is used.
+        Only a single comp star is used (which must be the case if the AAVSO 
+        VPhot tool, 'Transform Applier' is to be used).
+        
+        Var mag = Var IM - Comp IM + Comp (known) mag
+        Check star mag = Check star IM - Comp IM + Comp (known) mag
+
+        where IM is the instrumental magnitude 
+            -2.5 * np.log10(self.results_tab_df["flux_fit"] / exptime)
+        self.results_tab_df["flux_fit"] represents the fitted flux for the 
+        star (in that row)
+
         
 
+    More about Two Color Photometry
 
-    Modifications by petefleurant@gmail.com, as follows
-
-    2022 6 16
-
-    Slight modificationsa added
-    - Add comp star label to .phot file
-    - Use log10 in place of plain log (which is natural logarithm) in
-        plot_photometry
-    - Change extention ".phot" to ".csv"
-    - replace chart with AAVSO Chart ID
-    - Added pink fields "Notes" and "Check Star"
-    - Fixed bug with resizing image before AAVSO report generates
-    - Added title "Plot" (plotname_label) above 3d canvas with vsx_id 
-        if available
-    - Clear canvas if no star selected
-    - Add choice for comparison catalog: Add AAVSO; this returns 
-        comparison stars goven frame dimnensions. 
-    - Make sure comparison stars are unique, uniquify by using largest flux_0
-    - plots get cleared when opening a FITS file
-
-    Added
-        python logging into console_msg()
-
-
-        generate_aavso_report_2color()
-
-
-        2022 9 13 
-        
-        MAJOR CHANGE
-        
-        Modifications made to basically have MAOPhot mimic VPhot's "Two
-        Color Photometry" (Usually B and V)
+        MAOPhot mimics VPhot's "Two Color Photometry" (Usually B and V)
             
-        See spreadsheet: 
-            E:\Astronomy\Processing MAO images\ProcessingMaoImages_202281V1117Her.xlsx
+        See spreadsheet: ProcessingMaoImages_202281V1117Her.xlsx 
 
-        This includes formulas to generate "two color photometry". 
-        generate_aavso_report_2color() uses the same formula which includes
-        using transformation coefficients.
+        It includes formulas to generate "two color photometry". 
+        The method generate_aavso_report_2color() uses the same formula which
+		uses the telescope Transformation Coefficients.
 
         The following coefficients are used and are added to the list of "pink"
         fields. (Pink fields required for report generation)
@@ -88,10 +237,12 @@
             "Use Check star (AAVSO Label)"
             ...
             etc.
+                       
             
-            
-        The following formulas are calculated for each comp star and var = check star;
-        then calculated again for each comp star and var = "Object Name". Eg. V1117 Her
+        The following formulas are calculated for each comp star and 
+		var = check star;
+        then calculated again for each comp star and var = "Object Name". 
+		E.g. V1117 Her
         
         Δv = vvar - vcomp
         Δ(B-V) = Tbv * Δ(b-v)
@@ -100,22 +251,38 @@
         where:
         Δv  = IM of variable  - IM comp
         Vcomp = published V-magnitude of comp
-        Δ(B-V) = Tbv * difference between standard color of var and standard color of comp
+        Δ(B-V) = Tbv * difference between standard color of var and standard 
+		color of comp
         
-        
-        In order to calculate these formulas and then generate a report, two (2) sets
+        To calculate these formulas and then generate a report, two (2) sets
         of results_tab_df in csv format must exist, one for B and one for V and
-        must have been derived from the B and V images of the Var under analysis.
+        must have been derived from the B and V images of the Var under 
+		analysis.
         
-        When generate_aavso_report_2color is called, by the menu item: 
-            Report->AAVSO: Generate Report Two Color Photometry
-        then the user will be asked to specify the 2 aformentioned csv files.
+        When generate_aavso_report_2color is called, by the menu item,
+        'Two Color Photometry->Two Color Photometry (B,V)', the user will 
+        be asked to specify the 2 aformentioned csv files.
         
-        From these files/Panda databases, the formulas are calculated, and results 
-        are displayed. 
+        From these files/Panda databases, the formulas are calculated, and 
+		results are displayed. 
+
+
         
+        Error Estimation :
+        MAOPhot mimics VPhot when calculating error estimation. 
+        From VPhot documentation:
+                In an ensemble solution with more than two comp stars, 
+            the magnitude is estimated as the average of the individual 
+            comp stars estimate [of the check star], and the error is taken as 
+            the standard deviation of this sample. 
         
-        
+            If one or two comp stars are used, the error estimate is
+            based on the SNR of each measurement (the target measurement 
+            and the comp stars measurements). The standard error of a 
+            measurement is defined as 2.5 * np.log10(1 + 1 / SNR)
+            [The errors are added in quadruture.]
+
+
         --
         get_comparison_stars
         
@@ -125,39 +292,41 @@
         is_check_star, added to the results_tab_df DB. 
         
 
-    --------------------------------------------------------------------------
-        
-        Removed use of flux_unc which is not always returned; use poisson_noise_error = 1.0857 / snr
 
-        Select Comp Stars entry list; comp stars only used that are in this list
+    MAOPhot derived from original MetroPSF (C) Copyright 2021, Maxym Usatov 
+    <maxim.usatov@bcsatellite.net> Refer to metropsf.pdf for license information.
 
+    This research made use of Photutils, an Astropy package for
+    detection and photometry of astronomical sources (Bradley et al.
+    20XX).
 
-
-
-    Things needed
-        - Add label number to red circle in plot; so that one knows which are
-        outliers
-      
-      
- 
- 
- 
- 
- 
 """
 from ast import Assert
-from photutils import Background2D, MedianBackground
 from astropy.stats import SigmaClip
+from astropy.stats import sigma_clipped_stats
+from astropy.stats import gaussian_sigma_to_fwhm
+from astropy.table import Table
 from astropy.modeling.fitting import LevMarLSQFitter, LinearLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
+from astropy.nddata import NDData
+from astropy.nddata import Cutout2D
+from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
+from astropy.coordinates import SkyCoord
+from astropy.wcs import WCS
+from astropy import units as u
+from astropy.time import Time
+from astropy.io import fits
+from photutils import Background2D, MedianBackground
+from photutils.detection import find_peaks
 from photutils.psf import IterativelySubtractedPSFPhotometry
 from photutils.background import MMMBackground, MADStdBackgroundRMS
 from photutils.psf import IntegratedGaussianPRF, DAOGroup
 from photutils.detection import IRAFStarFinder
+from photutils.psf import extract_stars
+from photutils.psf import EPSFBuilder
 from tkinter import filedialog as fd
 import tkinter as tk
-from astropy.nddata import Cutout2D
-from astropy.stats import gaussian_sigma_to_fwhm
 from mpl_toolkits.mplot3d import Axes3D
+from math import sqrt
 from matplotlib import cm
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -167,12 +336,6 @@ import matplotlib
 from astroquery.vizier import Vizier
 from astroquery.astrometry_net import AstrometryNet
 from PIL import Image, ImageTk, ImageMath
-from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch
-from astropy.coordinates import SkyCoord
-from astropy.wcs import WCS
-from astropy import units as u
-from astropy.time import Time
-from astropy.io import fits
 import pandas as pd
 import logging
 import sys
@@ -271,24 +434,24 @@ class MyGUI:
     linreg_error = 0
     zoom_step = 0.5
     photometry_results_plotted = False
+    ePSF_results_plotted = False
     results_tab_df = pd.DataFrame()
-    bkg_value = 0
+    image_bkg_value = 0
+    bkg2D = None #if fetched, the Background2D object
     fit_shape = 21
     error_raised = False
     histogram_slider_low = 0
     histogram_slider_high = 5
     last_clicked_x = 0
     last_clicked_y = 0
-    last_clicked_differential_magnitude = 0
-    last_clicked_differential_uncertainty = 0
-    last_clicked_true_inst_mag = 0
     ensemble_size = 0
-    a = 0
-    b = 0
     jd = 0
     image_file = ""
     photometry_circles = {}
     valid_parameter_list = {}
+    ePSF_rejection_list = []
+    epsf_model = None
+    stars_tbl = None 
 
 
     def console_msg(self, MAOPhot_message, level=logging.INFO):
@@ -319,9 +482,10 @@ class MyGUI:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
             self.canvas.bind("<Button-1>", self.mouse_click)
-            if self.photometry_results_plotted:
+            if self.ePSF_results_plotted:
+                self.plot_ePSF()
+            elif self.photometry_results_plotted:
                 self.plot_photometry()
-
 
     def load_FITS(self, image_file):
         global image_figure
@@ -341,6 +505,7 @@ class MyGUI:
                 self.canvas.delete("all")
                 self.zoom_level = 1
                 self.photometry_results_plotted = False
+                self.ePSF_results_plotted = False
                 self.results_tab_df = pd.DataFrame()
                 header = image[0].header
                 image_data = fits.getdata(image_file)
@@ -416,14 +581,15 @@ class MyGUI:
                     self.date_obs_entry.delete(0, tk.END)
                     self.date_obs_entry.insert(0, str(self.jd))
 
-                self.bkg_value = np.median(image_data)
-                self.console_msg(
-                    "Median background level, ADU: " + str(self.bkg_value))
+                self.image_bkg_value = np.median(image_data)
+                self.console_msg("Median background level, ADU: " 
+                    + str(self.image_bkg_value))
                 
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) 
+                +" "+str(e), level=logging.ERROR)
             pass
 
     def initialize_debug(self):
@@ -449,6 +615,8 @@ class MyGUI:
                 self.load_FITS(image_file)
                 self.display_image()
                 self.clear_psf()
+                self.clear_epsf()
+                
 
                 if self.plate_solve_on_open.get():
                     self.console_msg("Solving via Astrometry.Net...")
@@ -510,6 +678,120 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)   +" "+str(e), level=logging.ERROR)
+
+    def create_ePSF(self):
+        global header
+        self.console_msg("Initiating Effective PSF building...")
+
+        #make sure an image is loaded
+        if len(image_data) == 0:
+            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            return
+
+        try:
+            #Find local peaks in an image that are above above a specified threshold value.
+            #threashold = root 2 * image_bkg_value is a total guess
+            peaks_tbl = find_peaks(image_data, threshold=self.image_bkg_value * sqrt(2))
+
+            #mask out peaks near the boundary; use twice the aperature entry
+            #
+            ##Calculate size of cutouts for EPSFBuilder
+            ## make it twice the aperture entry
+            ##same size used in plot_ePSF
+            self.fit_shape = int(self.photometry_aperture_entry.get())
+            size = 2*self.fit_shape + 1
+            hsize = (size - 1)/2
+            x = peaks_tbl['x_peak']  
+            y = peaks_tbl['y_peak']  
+            _image = Image.fromarray(image_data)
+            width, height = _image.size
+            mask = ((x > hsize) & (x < (width -1 - hsize)) &
+                    (y > hsize) & (y < (height -1 - hsize)))  
+
+            #prelim_stars_tbl are inbound stars (not to close to the edge)
+            prelim_stars_tbl = Table()
+            prelim_stars_tbl['x'] = x[mask]  
+            prelim_stars_tbl['y'] = y[mask]  
+            prelim_stars_tbl['rejected'] = False #init
+
+            #now set 'rejected' to True for any stars that are proximate to a coordinate in ePSF_rejection_list
+            for psf_x, psf_y, psf_reject in prelim_stars_tbl:
+                prelim_stars_tbl.add_index('x')
+                for reject_x, reject_y in self.ePSF_rejection_list:
+                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
+                        #user does not want this one
+                        prelim_stars_tbl.loc[psf_x]['rejected'] = True
+                        break
+    
+            x = prelim_stars_tbl['x']  
+            y = prelim_stars_tbl['y']  
+            reject_this = prelim_stars_tbl['rejected']
+
+            mask = reject_this == False  # only keep ones we don't reject
+
+            self.stars_tbl = Table()
+            self.stars_tbl['x'] = x[mask]  
+            self.stars_tbl['y'] = y[mask]  
+
+            #determine the background and subtract it from image_data
+            bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            #make sure this is not an even number 
+            if bkg_filter_size % 2 == 0:
+                bkg_filter_size += 1
+            sigma_clip = SigmaClip(sigma=3.0)
+            bkg_estimator = MedianBackground()
+            self.console_msg("Estimating background...")
+            self.bkg2D = Background2D(image_data, (self.fit_shape * 1, self.fit_shape * 1),
+                               filter_size=(bkg_filter_size, bkg_filter_size), sigma_clip=sigma_clip,
+                               bkg_estimator=bkg_estimator)
+
+            self.console_msg("Median Background2D level: " 
+                + str(self.bkg2D.background_median))
+            
+            #bkg.background is a 2D ndarray of background image
+            clean_image = image_data-self.bkg2D.background
+
+            working_image = NDData(data=clean_image)
+
+            candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=False)  
+            self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
+
+            model_length = len(self.epsf_model.data)
+            x = np.arange(0, model_length, 1)
+            y = np.arange(0, model_length, 1)
+            x, y = np.meshgrid(x, y)
+
+            #plot it in the psf
+            self.psf_plot.clear()
+            self.psf_plot.plot_surface(x, y, self.epsf_model.data, cmap=cm.jet)
+            self.psf_plot_canvas.draw()
+
+            #plot it in the ePSF
+            self.clear_epsf()
+            self.plot_ePSF()
+
+            norm = simple_norm(self.epsf_model.data, 'log', percent=99.)
+            im = self.ePSF_plot.imshow(self.epsf_model.data, norm=norm, origin='lower', cmap='viridis')
+            self.ePSF_plot.set_title("Effective PSF")
+            self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
+
+            self.ePSF_plot_canvas.draw()
+
+            self.ePSF_results_plotted = True
+
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+    def clear_ePSF_rejection_list(self):
+        global header
+        self.console_msg("Clearing ePSF Rejection List...")
+        self.ePSF_rejection_list.clear()
+        return
 
     def perform_psf_photometry(self):
         global header
@@ -577,11 +859,17 @@ class MyGUI:
             else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
                 self.console_msg("Setting fitter to Levenberg-Marquardt")
                 selected_fitter = LevMarLSQFitter(calc_uncertainties=True)
-                
-            # sigma=2 here is the initial guess
-            psf_model = IntegratedGaussianPRF(fwhm / gaussian_sigma_to_fwhm)
+
+            if self.epsf_model != None:
+                self.console_msg("Using derived Effective PSF Model")
+                psf_model = self.epsf_model
+            else:
+                self.console_msg("Using Gaussian PRF for model")
+                #Use Gausian
+                psf_model = IntegratedGaussianPRF(fwhm / gaussian_sigma_to_fwhm)
+
             #Dont do the next line, see https://photutils.readthedocs.io/en/stable/psf.html)
-            #This results in mopre complicated outcomes
+            #This results in more complicated outcomes
             #psf_model.sigma.fixed = False   # This allows to fit Gaussian PRF sigma as well 
             photometry = IterativelySubtractedPSFPhotometry(finder=iraffind,
                                                             group_maker = daogroup,
@@ -628,6 +916,29 @@ class MyGUI:
         y1 = y - 1.25*r
         canvas_name.create_text(x1, y1, fill='white', anchor=anchor, text=text)
 
+    def plot_ePSF(self):
+        try:
+            #display the non-rejected stars as white, and rejected as red circles
+
+            ## make it twice the aperture entry
+            ##same size used in create_ePSF
+            self.fit_shape = int(self.photometry_aperture_entry.get())
+            size = 2*self.fit_shape + 1
+            hsize = (size - 1)/2
+            for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
+                color = 'white' # it is a white circle until a reject match is found
+                for reject_x, reject_y in self.ePSF_rejection_list:
+                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
+                        color = 'red'  #paint rejects red
+                        break;
+                self.create_circle(x=psf_x * self.zoom_level, y=psf_y * self.zoom_level,
+                                      r=hsize * self.zoom_level, canvas_name=self.canvas, outline_color=color)
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) + " " + str(e), level=logging.ERROR)
+
     def plot_photometry(self):
         try:
             self.console_msg("Plotting Photometry...")
@@ -651,6 +962,7 @@ class MyGUI:
                 #self.results_tab_df["inst_mag_min"] = -2.5 * np.log10((self.results_tab_df["flux_fit"] - self.results_tab_df["flux_unc"]) / exptime) + 25
                 #self.results_tab_df["inst_mag_max"] = -2.5 * np.log10((self.results_tab_df["flux_fit"] + self.results_tab_df["flux_unc"]) / exptime) + 25
 
+                self.ePSF_results_plotted = False
                 self.photometry_results_plotted = True
 
                 for index, row in self.results_tab_df.iterrows():
@@ -706,15 +1018,6 @@ class MyGUI:
 
     def mouse_click(self, event):
         global image_data
-        self.last_clicked_differential_magnitude = 0
-        self.last_clicked_differential_uncertainty = 0
-        self.last_clicked_true_inst_mag = 0
-        decimal_places = int(self.decimal_places_entry.get())
-        vsx_ids_in_photometry_table = False
-        if "vsx_id" in self.results_tab_df:
-            vsx_ids_in_photometry_table = True
-        self.display_image()
-        self.console_msg("")
         x = int(self.canvas.canvasx(event.x) / self.zoom_level)
         y = int(self.canvas.canvasy(event.y) / self.zoom_level)
         self.last_clicked_x = x
@@ -734,7 +1037,19 @@ class MyGUI:
                          "\t ADU: "+str(ADU) + "\t\t\t" + sky_coordinate_string)
         psf_canvas_x = x
         psf_canvas_y = y
-        if self.photometry_results_plotted:
+
+        if self.ePSF_results_plotted:
+            #add the selected coordinate into the ePSF_rejection_list
+            self.ePSF_rejection_list.append((x,y))
+            #indicate the rejected ones
+            self.display_image()
+
+        elif self.photometry_results_plotted:
+            decimal_places = int(self.decimal_places_entry.get())
+            vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
+            self.display_image()
+            self.console_msg("")
+
             # OLD x_fit, y_fit, flux_fit, sigma_fit, true_inst_mag, inst_mag, flux_unc, inst_mag_min, inst_mag_max = self.match_photometry_table(x, y)
             x_fit, y_fit, flux_fit, true_inst_mag, inst_mag = self.match_photometry_table(x, y)
             sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
@@ -754,7 +1069,7 @@ class MyGUI:
                                     x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
             self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
                 round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(true_inst_mag, 3)) + " " + sky_coordinate_string)
-                # OLD: round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(true_inst_mag, 3)) + " PSF σ: " + str(round(sigma_fit, 2)) + sky_coordinate_string)
+
             # Reset object name field in the left panel to avoid user mistakes
             self.set_entry_text(self.object_name_entry, "")
             if "match_id" in self.results_tab_df:
@@ -782,57 +1097,6 @@ class MyGUI:
                             #update plot label
                             self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
 
-            # Has regression fit been done?
-            if self.a != 0 and self.b != 0 and x_fit != 0 and y_fit != 0: 
-                #regression fit has been done
-                differential_magnitude = round(
-                    inst_mag * self.a + self.b, decimal_places)
-
-                total_error = np.nan
-                
-                if "mag_error" in self.results_tab_df:
-                    """
-                    Always use poisson noise error because flux_unc is not always available
-                    """
-                    # Aperture photometry mode - use Poisson noise error
-                    snr = flux_fit/self.bkg_value
-                    poisson_noise_error = 1.0857 / snr
-                    total_error = round(np.sqrt(self.linreg_error ** 2 + poisson_noise_error ** 2), decimal_places)
-                    self.console_msg("Linear Regression Error: " + str(round(self.linreg_error, decimal_places)) +
-                                     " Poisson Noise Error: " + str(round(poisson_noise_error, decimal_places)))
-
-                obj_name_string = ""
-                if type(matching_star["match_id"]) in (str, int, np.float64) and str(matching_star["match_id"]) != "nan":
-                    obj_name_string = matching_star["match_id"] + ", "
-                if 'label' in self.results_tab_df.columns:
-                    if type(matching_star["label"]) in (str, int, np.float64) and str(matching_star["label"]) != "nan":
-                        obj_name_string += "label: " + str(round(matching_star["label"])) + ", "
-                if vsx_ids_in_photometry_table and len(str(matching_star["vsx_id"])) > 0 and str(matching_star["vsx_id"]) != "nan":
-                    obj_name_string = str(matching_star["vsx_id"]) + ", "
-                self.console_msg("Differential ensemble photometry magnitude:")
-                jd_time = Time(self.jd, format='jd')
-                self.console_msg(obj_name_string + str(jd_time.to_value('iso')) + " UTC, " + self.filter_entry.get() + " = " + str(round(differential_magnitude, decimal_places)) + " ± " + str(
-                    total_error))
-
-                self.last_clicked_differential_magnitude = round(
-                    differential_magnitude, decimal_places)
-                self.last_clicked_differential_uncertainty = total_error
-                self.last_clicked_true_inst_mag = round(
-                    true_inst_mag, decimal_places)
-
-                # Checking PSF sigma
-                """
-                median_psf_sigma = self.results_tab_df["sigma_fit"].median()
-                if sigma_fit > median_psf_sigma * 1.2:
-                    self.console_msg(
-                        #
-                        WARNING: This source has PSF σ exceeding median value by more than 20%.
-                        Check PSF shape - likely non-linear sensor regime or improperly
-                        subtracted sky background.
-                        )
-                """
-            
-        #if self.photometry_results_plotted:
             self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
 
     def update_PSF_canvas(self, x, y):
@@ -858,6 +1122,18 @@ class MyGUI:
         except Exception as e:
             self.error_raised = True
             pass
+
+    def clear_epsf(self):
+        self.ePSF_plot.clear()
+        self.fig_ePSF.clear()
+        self.ePSF_plot_canvas.draw()
+        self.fig_ePSF, self.ePSF_plot = plt.subplots()
+        self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
+        self.ePSF_plot_canvas.draw()
+        self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
+        self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.ePSF_canvas.grid(row=3, column=0)   #was row0
 
     def clear_psf(self):
         #clear plot label
@@ -1428,8 +1704,7 @@ class MyGUI:
 
                 self.console_msg(
                     "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
-                vsx_result = Vizier(
-                    catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
+                vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
                 # print(vsx_result)
                 matched_match_id = 0 #init
 
@@ -1764,14 +2039,16 @@ class MyGUI:
             #DATE=JD
             #OBSTYPE=CCD
             #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-            W Her,2459735.64795,14.599,0.010,B,NO,STD,144,-6.423,139,-6.659,na,na,X27989RA,Mittelman ATMoB Observatory|CMAGINS=-6.423|CREFERR=0.061|CREFMAG=14.933|KMAG=14.697|KMAGINS=-6.659|KREFERR=0.037|KREFMAG=14.709|VMAGINS=-6.757
+            W Her,2459735.64795,14.599,0.010,B,NO,STD,144,-6.423,139,-6.659,na,na,X27989RA,
+            Mittelman ATMoB Observatory|CMAGINS=-6.423|CREFERR=0.061|CREFMAG=14.933|KMAG=14.697
+            |KMAGINS=-6.659|KREFERR=0.037|KREFMAG=14.709|VMAGINS=-6.757
             """
             decimal_places = 3 #report is usually 3
 
             with open(report_filename, mode='w') as f:
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
-                f.write("#SOFTWARE=Self-developed using photoutils.psf; DAOPHOT\n") 
+                f.write("#SOFTWARE=Self-developed using photutils.psf; DAOPHOT\n") 
                 f.write("#DELIM=,\n")
                 f.write("#DATE=JD\n")
                 f.write("#OBSTYPE=CCD\n")
@@ -1791,14 +2068,28 @@ class MyGUI:
 
                 var_IM = var_star["true_inst_mag"]
 
-                #differential phtometry
+                #differential photometry
                 var_star_mag = var_IM - comp_IM + comp_star_mag
                 check_star_mag = check_IM - comp_IM + comp_star_mag
+
+                #error estimates
+                # MERR
+                # use the  Background2D object's median level if it was fetched
+                if not self.bkg2D == None:
+                    snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
+                    snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
+                else:
+                    snr_var_star = var_star['flux_fit']/self.image_bkg_value
+                    snr_check_star = check_star['flux_fit']/self.image_bkg_value
+
+                var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
+                check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
+                err_in_quadrature = sqrt(var_star_err**2 + check_star_err**2)
 
                 starid = var_star_name
                 date = format(float(self.date_obs_entry.get()), '.5f') 
                 mag = str(round(var_star_mag, decimal_places))
-                merr = "na"
+                merr = str(round(err_in_quadrature, decimal_places))
                 filt = self.filter_entry.get().strip()
                 trans = "NO"
                 mtype = "STD"
@@ -2110,11 +2401,16 @@ class MyGUI:
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
+        self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
+        self.photometrymenu.add_command(label="Clear Rejection List", command=self.clear_ePSF_rejection_list)
+        self.photometrymenu.add_separator()
+
         self.photometrymenu.add_command(
             label="Iteratively Subtracted PSF Photometry", command=self.perform_psf_photometry)
         self.photometrymenu.add_command(
             label="Solve Image", command=self.solve_image)
         self.photometrymenu.add_separator()
+
         self.photometrymenu.add_command(
             label="Get Comparison Stars", command=self.get_comparison_stars)
         self.menubar.add_cascade(label="Photometry", menu=self.photometrymenu)
@@ -2178,19 +2474,31 @@ class MyGUI:
         
         self.plotname_label = tk.Label(self.right_frame, text="Plot:")
         self.plotname_label.grid(row=0, column=0)  # Place label
-        #self.psf_canvas = tk.Canvas(self.right_frame, bg='grey', width=300, height=300) # Small PSF canvas
         self.fig_psf = Figure()
         self.psf_plot = self.fig_psf.add_subplot(111, projection='3d')
         # PSF 3D plot canvas - Matplotlib wrapper for Tk
-        self.psf_plot_canvas = FigureCanvasTkAgg(
-            self.fig_psf, self.right_frame)
+        self.psf_plot_canvas = FigureCanvasTkAgg(self.fig_psf, self.right_frame)
         self.psf_plot_canvas.draw()
         self.psf_canvas = self.psf_plot_canvas.get_tk_widget()
-        self.psf_canvas.config(
-            width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
+        self.psf_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.psf_canvas.grid(row=1, column=0)   #was row0
         
+        #make another canvas for 2D plot of effectivePSF
+        self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
+        self.ePSF_plotname_label.grid(row=2, column=0)  # Place label
+
+
+        self.fig_ePSF, self.ePSF_plot = plt.subplots()
+        #self.ePSF_plot = self.fig_ePSF.add_subplot(111)
+        #
+        self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
+        self.ePSF_plot_canvas.draw()
+        self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
+        self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.ePSF_canvas.grid(row=3, column=0)   #was row0
+
         # We will lay out interface things into the new left_frame grid
         self.left_frame = tk.Frame(self.left_half)
         # Place right_frame into the top of the main canvas row, right next to it
