@@ -448,7 +448,7 @@ class MyGUI:
     image_file = ""
     photometry_circles = {}
     valid_parameter_list = {}
-    ePSF_rejection_list = []
+    ePSF_rejection_list = pd.DataFrame({'x':[],'y':[]})
     epsf_model = None
     stars_tbl = None 
 
@@ -716,7 +716,9 @@ class MyGUI:
             #now set 'rejected' to True for any stars that are proximate to a coordinate in ePSF_rejection_list
             for psf_x, psf_y, psf_reject in prelim_stars_tbl:
                 prelim_stars_tbl.add_index('x')
-                for reject_x, reject_y in self.ePSF_rejection_list:
+                for index, row in self.ePSF_rejection_list.iterrows():
+                    reject_x = row['x']
+                    reject_y = row['y']
                     if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
                         #user does not want this one
                         prelim_stars_tbl.loc[psf_x]['rejected'] = True
@@ -789,7 +791,57 @@ class MyGUI:
     def clear_ePSF_rejection_list(self):
         global header
         self.console_msg("Clearing ePSF Rejection List...")
-        self.ePSF_rejection_list.clear()
+        #drop all the rows but keep the 'x' and 'y' column
+        self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
+        return
+
+    def open_ePSF_rejection_list(self):
+        global header
+
+        try:
+            options = {}
+            options['defaultextension'] = '.csv'
+            options['filetypes'] = [('CSV', '.csv')]
+            options['title'] = 'Choose the ' + self.image_file + '-rejection.csv'
+
+            file_name = fd.askopenfilename(**options)
+
+            if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+                self.console_msg("Loading Rejection list from" + str(file_name))
+                self.ePSF_rejection_list = pd.read_csv(str(file_name))
+                self.display_image()
+            else:
+                return
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+
+        return
+
+    def save_as_ePSF_rejection_list(self):
+        global header
+
+        try:
+            options = {}
+            options['defaultextension'] = '.csv'
+            options['filetypes'] = [('CSV', '.csv')]
+            options['title'] = 'Save Rejection List As... ' + self.image_file + '-rejection.csv'
+            options['initialfile'] = self.object_name_entry.get() + '-rejection.csv'
+
+            file_name = fd.asksaveasfile(**options)
+
+            if len(str(file_name)) > 0:
+                self.console_msg("Saving Rejection List as " + file_name.name)
+                dir_path = os.path.dirname(os.path.realpath(file_name.name)) + "\\"
+                self.ePSF_rejection_list.to_csv(file_name.name, index=False)
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+
         return
 
     def execute_psf_photometry(self):
@@ -915,7 +967,9 @@ class MyGUI:
             hsize = (size - 1)/2
             for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
                 color = 'white' # it is a white circle until a reject match is found
-                for reject_x, reject_y in self.ePSF_rejection_list:
+                for index, row in self.ePSF_rejection_list.iterrows():
+                    reject_x = row['x']
+                    reject_y = row['y']
                     if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
                         color = 'red'  #paint rejects red
                         break;
@@ -1031,7 +1085,7 @@ class MyGUI:
 
         if self.ePSF_results_plotted:
             #add the selected coordinate into the ePSF_rejection_list
-            self.ePSF_rejection_list.append((x,y))
+            self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y]
             #indicate the rejected ones
             self.display_image()
 
@@ -2403,17 +2457,18 @@ class MyGUI:
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
         self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
-        self.photometrymenu.add_command(label="Clear Rejection List", command=self.clear_ePSF_rejection_list)
+        self.photometrymenu.add_command(label="Open Rejection List...", command=self.open_ePSF_rejection_list)
+        self.photometrymenu.add_command(label="Save Rejection List As...", command=self.save_as_ePSF_rejection_list)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
             label="Iteratively Subtracted PSF Photometry", command=self.execute_psf_photometry)
         self.photometrymenu.add_command(
-            label="Solve Image", command=self.solve_image)
+            label="Get Comparison Stars", command=self.get_comparison_stars)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Get Comparison Stars", command=self.get_comparison_stars)
+            label="Solve Image", command=self.solve_image)
         self.menubar.add_cascade(label="Photometry", menu=self.photometrymenu)
         
         self.two_color_photometry = tk.Menu(self.menubar, tearoff=0)
