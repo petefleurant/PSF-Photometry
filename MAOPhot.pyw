@@ -282,7 +282,6 @@ To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO L
             measurement is defined as 2.5 * np.log10(1 + 1 / SNR)
             [The errors are added in quadruture.]
 
-
         --
         get_comparison_stars
         
@@ -306,7 +305,7 @@ from astropy.stats import SigmaClip
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.table import Table
-from astropy.modeling.fitting import LevMarLSQFitter, LinearLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
+from astropy.modeling.fitting import LevMarLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
 from astropy.nddata import NDData
 from astropy.nddata import Cutout2D
 from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
@@ -793,7 +792,7 @@ class MyGUI:
         self.ePSF_rejection_list.clear()
         return
 
-    def perform_psf_photometry(self):
+    def execute_psf_photometry(self):
         global header
         self.console_msg(
             "Initiating iteratively subtracted PSF photometry...")
@@ -824,29 +823,7 @@ class MyGUI:
             mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
 
 
-            """
-            
-            
-              Let IterativelySubtractedPSFPhotometry do the subtraction
-            
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            bkg = Background2D(image_data, (self.fit_shape * 1, self.fit_shape * 1),
-                               filter_size=(
-                                   bkg_filter_size, bkg_filter_size), sigma_clip=sigma_clip,
-                               bkg_estimator=bkg_estimator)
-            clean_image = image_data-bkg.background
-            save_background_image(
-                self.histogram_slider_low, self.histogram_slider_high, self.zoom_level, bkg.background)
-            
-            """
-
-            if self.fitter_stringvar.get() == "Linear Least Square":
-                self.console_msg("Setting fitter to Linear Least Square")
-                selected_fitter = LinearLSQFitter(calc_uncertainties=True)
-
-            elif self.fitter_stringvar.get() == "Sequential LS Programming":
+            if self.fitter_stringvar.get() == "Sequential LS Programming":
                 self.console_msg(
                     "Setting fitter to Sequential Least Squares Programming")
                 selected_fitter = SLSQPLSQFitter()
@@ -883,17 +860,28 @@ class MyGUI:
             result_tab = photometry(image = image_data)
             residual_image = photometry.get_residual_image()
             fits.writeto("residuals.fits", residual_image, header, overwrite=True)
-            self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
+
+            if 'message' in selected_fitter.fit_info:
+                self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
+            else:
+                self.console_msg("Done. PSF fitter; no message available")
+
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(float(self.date_obs_entry.get()))
-            
+
+            # Calculate instrumental magnitudes
+            # Following added for "True" inst mag used in AAVSO report
+            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / float(self.exposure_entry.get()))
+
+            # Create a "inst_mag_unc" column used for err in the reports 
+            if "flux_unc" in self.results_tab_df:
+                self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / float(self.exposure_entry.get())))
+
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry saved to " + str(self.image_file + ".csv"))
             self.plot_photometry()
-            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-            self.console_msg("Photometry saved to " + str(self.image_file + ".csv"))
 
         except Exception as e:
             self.error_raised = True
@@ -904,17 +892,17 @@ class MyGUI:
 
 
     # center coordinates, radius
-    def create_circle(self, x, y, r, canvas_name, outline_color="grey50"):
+    def create_circle(self, x, y, r, canvas_name, outline="grey50"):
         x0 = x - r
         y0 = y - r
         x1 = x + r
         y1 = y + r
-        self.photometry_circles[str(x)+str(y)] = canvas_name.create_oval(x0, y0, x1, y1, outline=outline_color)
+        self.photometry_circles[str(x)+str(y)] = canvas_name.create_oval(x0, y0, x1, y1, outline=outline)
 
-    def create_text(self, x, y, r, canvas_name, anchor, text=''):
+    def create_text(self, x, y, r, canvas_name, anchor, text='', fill='white'):
         x1 = x 
         y1 = y - 1.25*r
-        canvas_name.create_text(x1, y1, fill='white', anchor=anchor, text=text)
+        canvas_name.create_text(x1, y1, fill=fill, anchor=anchor, text=text)
 
     def plot_ePSF(self):
         try:
@@ -932,7 +920,7 @@ class MyGUI:
                         color = 'red'  #paint rejects red
                         break;
                 self.create_circle(x=psf_x * self.zoom_level, y=psf_y * self.zoom_level,
-                                      r=hsize * self.zoom_level, canvas_name=self.canvas, outline_color=color)
+                                      r=hsize * self.zoom_level, canvas_name=self.canvas, outline=color)
 
         except Exception as e:
             self.error_raised = True
@@ -942,11 +930,10 @@ class MyGUI:
     def plot_photometry(self):
         try:
             self.console_msg("Plotting Photometry...")
+
             labels_in_photometry_table = "label" in self.results_tab_df
-            vsx_ids_in_photometry_table = False
-            if "vsx_id" in self.results_tab_df:
-                vsx_ids_in_photometry_table = True
-            exptime = float(self.exposure_entry.get())
+            vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
+
             if os.path.isfile(self.image_file+".csv"):
                 self.fit_shape = int(self.photometry_aperture_entry.get())
                 self.results_tab_df = pd.read_csv(self.image_file + ".csv")
@@ -954,37 +941,46 @@ class MyGUI:
                     # This prefilling is required for backwards compatibility to read .phot
 		            #(now called .csv) files from older versions.
                     self.results_tab_df["removed_from_ensemble"] = False
-                # Calculate instrumental magnitudes
-		        # Following added for "True" inst mag used in AAVSO report
-                self.results_tab_df["true_inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / exptime)
-                self.results_tab_df["inst_mag"] = self.results_tab_df["true_inst_mag"] + 25
-                
-                #self.results_tab_df["inst_mag_min"] = -2.5 * np.log10((self.results_tab_df["flux_fit"] - self.results_tab_df["flux_unc"]) / exptime) + 25
-                #self.results_tab_df["inst_mag_max"] = -2.5 * np.log10((self.results_tab_df["flux_fit"] + self.results_tab_df["flux_unc"]) / exptime) + 25
 
                 self.ePSF_results_plotted = False
                 self.photometry_results_plotted = True
 
                 for index, row in self.results_tab_df.iterrows():
-                    outline_color = "grey50"
+                    outline = "grey50"
                     if labels_in_photometry_table:
                         if len(str(row["label"])) > 0 and str(row["label"]) != "nan":
-                            outline_color = "green"
-                            self.create_circle(x=row["x_fit"] * self.zoom_level, y=row["y_fit"] * self.zoom_level,
-                                r=self.fit_shape / 2 * self.zoom_level, canvas_name=self.canvas, outline_color=outline_color)
-                            self.create_text(  x=row["x_fit"] * self.zoom_level, y=row["y_fit"] * self.zoom_level, 
-                                r=self.fit_shape / 2 * self.zoom_level, canvas_name=self.canvas, anchor=tk.CENTER, text=str(int(row["label"])))
+                            outline = "green"
+                            self.create_circle(x=row["x_fit"] * self.zoom_level,
+                                y=row["y_fit"] * self.zoom_level,
+                                r=self.fit_shape / 2 * self.zoom_level,
+                                canvas_name=self.canvas, outline=outline)
+                            self.create_text(  x=row["x_fit"] * self.zoom_level,
+                                y=row["y_fit"] * self.zoom_level, 
+                                r=self.fit_shape / 2 * self.zoom_level,
+                                canvas_name=self.canvas,
+                                anchor=tk.CENTER,
+                                text=str(int(row["label"])))
                             continue
+
                     if row["removed_from_ensemble"]:
                         assert False, "Found an entry 'removed from ensemble???!'"
-                        outline_color = "red"
+
                     if vsx_ids_in_photometry_table:
                         if len(str(row["vsx_id"])) > 0 and str(row["vsx_id"]) != "nan":
-                            outline_color = "yellow"
-                            self.create_text(  x=row["x_fit"] * self.zoom_level, y=row["y_fit"] * self.zoom_level, 
-                                r=self.fit_shape / 2 * self.zoom_level, canvas_name=self.canvas, anchor=tk.CENTER, text=str(row["vsx_id"]).strip())
-                            self.create_circle(x=row["x_fit"] * self.zoom_level, y=row["y_fit"] * self.zoom_level,
-                                       r=self.fit_shape / 2 * self.zoom_level, canvas_name=self.canvas, outline_color=outline_color)
+                            outline = "yellow"
+                            self.create_circle(x=row["x_fit"] * self.zoom_level,
+                                y=row["y_fit"] * self.zoom_level,
+                                r=self.fit_shape / 2 * self.zoom_level,
+                                canvas_name=self.canvas,
+                                outline=outline)
+                            self.create_text(  x=row["x_fit"] * self.zoom_level,
+                                y=row["y_fit"] * self.zoom_level, 
+                                r=self.fit_shape / 2 * self.zoom_level,
+                                canvas_name=self.canvas,
+                                anchor=tk.CENTER,
+                                text=str(row["vsx_id"]).strip(),
+                                fill='black')
+
             self.console_msg("Plotting Photometry...complete")
             self.console_msg("Ready")
             
@@ -1006,12 +1002,7 @@ class MyGUI:
             return(matched_objects.iloc[0]["x_fit"],
                    matched_objects.iloc[0]["y_fit"],
                    matched_objects.iloc[0]["flux_fit"],
-                   #matched_objects.iloc[0]["sigma_fit"],
-                   matched_objects.iloc[0]["true_inst_mag"],
-                   matched_objects.iloc[0]["inst_mag"] #,
-                   #matched_objects.iloc[0]["flux_unc"],
-                   #matched_objects.iloc[0]["inst_mag_min"],
-                   #matched_objects.iloc[0]["inst_mag_max"],
+                   matched_objects.iloc[0]["inst_mag"]
                    )
         else:
             return(0, 0, 0, 0, 0, 0) #, 0, 0, 0)
@@ -1050,8 +1041,7 @@ class MyGUI:
             self.display_image()
             self.console_msg("")
 
-            # OLD x_fit, y_fit, flux_fit, sigma_fit, true_inst_mag, inst_mag, flux_unc, inst_mag_min, inst_mag_max = self.match_photometry_table(x, y)
-            x_fit, y_fit, flux_fit, true_inst_mag, inst_mag = self.match_photometry_table(x, y)
+            x_fit, y_fit, flux_fit, inst_mag = self.match_photometry_table(x, y)
             sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
             sky_coordinate_string = ""
             if hasattr(sky, 'ra'):
@@ -1068,7 +1058,7 @@ class MyGUI:
             self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
                                     x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
             self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
-                round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(true_inst_mag, 3)) + " " + sky_coordinate_string)
+                round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
 
             # Reset object name field in the left panel to avoid user mistakes
             self.set_entry_text(self.object_name_entry, "")
@@ -1286,19 +1276,19 @@ class MyGUI:
             
             self.console_msg("Using check star " + str(int(check_star_B["label"])))
 
-            check_IMB = check_star_B["true_inst_mag"]
+            check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
 
             check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
-            check_IMV = check_star_V["true_inst_mag"]
+            check_IMV = check_star_V["inst_mag"]
             check_V = check_star_V["match_mag"]
             
             # Find the variable_star; 
             var_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["vsx_id"] == variable_star].iloc[0]
-            var_IMB = var_star_B["true_inst_mag"]
+            var_IMB = var_star_B["inst_mag"]
 
             var_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["vsx_id"] == variable_star].iloc[0]
-            var_IMV = var_star_V["true_inst_mag"]
+            var_IMV = var_star_V["inst_mag"]
 
 
             # The proper dae-obs should be set in post-processing, where the number of subs and exposure time is 
@@ -1346,11 +1336,11 @@ class MyGUI:
                 comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
                 comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == comp].iloc[0]
 
-                comp_b_minus_v = comp_star_B["true_inst_mag"] - comp_star_V["true_inst_mag"]
+                comp_b_minus_v = comp_star_B["inst_mag"] - comp_star_V["inst_mag"]
                 delta_b_minus_v = (check_IMB - check_IMV) - comp_b_minus_v
                 delta_B_minus_V = tbv_coefficient*delta_b_minus_v
-                delta_b = check_IMB - comp_star_B["true_inst_mag"]
-                delta_v = check_IMV - comp_star_V["true_inst_mag"]
+                delta_b = check_IMB - comp_star_B["inst_mag"]
+                delta_v = check_IMV - comp_star_V["inst_mag"]
                 B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + comp_star_B["match_mag"]
                 V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
                 
@@ -1358,8 +1348,8 @@ class MyGUI:
                 result_check_star = result_check_star.append({
                     "star": "check",
                     "label": int(comp),
-                    "IMB": comp_star_B["true_inst_mag"],
-                    "IMV": comp_star_V["true_inst_mag"],
+                    "IMB": comp_star_B["inst_mag"],
+                    "IMV": comp_star_V["inst_mag"],
                     "B": comp_star_B["match_mag"],
                     "V": comp_star_V["match_mag"],
                     "delta_b_minus_v": delta_b_minus_v,
@@ -1376,8 +1366,8 @@ class MyGUI:
                 # comp_b_minus_v , calculated above
                 delta_b_minus_v = (var_IMB - var_IMV) - comp_b_minus_v
                 delta_B_minus_V = tbv_coefficient*delta_b_minus_v
-                delta_b = var_IMB - comp_star_B["true_inst_mag"]
-                delta_v = var_IMV - comp_star_V["true_inst_mag"]
+                delta_b = var_IMB - comp_star_B["inst_mag"]
+                delta_v = var_IMV - comp_star_V["inst_mag"]
                 B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + comp_star_B["match_mag"]
                 V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
                 
@@ -1385,8 +1375,8 @@ class MyGUI:
                 result_var_star = result_var_star.append({
                     "star": "var",
                     "label": int(comp),
-                    "IMB": comp_star_B["true_inst_mag"],
-                    "IMV": comp_star_V["true_inst_mag"],
+                    "IMB": comp_star_B["inst_mag"],
+                    "IMV": comp_star_V["inst_mag"],
                     "B": comp_star_B["match_mag"],
                     "V": comp_star_V["match_mag"],
                     "delta_b_minus_v": delta_b_minus_v,
@@ -1537,6 +1527,7 @@ class MyGUI:
                     self.results_tab_df.loc[index, "ra_fit"] = c.ra / u.deg
                     self.results_tab_df.loc[index, "dec_fit"] = c.dec / u.deg
                 self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+                self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
 
 
             catalog_selection = self.catalog_stringvar.get()
@@ -1743,8 +1734,7 @@ class MyGUI:
                 else:
                     self.console_msg("Found no VSX sources in the field.")
                     
-                self.results_tab_df.to_csv(
-                    self.image_file + ".csv", index=False)
+                self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
                 self.console_msg("Photometry table saved (with following comp stars) to " + str(self.image_file + ".csv"))
 
                 if using_aavso_catalog:
@@ -2043,9 +2033,16 @@ class MyGUI:
             Mittelman ATMoB Observatory|CMAGINS=-6.423|CREFERR=0.061|CREFMAG=14.933|KMAG=14.697
             |KMAGINS=-6.659|KREFERR=0.037|KREFMAG=14.709|VMAGINS=-6.757
             """
-            decimal_places = 3 #report is usually 3
+
+            #Check if the Var to report on has been measured
+            if not var_star_name in self.results_tab_df_color["vsx_id"].values:
+                self.console_msg("Var not found in table; "+ str(var_star_name) + " not found!", level=logging.ERROR)
+                return
 
             with open(report_filename, mode='w') as f:
+    
+                decimal_places = 3 #report is usually 3
+    
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
                 f.write("#SOFTWARE=Self-developed using photutils.psf; DAOPHOT\n") 
@@ -2059,14 +2056,14 @@ class MyGUI:
                 check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(check_star_name)].iloc[0]
                 comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(comp_star_name)].iloc[0]
 
-                comp_IM = comp_star["true_inst_mag"]
+                comp_IM = comp_star["inst_mag"]
                 comp_star_mag = comp_star["match_mag"]
 
-                check_IM = check_star["true_inst_mag"]
+                check_IM = check_star["inst_mag"]
                 check_star_mag = check_IM - comp_IM + comp_star_mag
                 check_star_mag_ref = check_star["match_mag"]
 
-                var_IM = var_star["true_inst_mag"]
+                var_IM = var_star["inst_mag"]
 
                 #differential photometry
                 var_star_mag = var_IM - comp_IM + comp_star_mag
@@ -2078,12 +2075,16 @@ class MyGUI:
                 if not self.bkg2D == None:
                     snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
                     snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
+                    snr_comp_star = comp_star['flux_fit']/self.bkg2D.background_median
                 else:
                     snr_var_star = var_star['flux_fit']/self.image_bkg_value
                     snr_check_star = check_star['flux_fit']/self.image_bkg_value
+                    snr_comp_star = comp_star['flux_fit']/self.image_bkg_value
 
                 var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
                 check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
+                comp_star_err = 2.5*np.log10(1 + 1/snr_comp_star)
+
                 err_in_quadrature = sqrt(var_star_err**2 + check_star_err**2)
 
                 starid = var_star_name
@@ -2102,11 +2103,11 @@ class MyGUI:
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
                 notes += "|CMAGINS=" + cmag + \
-                         "|CREFERR=" + "na" +\
+                         "|CREFERR=" + str(round(comp_star_err, decimal_places)) +\
                          "|CREFMAG=" + str(round(comp_star_mag, decimal_places)) +\
                          "|KMAG=" + str(round(check_star_mag, decimal_places)) +\
                          "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
-                         "|KREFERR=" + "na" +\
+                         "|KREFERR=" + str(round(check_star_err, decimal_places)) +\
                          "|KREFMAG=" + str(round(check_star_mag_ref, decimal_places)) +\
                          "|VMAGINS=" + str(round(var_IM, decimal_places))
                 
@@ -2406,7 +2407,7 @@ class MyGUI:
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Iteratively Subtracted PSF Photometry", command=self.perform_psf_photometry)
+            label="Iteratively Subtracted PSF Photometry", command=self.execute_psf_photometry)
         self.photometrymenu.add_command(
             label="Solve Image", command=self.solve_image)
         self.photometrymenu.add_separator()
@@ -2821,7 +2822,7 @@ class MyGUI:
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("Levenberg-Marquardt")
         self.fitter_dropdown = tk.OptionMenu(self.settings_frame, self.fitter_stringvar,
-                                             "Levenberg-Marquardt", "Linear Least Square", "Sequential LS Programming", "Simplex LS")
+                                             "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
         self.fitter_dropdown.grid(row=row, column=0, sticky=tk.EW)
         row += 1
 
@@ -2915,9 +2916,6 @@ class MyGUI:
 
         self.console_msg(self.program_full_name)
         self.console_msg("Ready")
-
-        # self.initialize_debug()
-        # self.plot_photometry()
 
         tk.mainloop()
 
