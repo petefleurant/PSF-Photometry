@@ -325,7 +325,7 @@ from photutils.psf import EPSFBuilder
 from tkinter import filedialog as fd
 import tkinter as tk
 from mpl_toolkits.mplot3d import Axes3D
-from math import sqrt
+import math
 from matplotlib import cm
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -688,9 +688,28 @@ class MyGUI:
             return
 
         try:
-            #Find local peaks in an image that are above above a specified threshold value.
-            #threashold = root 2 * image_bkg_value is a total guess
-            peaks_tbl = find_peaks(image_data, threshold=self.image_bkg_value * sqrt(2))
+            # Find local peaks in an image that are above above a specified 
+            # threshold value. Threshold determined 
+            # 
+            #determine the background, it will be subtrated from image_data, later
+            bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            #make sure this is not an even number 
+            if bkg_filter_size % 2 == 0:
+                bkg_filter_size += 1
+            sigma_clip = SigmaClip(sigma=3.0)
+            bkg_estimator = MedianBackground()
+            self.console_msg("Estimating background...")
+            self.bkg2D = Background2D(image_data, (self.fit_shape * 1, self.fit_shape * 1),
+                               filter_size=(bkg_filter_size, bkg_filter_size), sigma_clip=sigma_clip,
+                               bkg_estimator=bkg_estimator)
+
+            self.console_msg("Median Background2D level: " 
+                + str(self.bkg2D.background_median))
+
+            peaks_tbl = find_peaks(image_data, threshold=self.bkg2D.background_median * 3)
+
+            peaks_tbl_len = len(peaks_tbl)
+            self.console_msg("ePSF: found " + str(peaks_tbl_len) + " peaks.")
 
             #mask out peaks near the boundary; use twice the aperature entry
             #
@@ -713,16 +732,24 @@ class MyGUI:
             prelim_stars_tbl['y'] = y[mask]  
             prelim_stars_tbl['rejected'] = False #init
 
-            #now set 'rejected' to True for any stars that are proximate to a coordinate in ePSF_rejection_list
-            for psf_x, psf_y, psf_reject in prelim_stars_tbl:
-                prelim_stars_tbl.add_index('x')
-                for index, row in self.ePSF_rejection_list.iterrows():
-                    reject_x = row['x']
-                    reject_y = row['y']
-                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
-                        #user does not want this one
-                        prelim_stars_tbl.loc[psf_x]['rejected'] = True
-                        break
+            prelim_stars_tbl_len = len(prelim_stars_tbl)
+            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
+            self.console_msg("ePSF: " + str(prelim_stars_tbl_len) + " peaks remain.")
+
+            # now set 'rejected' to True for any stars that are proximate to 
+            # another in the same list
+            for i in range(len(prelim_stars_tbl)):
+                for ii in range(len(prelim_stars_tbl)):
+                    if ii == i:
+                        continue
+                    i_x = prelim_stars_tbl[i]['x']
+                    i_y = prelim_stars_tbl[i]['y']
+                    ii_x = prelim_stars_tbl[ii]['x']
+                    ii_y = prelim_stars_tbl[ii]['y']
+                    if math.dist([i_x, i_y], [ii_x, ii_y]) <= hsize:
+                        #reject this because it is too close to that companion
+                        prelim_stars_tbl[i]['rejected'] = True
+                        prelim_stars_tbl[ii]['rejected'] = True
     
             x = prelim_stars_tbl['x']  
             y = prelim_stars_tbl['y']  
@@ -730,26 +757,43 @@ class MyGUI:
 
             mask = reject_this == False  # only keep ones we don't reject
 
+            isolated_stars_tbl = Table()
+            isolated_stars_tbl['x'] = x[mask]  
+            isolated_stars_tbl['y'] = y[mask]  
+            isolated_stars_tbl['rejected'] = False #init
+
+            isolated_stars_tbl_len = len(isolated_stars_tbl)
+            self.console_msg("ePSF: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
+            self.console_msg("ePSF: " + str(isolated_stars_tbl_len) + " peaks remain.")
+
+            # now set 'rejected' to True for any stars that are proximate to a 
+            # coordinate in ePSF_rejection_list
+            for psf_x, psf_y, psf_reject in isolated_stars_tbl:
+                isolated_stars_tbl.add_index('x')
+                for index, row in self.ePSF_rejection_list.iterrows():
+                    reject_x = row['x']
+                    reject_y = row['y']
+                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
+                        #user does not want this one
+                        isolated_stars_tbl.loc[psf_x]['rejected'] = True
+                        break
+    
+            x = isolated_stars_tbl['x']  
+            y = isolated_stars_tbl['y']  
+            reject_this = isolated_stars_tbl['rejected']
+
+            mask = reject_this == False  # only keep ones we don't reject
+
             self.stars_tbl = Table()
             self.stars_tbl['x'] = x[mask]  
             self.stars_tbl['y'] = y[mask]  
 
-            #determine the background and subtract it from image_data
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            self.bkg2D = Background2D(image_data, (self.fit_shape * 1, self.fit_shape * 1),
-                               filter_size=(bkg_filter_size, bkg_filter_size), sigma_clip=sigma_clip,
-                               bkg_estimator=bkg_estimator)
+            stars_tbl_len = len(self.stars_tbl)
+            self.console_msg("ePSF: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
+            self.console_msg("ePSF: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
 
-            self.console_msg("Median Background2D level: " 
-                + str(self.bkg2D.background_median))
-            
-            #bkg.background is a 2D ndarray of background image
+            # Subtract background from image_data
+            # bkg.background is a 2D ndarray of background image
             clean_image = image_data-self.bkg2D.background
 
             working_image = NDData(data=clean_image)
@@ -2139,7 +2183,7 @@ class MyGUI:
                 check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
                 comp_star_err = 2.5*np.log10(1 + 1/snr_comp_star)
 
-                err_in_quadrature = sqrt(var_star_err**2 + check_star_err**2)
+                err_in_quadrature = math.sqrt(var_star_err**2 + check_star_err**2)
 
                 starid = var_star_name
                 date = format(float(self.date_obs_entry.get()), '.5f') 
@@ -2563,7 +2607,7 @@ class MyGUI:
 
         # Frame to hold settings grid
         #self.settings_frame = tk.Frame(self.left_frame)
-        self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.7))
+        self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.6))
         # Settings_frame under the canvas in the right_frame
         ##self.settings_frame_aux.grid(row=2, rowspan=2, column=0, sticky=tk.NSEW)
         # Expand settings_frame column that holds labels
@@ -2724,14 +2768,6 @@ class MyGUI:
         self.astrometrynet_key_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
         self.astrometrynet_key_entry.config(show="*")
         self.set_entry_text(self.astrometrynet_key_entry, "pwjgdcpwaugkhkln")
-        row += 1
-
-        self.obscode_label = tk.Label(
-            self.settings_frame, text="BAA Observer Code:")
-        self.obscode_label.grid(row=row, column=0, stick=tk.W)
-        self.obscode_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.obscode_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
         row += 1
 
         self.aavso_obscode_label = tk.Label(
@@ -2933,7 +2969,6 @@ class MyGUI:
             'matching_radius_entry': self.matching_radius_entry,
             'ensemble_limit_entry': self.ensemble_limit_entry,
             'decimal_places_entry': self.decimal_places_entry,
-            'obscode_entry': self.obscode_entry,
             'aavso_obscode_entry': self.aavso_obscode_entry,
             'latitude_entry': self.latitude_entry,
             'longitude_entry': self.longitude_entry,
