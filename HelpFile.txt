@@ -1,5 +1,5 @@
 
-	Welcome to MAOPhot 1.0, a PSF Photometry tool using Astropy and Photutil.psf
+	Welcome to MAOPhot 0.1, a PSF Photometry tool using Astropy and Photutil.psf
 
 	MAOPhot calculates stellar magnitudes from 2 dimensional digital 
 	astrophotographs. It can produce an extended AAVSO (American Association of 
@@ -199,6 +199,22 @@ To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO L
     This research made use of Photutils, an Astropy package for
     detection and photometry of astronomical sources (Bradley et al.
     20XX).
+
+    Installation
+    ------------
+        Execute the following in a command shell:
+            $pip install -r ./requirements.txt
+        
+    Common error:
+        ERROR: Failed building wheel for pyerfa
+    
+        solution: 
+            install latest pip
+            install Microsoft Visual C++ 14.0 or greater
+
+            
+
+
 
 
         
