@@ -6,4 +6,3 @@ pillow
 astroquery
 matplotlib
 photutils
-dearpygui
