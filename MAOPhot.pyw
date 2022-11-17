@@ -2441,7 +2441,7 @@ class MyGUI:
     def __init__(self):
         #Wis heisen Sie?
         self.program_name = "MAOPhot"
-        self.program_version = "1.0"
+        self.program_version = "0.1"
         self.program_name_note = ""
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
