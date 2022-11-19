@@ -22,12 +22,12 @@ class VerticalScrolledFrame(ttk.Frame):
 
         # Create a canvas object and a vertical scrollbar for scrolling it.
         vscrollbar = ttk.Scrollbar(self, orient=VERTICAL)
-        vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
-        #canvas = tk.Canvas(self, bd=0, highlightthickness=0,yscrollcommand=vscrollbar.set)
-        canvas = tk.Canvas(self, bd=0, height=height, highlightthickness=0,yscrollcommand=vscrollbar.set)
-        #canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        #vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
+        vscrollbar.pack(fill=Y, side=RIGHT, expand=TRUE)
+        #canvas = tk.Canvas(self, bd=0, height=height, highlightthickness=0,yscrollcommand=vscrollbar.set)
+        canvas = tk.Canvas(self, bd=0, highlightthickness=0,yscrollcommand=vscrollbar.set, height=height)
         canvas.pack(side=LEFT, fill=NONE, expand=FALSE)
-        canvas.configure(background='black')
+        canvas.configure(background='white')
         vscrollbar.config(command=canvas.yview)
 
         # Reset the view
@@ -35,7 +35,7 @@ class VerticalScrolledFrame(ttk.Frame):
         canvas.yview_moveto(0)
 
         # Create a frame inside the canvas which will be scrolled with it.
-        self.interior = interior = ttk.Frame(canvas, height=height)
+        self.interior = interior = ttk.Frame(canvas)
         interior_id = canvas.create_window(0, 0, window=interior, anchor=NW)
 
         # Track changes to the canvas and frame width and sync them,
@@ -47,9 +47,7 @@ class VerticalScrolledFrame(ttk.Frame):
             if interior.winfo_reqwidth() != canvas.winfo_width():
                 # Update the canvas's width to fit the inner frame.
                 canvas.config(width=interior.winfo_reqwidth())
-            #if interior.winfo_reqheight() != canvas.winfo_height():
-            #    # Update the canvas's width to fit the inner frame.
-            #    canvas.config(height=interior.winfo_reqheight())
+
         interior.bind('<Configure>', _configure_interior)
 
         def _configure_canvas(event):
