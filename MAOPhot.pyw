@@ -2567,6 +2567,23 @@ class MyGUI:
         self.canvas.config(xscrollcommand=self.canvas_scrollbar_H.set)
         self.canvas.config(yscrollcommand=self.canvas_scrollbar_V.set)
 
+        # Console below
+        self.console = tk.Text(self.center, #height=40,
+                               bg='black', fg='white', width=200)
+        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
+        self.console_scrollbar = tk.Scrollbar(self.center)
+        self.console_scrollbar.grid(
+            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
+
+        self.console.config(yscrollcommand=self.console_scrollbar.set)
+        self.console_scrollbar.config(command=self.console.yview)
+
+        self.console_msg(self.program_full_name)
+        self.console_msg("Ready")
+
+
+
+
         # We will lay out interface things into the new right_frame grid
         self.right_frame = tk.Frame(self.right_half)
         # Place right_frame into the top of the main canvas row, right next to it
@@ -2609,17 +2626,16 @@ class MyGUI:
         self.left_frame.grid(row=1, column=0, sticky=tk.NSEW)
         
 
-        # Frame to hold settings grid
-        self.settings_frame = tk.Frame(self.left_frame)
-        #self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.6))
+        # Frame to hold settings grid   
+        #self.settings_frame = tk.Frame(self.left_frame)
+        self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.9))
         # Settings_frame under the canvas in the right_frame
-        self.settings_frame.grid(row=2, rowspan=2, column=0, sticky=tk.NSEW)
         # Expand settings_frame column that holds labels
         ##tk.Grid.columnconfigure(self.settings_frame_aux, 0, weight=1)
-        self.settings_frame.pack(fill=tk.BOTH, expand=tk.YES)
+        self.settings_frame_aux.pack(fill=tk.BOTH, expand=tk.YES)
         #self.settings_frame.pack()
         #Keep the same name "settings_frame"
-        #self.settings_frame = self.settings_frame_aux.interior
+        self.settings_frame = self.settings_frame_aux.interior
 
         # Expand settings_frame column that holds labels
         tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
@@ -2628,9 +2644,6 @@ class MyGUI:
         settings_entry_pad = 0
         extended_settings_entry_width = 30
         extended_settings_entry_pad = 0
-
-        self.left_frame_scrollbar=tk.Scrollbar(self.settings_frame, orient="vertical")
-        self.left_frame_scrollbar.grid(column=2, rowspan=40, sticky=tk.NS)
 
         row = 0
         
@@ -2953,7 +2966,7 @@ class MyGUI:
         self.stretch_high = tk.Scale(
             self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
         self.stretch_high.set(5)
-        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.EW)
+        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
 
 
         """
@@ -2995,20 +3008,6 @@ class MyGUI:
             'object_name_entry': self.object_name_entry,
             'object_notes_entry': self.object_notes_entry
             }
-
-        # Console below
-        self.console = tk.Text(self.center, #height=40,
-                               bg='black', fg='white', width=200)
-        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
-        self.console_scrollbar = tk.Scrollbar(self.center)
-        self.console_scrollbar.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
-
-        self.console.config(yscrollcommand=self.console_scrollbar.set)
-        self.console_scrollbar.config(command=self.console.yview)
-
-        self.console_msg(self.program_full_name)
-        self.console_msg("Ready")
 
         tk.mainloop()
 
