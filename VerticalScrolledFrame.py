@@ -1,14 +1,9 @@
 # Based on
 #   https://web.archive.org/web/20170514022131id_/http://tkinter.unpythonic.net/wiki/VerticalScrolledFrame
 
-try:  # Python 2
-    import tkinter as tk
-    import tkinter.ttk as ttk
-    from tkinter.constants import *
-except ImportError:  # Python 2
-    import Tkinter as tk
-    import ttk
-    from tkinter.constants import *
+import tkinter as tk
+import tkinter.ttk as ttk
+from tkinter.constants import *
 
 
 class VerticalScrolledFrame(ttk.Frame):
@@ -25,9 +20,9 @@ class VerticalScrolledFrame(ttk.Frame):
         #vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
         vscrollbar.pack(fill=Y, side=RIGHT, expand=TRUE)
         #canvas = tk.Canvas(self, bd=0, height=height, highlightthickness=0,yscrollcommand=vscrollbar.set)
-        canvas = tk.Canvas(self, bd=0, highlightthickness=0,yscrollcommand=vscrollbar.set, height=height)
+        canvas = tk.Canvas(self, bd=0, highlightthickness=0,yscrollcommand=vscrollbar.set)
         canvas.pack(side=LEFT, fill=NONE, expand=FALSE)
-        canvas.configure(background='white')
+        canvas.configure(background='black') #### was white
         vscrollbar.config(command=canvas.yview)
 
         # Reset the view
