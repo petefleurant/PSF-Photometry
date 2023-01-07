@@ -1077,7 +1077,7 @@ class MyGUI:
                                 canvas_name=self.canvas,
                                 anchor=tk.CENTER,
                                 text=str(row["vsx_id"]).strip(),
-                                fill='black')
+                                fill='yellow')
 
             self.console_msg("Plotting Photometry...complete")
             self.console_msg("Ready")
@@ -2627,15 +2627,16 @@ class MyGUI:
         
 
         # Frame to hold settings grid   
-        #self.settings_frame = tk.Frame(self.left_frame)
-        self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(self.screen_height*.9))
+        self.settings_frame = tk.Frame(self.left_frame)
+        # self.settings_frame_aux = vsf.VerticalScrolledFrame(self.left_frame, height=int(.5*self.screen_height))
         # Settings_frame under the canvas in the right_frame
         # Expand settings_frame column that holds labels
         ##tk.Grid.columnconfigure(self.settings_frame_aux, 0, weight=1)
-        self.settings_frame_aux.pack(fill=tk.BOTH, expand=tk.YES)
-        #self.settings_frame.pack()
+        #self.settings_frame_aux.pack(fill=tk.BOTH, expand=True)
+        #self.settings_frame_aux.grid(row=0, column=0, sticky=tk.NSEW)
+        self.settings_frame.pack()
         #Keep the same name "settings_frame"
-        self.settings_frame = self.settings_frame_aux.interior
+        #self.settings_frame = self.settings_frame_aux.interior
 
         # Expand settings_frame column that holds labels
         tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
