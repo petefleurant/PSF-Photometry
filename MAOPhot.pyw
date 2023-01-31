@@ -512,20 +512,6 @@ class MyGUI:
                 image_height = image_data.shape[0]
                 self.wcs_header = WCS(image[0].header)
 
-                if self.crop_fits_entry.get() != "100":
-                    factor = 100 / int(self.crop_fits_entry.get())
-                    new_width = int(image_width / factor)
-                    new_height = int(image_height / factor)
-                    x0 = int((image_width - new_width) / 2)
-                    y0 = int((image_height - new_height) / 2)
-                    x1 = x0 + new_width
-                    y1 = y0 + new_width
-                    image_data = image_data[y0:y1, x0:x1]
-                    image_width = new_width
-                    image_height = new_height
-
-#               self.console_msg("WCS Header: " + str(self.wcs_header))
-
                 FITS_minimum = np.min(image_data)
                 FITS_maximum = np.max(image_data)
                 self.console_msg("Width: " + str(image_width) +
@@ -550,7 +536,7 @@ class MyGUI:
 
                 if 'gain' in header:
                     gain = header['gain']
-                    self.set_entry_text(self.ccd_gain, gain)
+                    self.set_entry_text(self.ccd_gain_entry, gain)
                     self.console_msg("Gain (e-/ADU): " + str(gain))
                 else:
                     self.console_msg(
@@ -590,13 +576,6 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) 
                 +" "+str(e), level=logging.ERROR)
             pass
-
-    def initialize_debug(self):
-        self.set_entry_text(self.crop_fits_entry, "30")
-        image_file = "calibrated-T11-blackhaz-CG Dra-20210516-010321-V-BIN1-E-300-012.fit"
-        if len(image_file) > 0:
-            self.load_FITS(image_file)
-            self.display_image()
 
     def open_FITS_file(self):
         global header
@@ -898,16 +877,24 @@ class MyGUI:
         try:
             bkgrms = MADStdBackgroundRMS()
             std = bkgrms(image_data)
+            self.console_msg("Background STD: " + str(format(std, '.2f')))
             self.fit_shape = int(self.photometry_aperture_entry.get())
             fwhm = float(self.fwhm_entry.get())
             star_detection_threshold = float(
                 self.star_detection_threshold_entry.get())
-            iterations = int(self.photometry_iterations_entry.get())
+
+            if self.photometry_iterations_entry.get() == "":
+                iterations = None
+            else:
+                iterations = int(self.photometry_iterations_entry.get())
+
             sharplo = float(self.sharplo_entry.get())
             bkg_filter_size = int(self.bkg_filter_size_entry.get())
             self.console_msg("Finding stars...")
-            iraffind = IRAFStarFinder(threshold = star_detection_threshold * std,
+            iraffind = IRAFStarFinder(threshold = star_detection_threshold, # * std,
                                       fwhm = fwhm,
+                                      #minsep_fwhm=0,
+                                      exclude_border=True,
                                       roundhi = 3.0,
                                       roundlo = -5.0,
                                       sharplo = sharplo,
@@ -976,7 +963,7 @@ class MyGUI:
                 self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / float(self.exposure_entry.get())))
 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-            self.console_msg("Photometry saved to " + str(self.image_file + ".csv"))
+            self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
             self.plot_photometry()
 
         except Exception as e:
@@ -1764,10 +1751,11 @@ class MyGUI:
 
                     if separation < matching_radius * u.deg:
                         #uniq
-                        already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == str(match_label)]    
-                        if not already_gotten.empty:
-                            #no need to add 'ghost'
-                            continue
+                        if "label" in self.results_tab_df:
+                            already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == str(match_label)]    
+                            if not already_gotten.empty:
+                                #no need to add 'ghost'
+                                continue
 
                         #Here if not already_gotten                        
                         self.results_tab_df.loc[index, "match_id"] = \
@@ -1961,6 +1949,8 @@ class MyGUI:
             #Some telescopes use 'I' instead of 'Ic', but AAVSO charts use Ic
             if filter_band == 'I':
                 filter_band = 'Ic'
+            if filter_band == 'R':
+                filter_band = 'Rc'
             
             ra = frame_center.to_string("hmsdms").split()[0].replace(
                 "h", " ").replace("m", " ").replace("s", "")
@@ -2683,7 +2673,8 @@ class MyGUI:
         row += 1
 
         self.star_detection_threshold_label = tk.Label(
-            self.settings_frame, text="StarFinder Threshold k in (k * std):")
+            self.settings_frame, text="StarFinder Threshold:")
+        #    self.settings_frame, text="StarFinder Threshold k in (k * std):")
         self.star_detection_threshold_label.grid(row=row, column=0, sticky=tk.E)
         self.star_detection_threshold_entry = tk.Entry(
             self.settings_frame, width=settings_entry_width)
@@ -2760,15 +2751,6 @@ class MyGUI:
             self.settings_frame, width=settings_entry_width)
         self.decimal_places_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
         self.set_entry_text(self.decimal_places_entry, "3")
-        row += 1
-
-        self.crop_fits_label = tk.Label(
-            self.settings_frame, text="FITS Crop, %:")
-        self.crop_fits_label.grid(row=row, column=0, sticky=tk.E)
-        self.crop_fits_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.crop_fits_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.crop_fits_entry, "100")
         row += 1
 
         self.astrometrynet_label = tk.Label(
@@ -3001,7 +2983,6 @@ class MyGUI:
             'vizier_catalog_entry': self.vizier_catalog_entry,
             'fitter_stringvar': self.fitter_stringvar,
             'plate_solve_on_open': self.plate_solve_on_open,
-            'crop_fits_entry': self.crop_fits_entry,
             'astrometrynet_entry': self.astrometrynet_entry,
             'astrometrynet_key_entry': self.astrometrynet_key_entry,
             'object_kref_entry': self.object_kref_entry,
