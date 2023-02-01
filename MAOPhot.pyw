@@ -55,7 +55,7 @@
 
 							Single Image Photometry
 
-    General Workflow for Single Image Phtometry and AAVSO report generation:
+    General Workflow for Single Image Photometry and AAVSO report generation:
         Step 1- Prepare master images 
             - The master should be calibrated and in proper FIT format. It 
 			should be cropped such that no 'black' or zero value ADU exists at 
@@ -296,8 +296,7 @@ To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO L
     <maxim.usatov@bcsatellite.net> Refer to metropsf.pdf for license information.
 
     This research made use of Photutils, an Astropy package for
-    detection and photometry of astronomical sources (Bradley et al.
-    20XX).
+    detection and photometry of astronomical sources (Bradley et al. 20XX).
 
 """
 from ast import Assert

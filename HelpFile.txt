@@ -54,7 +54,7 @@
 
 							Single Image Photometry
 
-    General Workflow for Single Image Phtometry and AAVSO report generation:
+    General Workflow for Single Image Photometry and AAVSO report generation:
         Step 1- Prepare master images 
             - The master should be calibrated and in proper FIT format. It 
 			should be cropped such that no 'black' or zero value ADU exists at 
@@ -213,6 +213,42 @@ To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO L
             install Microsoft Visual C++ 14.0 or greater
 
             
+List of parameters
+    photometry_aperture_entry 
+    min_ensemble_magnitude_entry
+    max_ensemble_magnitude_entry
+    fwhm_entry
+    star_detection_threshold_entry
+    photometry_iterations_entry
+    sharplo_entry
+    bkg_filter_size_entry
+    matching_radius_entry
+    ensemble_limit_entry
+    decimal_places_entry
+    aavso_obscode_entry
+    latitude_entry
+    longitude_entry
+    height_entry
+    telescope_entry
+    tbv_entry
+    tv_bv_entry
+    tb_bv_entry
+    accessory_entry
+    ccd_entry
+    ccd_gain_entry
+    catalog_stringvar
+    vizier_catalog_entry
+    fitter_stringvar
+    plate_solve_on_open
+    crop_fits_entry
+    astrometrynet_entry
+    astrometrynet_key_entry
+    object_kref_entry
+    object_sel_comp_entry
+    object_name_entry
+    object_notes_entry
+
+
 
 
 
