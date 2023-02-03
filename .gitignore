@@ -21,3 +21,4 @@ __pycache__/VerticalScrolledFrame.cpython-311.pyc
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 2022 8 1 V1117 Her/aavso_reports/AAVSO V1117_Her_V V1117 Her_single.txt
 popupWindowExample.py
+*.pyc
