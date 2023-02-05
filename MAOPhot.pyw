@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+4# -*- coding: utf-8 -*-
 """
 	Welcome to MAOPhot 0.1,  a PSF Photometry tool using Astropy and Photutil.psf
 
@@ -62,8 +62,8 @@
 			the edges. The image need not be plate solved but RA and DEC values
 			should exist for proper plate solving in MAOPhot
         
-        Step 2- 'File->Load Settings...'
-            - Fill in settings and then File->Save Settings As...
+        Step 2- In Settings popup window 'Load...'
+            - Fill in settings and then Save...
 
         Step 3- 'File->Open...' 
 		(e.g., 'ZTau_I_300s_30pct.fit')
@@ -109,9 +109,9 @@
 			solved but RA and DEC values should exist for proper plate solving
 			in MAOPhot 
         
-        Step 2- 'File->Load Settings...'
-            - Fill in settings and then File->Save Settings As...
-        
+        Step 2- In Settings popup window 'Load...'
+            - Fill in settings and then Save...
+
         Step 3- 'File->Open...' B color FIT file 
 		(e.g., 'W Her V CROP_60.fits')
             - Adjust Image Stretching and Histogram Stretch if necessary
@@ -322,6 +322,7 @@ from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
 from photutils.psf import EPSFBuilder
 from tkinter import filedialog as fd
+from tkinter import ttk
 import tkinter as tk
 from mpl_toolkits.mplot3d import Axes3D
 import math
@@ -419,11 +420,9 @@ def generate_FITS_thumbnail(stretch_min, stretch_max, zoom_level,
                                      str(stretch_max / 100 * FITS_maximum),
                                      a=generated_image)
 
-
 image_file = ""
 image_data = []
-
-        
+       
 
 
 class MyGUI:
@@ -450,6 +449,39 @@ class MyGUI:
     ePSF_rejection_list = pd.DataFrame({'x':[],'y':[]})
     epsf_model = None
     stars_tbl = None 
+
+    # Parameter declaration  and init 
+    photometry_aperture_entry = None
+    max_ensemble_magnitude_entry = None
+    fwhm_entry = None
+    star_detection_threshold_entry = None
+    photometry_iterations_entry = None
+    sharplo_entry = None
+    bkg_filter_size_entry = None
+    matching_radius_entry = None
+    decimal_places_entry = None
+    aavso_obscode_entry = None
+    telescope_entry = None
+    tbv_entry = None
+    tv_bv_entry = None
+    tb_bv_entry = None
+    tvr_entry = None
+    tv_vr_entry = None
+    tr_vr_entry = None
+    catalog_stringvar = None
+    vizier_catalog_entry = None
+    fitter_stringvar = None
+    plate_solve_on_open = None
+    astrometrynet_entry = None
+    astrometrynet_key_entry = None
+    object_kref_entry = None
+    object_sel_comp_entry = None
+    object_name_entry = None
+    object_notes_entry = None
+
+    #
+    # The TopLoevel window containing the settings
+    es_top = None
 
     def console_msg(self, MAOPhot_message, level=logging.INFO):
         # add a time stamp
@@ -1863,7 +1895,6 @@ class MyGUI:
         self.update_display()
 
 
-
     def save_settings_as(self):
         options = {}
         options['defaultextension'] = '.txt'
@@ -1890,10 +1921,16 @@ class MyGUI:
                     w.writeheader()
                     w.writerow(settings)
                 self.console_msg("Saved.")
+        
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+        finally:
+            # bring the settings window back to the front                
+            self.es_top.lift()
+
+
 
     def load_settings(self):
         try:
@@ -1925,24 +1962,36 @@ class MyGUI:
                             getattr(self, key).set(settings[key])
                         if type(getattr(self, key)) == tk.BooleanVar:
                             getattr(self, key).set(settings[key])
-                
-                pass
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+        finally:
+            # bring the settings window back to the front                
+            self.es_top.lift()
 
 
-    def edit_settings(self):
+    #
+    # show_settings; From File->Edit Settings.... 
+    #
+    def show_settings(self):
+        self.es_top.deiconify()
+
+    #
+    # edit_setting; command for "File->Edit Settings..." menu item which creates popup window
+    #
+    def launch_settings(self):
         try:
-            es_= tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
-            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*.8)))
+            es_ = tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
+
+            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*.55)))
             es_.title("Settings")
-            es_top = es_
+            self.es_top = es_
 
-            es_top.maxsize(width=int(self.screen_width*.2), height=int(self.screen_height))
+            self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*.55))
 
-            tk.Grid.columnconfigure(es_top, 0, weight=1)
+            tk.Grid.columnconfigure(self.es_top, 0, weight=1)
 
             settings_entry_width = 6
             settings_entry_pad = 0
@@ -1950,271 +1999,261 @@ class MyGUI:
             extended_settings_entry_pad = 0
 
             row = 0
-            
+
             photometry_aperture_label = tk.Label(
-                es_top, text="Fitting Width/Height, px:")
-            photometry_aperture_label.grid(row=row, column=0, sticky=tk.E)
-            photometry_aperture_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            photometry_aperture_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(photometry_aperture_entry, self.photometry_aperture_entry.get())
+                self.es_top, text="Fitting Width/Height, px:")
+            photometry_aperture_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.photometry_aperture_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.photometry_aperture_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             max_ensemble_magnitude_label = tk.Label(
-                es_top, text="Maximum Ensemble Magnitude:")
-            max_ensemble_magnitude_label.grid(row=row, column=0, sticky=tk.E)
-            max_ensemble_magnitude_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            max_ensemble_magnitude_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(max_ensemble_magnitude_entry, self.max_ensemble_magnitude_entry.get())
+                self.es_top, text="Maximum Ensemble Magnitude:")
+            max_ensemble_magnitude_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.max_ensemble_magnitude_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.max_ensemble_magnitude_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            fwhm_label = tk.Label(es_top, text="FWHM, px:")
-            fwhm_label.grid(row=row, column=0, sticky=tk.E)
-            fwhm_entry = tk.Entry(es_top, width=settings_entry_width)
-            fwhm_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(fwhm_entry, self.fwhm_entry.get())
+            fwhm_label = tk.Label(self.es_top, text="FWHM, px:")
+            fwhm_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.fwhm_entry = tk.Entry(self.es_top, width=settings_entry_width)
+            self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
+
 
             star_detection_threshold_label = tk.Label(
-                es_top, text="StarFinder Threshold k in (k * std):")
-            star_detection_threshold_label.grid(row=row, column=0, sticky=tk.E)
-            star_detection_threshold_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            star_detection_threshold_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(star_detection_threshold_entry, self.star_detection_threshold_entry.get())
+                self.es_top, text="StarFinder Threshold k in (k * std):")
+            star_detection_threshold_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.star_detection_threshold_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.star_detection_threshold_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             photometry_iterations_label = tk.Label(
-                es_top, text="Photometry Iterations:")
-            photometry_iterations_label.grid(row=row, column=0, sticky=tk.E)
-            photometry_iterations_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            photometry_iterations_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(photometry_iterations_entry, self.photometry_iterations_entry.get())
+                self.es_top, text="Photometry Iterations:")
+            photometry_iterations_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.photometry_iterations_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.photometry_iterations_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             sharplo_label = tk.Label(
-                es_top, text="Lower Bound for Sharpness:")
-            sharplo_label.grid(row=row, column=0, sticky=tk.E)
-            sharplo_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            sharplo_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(sharplo_entry, self.sharplo_entry.get())
+                self.es_top, text="Lower Bound for Sharpness:")
+            sharplo_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.sharplo_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.sharplo_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             bkg_filter_size_label = tk.Label(
-                es_top, text="Background Median Filter, px:")
-            bkg_filter_size_label.grid(row=row, column=0, sticky=tk.E)
-            bkg_filter_size_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            bkg_filter_size_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(bkg_filter_size_entry, self.bkg_filter_size_entry.get())
-            row += 1
-
-            filter_label = tk.Label(es_top, text="CCD Filter:")
-            filter_label.grid(row=row, column=0, sticky=tk.E)
-            filter_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            filter_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(filter_entry, self.filter_entry.get())
+                self.es_top, text="Background Median Filter, px:")
+            bkg_filter_size_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.bkg_filter_size_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.bkg_filter_size_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             exposure_label = tk.Label(
-                es_top, text="Exposure Time:")
-            exposure_label.grid(row=row, column=0, sticky=tk.E)
-            exposure_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            exposure_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(exposure_entry, self.exposure_entry.get())
+                self.es_top, text="Exposure Time:")
+            exposure_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.exposure_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.exposure_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             matching_radius_label = tk.Label(
-                es_top, text="Matching Radius, arcsec:")
-            matching_radius_label.grid(row=row, column=0, sticky=tk.E)
-            matching_radius_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            matching_radius_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(matching_radius_entry, self.matching_radius_entry.get())
+                self.es_top, text="Matching Radius, arcsec:")
+            matching_radius_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.matching_radius_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.matching_radius_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             decimal_places_label = tk.Label(
-                es_top, text="Decimal Places to Report:")
-            decimal_places_label.grid(row=row, column=0, sticky=tk.E)
-            decimal_places_entry = tk.Entry(
-                es_top, width=settings_entry_width)
-            decimal_places_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-            self.set_entry_text(decimal_places_entry, self.decimal_places_entry.get())
+                self.es_top, text="Decimal Places to Report:")
+            decimal_places_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.decimal_places_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.decimal_places_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             astrometrynet_label = tk.Label(
-                es_top, text="Astrometry.net Server:")
-            astrometrynet_label.grid(row=row, column=0, sticky=tk.E)
-            astrometrynet_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width)
-            astrometrynet_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-            self.set_entry_text(astrometrynet_entry, self.astrometrynet_entry.get())
+                self.es_top, text="Astrometry.net Server:")
+            astrometrynet_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.astrometrynet_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width)
+            self.astrometrynet_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
             row += 1
 
             astrometrynet_key_label = tk.Label(
-                es_top, text="Astrometry.net API Key:")
-            astrometrynet_key_label.grid(row=row, column=0, sticky=tk.E)
-            astrometrynet_key_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width)
-            astrometrynet_key_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-            astrometrynet_key_entry.config(show="*")
-            self.set_entry_text(astrometrynet_key_entry, self.astrometrynet_key_entry.get())
+                self.es_top, text="Astrometry.net API Key:")
+            astrometrynet_key_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.astrometrynet_key_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width)
+            self.astrometrynet_key_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
+            self.astrometrynet_key_entry.config(show="*")
             row += 1
 
             aavso_obscode_label = tk.Label(
-                es_top, text="AAVSO Observer Code:")
-            aavso_obscode_label.grid(row=row, column=0, sticky=tk.E)
-            aavso_obscode_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            aavso_obscode_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-            self.set_entry_text(aavso_obscode_entry, self.aavso_obscode_entry.get())
+                self.es_top, text="AAVSO Observer Code:")
+            aavso_obscode_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.aavso_obscode_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.aavso_obscode_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
             row += 1
 
-            telescope_label = tk.Label(es_top, text="Telescope:")
-            telescope_label.grid(row=row, column=0, sticky=tk.E)
-            telescope_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            telescope_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(telescope_entry, self.telescope_entry.get())
+            separator_telescope = ttk.Separator(self.es_top, orient='horizontal')
+            separator_telescope.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            telescope_label = tk.Label(self.es_top, text="Telescope:")
+            telescope_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.telescope_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.telescope_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             #
             # Tbv, Tb_bv, Tv_bv
             #
 
-            tbv_label = tk.Label(es_top, text="Tbv:")
-            tbv_label.grid(row=row, column=0, sticky=tk.E)
-            tbv_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tbv_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tbv_entry, self.tbv_entry.get())
+            tbv_label = tk.Label(self.es_top, text="Tbv:")
+            tbv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tbv_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tbv_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            tv_bv_label = tk.Label(es_top, text="Tv_bv:")
-            tv_bv_label.grid(row=row, column=0, sticky=tk.E)
-            tv_bv_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tv_bv_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tv_bv_entry, self.tv_bv_entry.get())
+            tv_bv_label = tk.Label(self.es_top, text="Tv_bv:")
+            tv_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tv_bv_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tv_bv_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            tb_bv_label = tk.Label(es_top, text="Tb_bv:")
-            tb_bv_label.grid(row=row, column=0, sticky=tk.E)
-            tb_bv_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tb_bv_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tb_bv_entry, self.tb_bv_entry.get())
+            tb_bv_label = tk.Label(self.es_top, text="Tb_bv:")
+            tb_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tb_bv_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tb_bv_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             #
-            # Tvr, tr_vr, Tv_vr
+            # Tvr, Tr_vr, Tv_vr
             #
-            tvr_label = tk.Label(es_top, text="Tvr:")
-            tvr_label.grid(row=row, column=0, sticky=tk.E)
-            tvr_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tvr_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tvr_entry, self.tvr_entry.get())
+            tvr_label = tk.Label(self.es_top, text="Tvr:")
+            tvr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tvr_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tvr_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            tv_vr_label = tk.Label(es_top, text="Tv_vr:")
-            tv_vr_label.grid(row=row, column=0, sticky=tk.E)
-            tv_vr_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tv_vr_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tv_vr_entry, self.tv_vr_entry.get())
+            tv_vr_label = tk.Label(self.es_top, text="Tv_vr:")
+            tv_vr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tv_vr_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tv_vr_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            tr_vr_label = tk.Label(es_top, text="tr_vr:")
-            tr_vr_label.grid(row=row, column=0, sticky=tk.E)
-            tr_vr_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            tr_vr_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(tr_vr_entry, self.tr_vr_entry.get())
+            tr_vr_label = tk.Label(self.es_top, text="Tr_vr:")
+            tr_vr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tr_vr_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tr_vr_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            separator_telescope_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_telescope_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            filter_label = tk.Label(self.es_top, text="CCD Filter:")
+            filter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.filter_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.filter_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             date_obs_label = tk.Label(
-                es_top, text="Date-Obs (JD):")
-            date_obs_label.grid(row=row, column=0, sticky=tk.E)
-            date_obs_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            date_obs_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(date_obs_entry, self.date_obs_entry.get())
+                self.es_top, text="Date-Obs (JD):")
+            date_obs_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.date_obs_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.date_obs_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             object_name_label = tk.Label(
-                es_top, text="Object Name:")
-            object_name_label.grid(row=row, column=0, sticky=tk.E)
-            object_name_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            object_name_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(object_name_entry, self.object_name_entry.get())
+                self.es_top, text="Object Name:")
+            object_name_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_name_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.object_name_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            object_notes_label = tk.Label(es_top, text="Notes:")
-            object_notes_label.grid(row=row, column=0, sticky=tk.E)
-            object_notes_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            object_notes_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(object_notes_entry, self.object_notes_entry.get())
+            object_notes_label = tk.Label(self.es_top, text="Notes:")
+            object_notes_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_notes_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.object_notes_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            object_kref_label = tk.Label(es_top, text="Use Check Star (AAVSO Label):")
-            object_kref_label.grid(row=row, column=0, sticky=tk.E)
-            object_kref_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            object_kref_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(object_kref_entry, self.object_kref_entry.get())
+            object_kref_label = tk.Label(self.es_top, text="Use Check Star (AAVSO Label):")
+            object_kref_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_kref_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.object_kref_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            object_sel_comp_label = tk.Label(es_top, text="Select Comp Stars (AAVSO Label):")
-            object_sel_comp_label.grid(row=row, column=0, sticky=tk.E)
-            object_sel_comp_entry = tk.Entry(
-                es_top, width=extended_settings_entry_width, background='pink')
-            object_sel_comp_entry.grid(row=row, column=1, sticky=tk.EW)
-            self.set_entry_text(object_sel_comp_entry, self.object_sel_comp_entry.get())
+            object_sel_comp_label = tk.Label(self.es_top, text="Select Comp Stars (AAVSO Label):")
+            object_sel_comp_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_sel_comp_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.object_sel_comp_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            catalog_label = tk.Label(es_top, text="Comparison Catalog:")
-            catalog_label.grid(row=row, column=0, sticky=tk.E)
-            catalog_stringvar = tk.StringVar()
-            catalog_stringvar.set(self.catalog_stringvar.get())
+            catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
+            catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             catalog_dropdown = tk.OptionMenu(
-                es_top, catalog_stringvar, "AAVSO", "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog")
-            catalog_dropdown.grid(row=row, column=1, sticky=tk.EW)
+                self.es_top, self.catalog_stringvar, "AAVSO", "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog")
+            catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            vizier_catalog_label = tk.Label(es_top, text="AAVSO ChartID or VizieR Catalog Number:")
-            vizier_catalog_label.grid(row=row, column=0, sticky=tk.W)
-            vizier_catalog_entry = tk.Entry(es_top,width=extended_settings_entry_width)
-            vizier_catalog_entry.grid(row=row, column=1, sticky=tk.E)
-            self.set_entry_text(vizier_catalog_entry, self.vizier_catalog_entry.get())
+            vizier_catalog_label = tk.Label(self.es_top, text="AAVSO ChartID or VizieR Catalog Number:")
+            vizier_catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.W)
+            self.vizier_catalog_entry = tk.Entry(self.es_top,width=extended_settings_entry_width)
+            self.vizier_catalog_entry.grid(row=row, column=2, sticky=tk.E)
             row += 1
 
-            fitter_label = tk.Label(es_top, text="PSF Fitter:")
-            fitter_label.grid(row=row, column=0, sticky=tk.E)
-            fitter_stringvar = tk.StringVar()
-            fitter_stringvar.set(self.fitter_stringvar.get())
-            fitter_dropdown = tk.OptionMenu(es_top, fitter_stringvar,
+            fitter_label = tk.Label(self.es_top, text="PSF Fitter:")
+            fitter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
                                                 "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
-            fitter_dropdown.grid(row=row, column=1, sticky=tk.EW)
+            fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            plate_solve_on_open_label = tk.Label(es_top, text="Plate solve when loading FITS file:")
-            plate_solve_on_open_label.grid(row=row, column=0, sticky=tk.E)
-            plate_solve_on_open = tk.BooleanVar()
-            plate_solve_on_open_checkbox = tk.Checkbutton(
-                es_top, variable=plate_solve_on_open)
-            plate_solve_on_open_checkbox.grid(row=row, column=1, sticky=tk.W)
-            plate_solve_on_open.set(self.plate_solve_on_open.get())
+            plate_solve_on_open_label = tk.Label(self.es_top, text="Plate solve when loading FITS file:")
+            plate_solve_on_open_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.plate_solve_on_open_checkbox = tk.Checkbutton(
+                self.es_top, variable=self.plate_solve_on_open)
+            self.plate_solve_on_open_checkbox.grid(row=row, column=2, sticky=tk.W)
+            row += 1
 
-            #tk.Label(top, text= "Hello World!", font=('Mistral 18 bold')).place(x=150,y=80)
-            pass
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            #
+            # Buttons 
+            #
+            load_settings_button = tk.Button(self.es_top, text="Load...", command=self.load_settings)
+            load_settings_button.grid(row=row, column=0, padx=20, sticky=tk.W)
+            save_settings_button = tk.Button(self.es_top, text="Save As...", command=self.save_settings_as)
+            save_settings_button.grid(row=row, column=1, padx=20) #, sticky=tk.W)
+            close_settings_button = tk.Button(self.es_top, text="Close", command=self.es_top.withdraw) #hide
+            close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
+            row += 1
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -2747,11 +2786,7 @@ class MyGUI:
             label="Save As...", command=self.save_FITS_file_as)
         self.filemenu.add_separator()
         self.filemenu.add_command(
-            label="Load Settings...", command=self.load_settings)
-        self.filemenu.add_command(
-            label="Edit Settings...", command=self.edit_settings)
-        self.filemenu.add_command(
-            label="Save Settings As...", command=self.save_settings_as)
+            label="Edit Settings...", command=self.show_settings)
         self.filemenu.add_separator()
         self.filemenu.add_command(label="Exit", command=self.exit_app)
         self.menubar.add_cascade(label="File", menu=self.filemenu)
@@ -2906,258 +2941,18 @@ class MyGUI:
         extended_settings_entry_width = 30
         extended_settings_entry_pad = 0
 
-        row = 0
-        
-        self.photometry_aperture_label = tk.Label(
-            self.settings_frame, text="Fitting Width/Height, px:")
-        self.photometry_aperture_label.grid(row=row, column=0, sticky=tk.E)
-        self.photometry_aperture_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.photometry_aperture_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.photometry_aperture_entry, self.fit_shape)
-        row += 1
-
-        self.max_ensemble_magnitude_label = tk.Label(
-            self.settings_frame, text="Maximum Ensemble Magnitude:")
-        self.max_ensemble_magnitude_label.grid(row=row, column=0, sticky=tk.E)
-        self.max_ensemble_magnitude_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.max_ensemble_magnitude_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.max_ensemble_magnitude_entry, "20")
-        row += 1
-
-        self.fwhm_label = tk.Label(self.settings_frame, text="FWHM, px:")
-        self.fwhm_label.grid(row=row, column=0, sticky=tk.E)
-        self.fwhm_entry = tk.Entry(self.settings_frame, width=settings_entry_width)
-        self.fwhm_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.fwhm_entry, "4")
-        row += 1
-
-        self.star_detection_threshold_label = tk.Label(
-            self.settings_frame, text="StarFinder Threshold:")
-        #    self.settings_frame, text="StarFinder Threshold k in (k * std):")
-        self.star_detection_threshold_label.grid(row=row, column=0, sticky=tk.E)
-        self.star_detection_threshold_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.star_detection_threshold_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.star_detection_threshold_entry, "3.5")
-        row += 1
-
-        self.photometry_iterations_label = tk.Label(
-            self.settings_frame, text="Photometry Iterations:")
-        self.photometry_iterations_label.grid(row=row, column=0, sticky=tk.E)
-        self.photometry_iterations_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.photometry_iterations_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.photometry_iterations_entry, "1")
-        row += 1
-
-        self.sharplo_label = tk.Label(
-            self.settings_frame, text="Lower Bound for Sharpness:")
-        self.sharplo_label.grid(row=row, column=0, sticky=tk.E)
-        self.sharplo_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.sharplo_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.sharplo_entry, "0.5")
-        row += 1
-
-        self.bkg_filter_size_label = tk.Label(
-            self.settings_frame, text="Background Median Filter, px:")
-        self.bkg_filter_size_label.grid(row=row, column=0, sticky=tk.E)
-        self.bkg_filter_size_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.bkg_filter_size_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.bkg_filter_size_entry, "1")
-        row += 1
-
-        self.filter_label = tk.Label(self.settings_frame, text="CCD Filter:")
-        self.filter_label.grid(row=row, column=0, sticky=tk.E)
-        self.filter_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.filter_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.filter_entry, "")
-        row += 1
-
-        self.exposure_label = tk.Label(
-            self.settings_frame, text="Exposure Time:")
-        self.exposure_label.grid(row=row, column=0, sticky=tk.E)
-        self.exposure_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.exposure_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.exposure_entry, "0")
-        row += 1
-
-        self.matching_radius_label = tk.Label(
-            self.settings_frame, text="Matching Radius, arcsec:")
-        self.matching_radius_label.grid(row=row, column=0, sticky=tk.E)
-        self.matching_radius_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.matching_radius_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.matching_radius_entry, "2")
-        row += 1
-
-        self.decimal_places_label = tk.Label(
-            self.settings_frame, text="Decimal Places to Report:")
-        self.decimal_places_label.grid(row=row, column=0, sticky=tk.E)
-        self.decimal_places_entry = tk.Entry(
-            self.settings_frame, width=settings_entry_width)
-        self.decimal_places_entry.grid(row=row, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-        self.set_entry_text(self.decimal_places_entry, "3")
-        row += 1
-
-        self.astrometrynet_label = tk.Label(
-            self.settings_frame, text="Astrometry.net Server:")
-        self.astrometrynet_label.grid(row=row, column=0, sticky=tk.E)
-        self.astrometrynet_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width)
-        self.astrometrynet_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-        self.set_entry_text(self.astrometrynet_entry, "nova.astrometry.net")
-        row += 1
-
-        self.astrometrynet_key_label = tk.Label(
-            self.settings_frame, text="Astrometry.net API Key:")
-        self.astrometrynet_key_label.grid(row=row, column=0, sticky=tk.E)
-        self.astrometrynet_key_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width)
-        self.astrometrynet_key_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-        self.astrometrynet_key_entry.config(show="*")
-        self.set_entry_text(self.astrometrynet_key_entry, "pwjgdcpwaugkhkln")
-        row += 1
-
-        self.aavso_obscode_label = tk.Label(
-            self.settings_frame, text="AAVSO Observer Code:")
-        self.aavso_obscode_label.grid(row=row, column=0, sticky=tk.E)
-        self.aavso_obscode_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.aavso_obscode_entry.grid(row=row, column=1, ipadx=extended_settings_entry_pad)
-        row += 1
-
-        self.telescope_label = tk.Label(self.settings_frame, text="Telescope:")
-        self.telescope_label.grid(row=row, column=0, sticky=tk.E)
-        self.telescope_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.telescope_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
         #
-        # Tbv, tb_bv, Tv_bv
+        # Some parameter settings need initial values
         #
-        self.tbv_label = tk.Label(self.settings_frame, text="Tbv:")
-        self.tbv_label.grid(row=row, column=0, sticky=tk.E)
-        self.tbv_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tbv_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.tv_bv_label = tk.Label(self.settings_frame, text="Tv_bv:")
-        self.tv_bv_label.grid(row=row, column=0, sticky=tk.E)
-        self.tv_bv_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tv_bv_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.tb_bv_label = tk.Label(self.settings_frame, text="Tb_bv:")
-        self.tb_bv_label.grid(row=row, column=0, sticky=tk.E)
-        self.tb_bv_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tb_bv_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        #
-        # Tvr, tr_vr, Tv_vr
-        #
-        self.tvr_label = tk.Label(self.settings_frame, text="Tvr:")
-        self.tvr_label.grid(row=row, column=0, sticky=tk.E)
-        self.tvr_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tvr_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.tv_vr_label = tk.Label(self.settings_frame, text="Tv_vr:")
-        self.tv_vr_label.grid(row=row, column=0, sticky=tk.E)
-        self.tv_vr_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tv_vr_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.tr_vr_label = tk.Label(self.settings_frame, text="Tr_vr:")
-        self.tr_vr_label.grid(row=row, column=0, sticky=tk.E)
-        self.tr_vr_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.tr_vr_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-
-
-        self.date_obs_label = tk.Label(
-            self.settings_frame, text="Date-Obs (JD):")
-        self.date_obs_label.grid(row=row, column=0, sticky=tk.E)
-        self.date_obs_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.date_obs_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.object_name_label = tk.Label(
-            self.settings_frame, text="Object Name:")
-        self.object_name_label.grid(row=row, column=0, sticky=tk.E)
-        self.object_name_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.object_name_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.object_notes_label = tk.Label(self.settings_frame, text="Notes:")
-        self.object_notes_label.grid(row=row, column=0, sticky=tk.E)
-        self.object_notes_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.object_notes_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.object_kref_label = tk.Label(self.settings_frame, text="Use Check Star (AAVSO Label):")
-        self.object_kref_label.grid(row=row, column=0, sticky=tk.E)
-        self.object_kref_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.object_kref_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.object_sel_comp_label = tk.Label(self.settings_frame, text="Select Comp Stars (AAVSO Label):")
-        self.object_sel_comp_label.grid(row=row, column=0, sticky=tk.E)
-        self.object_sel_comp_entry = tk.Entry(
-            self.settings_frame, width=extended_settings_entry_width, background='pink')
-        self.object_sel_comp_entry.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.catalog_label = tk.Label(self.settings_frame, text="Comparison Catalog:")
-        self.catalog_label.grid(row=row, column=0, sticky=tk.E)
         self.catalog_stringvar = tk.StringVar()
         self.catalog_stringvar.set("AAVSO")
-        self.catalog_dropdown = tk.OptionMenu(
-            self.settings_frame, self.catalog_stringvar, "AAVSO", "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog")
-        self.catalog_dropdown.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.vizier_catalog_label = tk.Label(self.settings_frame, text="AAVSO ChartID or VizieR Catalog Number:")
-        self.vizier_catalog_label.grid(row=row, column=0, sticky=tk.W)
-        self.vizier_catalog_entry = tk.Entry(self.settings_frame,width=extended_settings_entry_width)
-        self.vizier_catalog_entry.grid(row=row, column=1, sticky=tk.E)
-        row += 1
-
-        self.fitter_label = tk.Label(self.settings_frame, text="PSF Fitter:")
-        self.fitter_label.grid(row=row, column=0, sticky=tk.E)
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("Levenberg-Marquardt")
-        self.fitter_dropdown = tk.OptionMenu(self.settings_frame, self.fitter_stringvar,
-                                             "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
-        self.fitter_dropdown.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-
-        self.plate_solve_on_open_label = tk.Label(self.settings_frame, text="Plate solve when loading FITS file:")
-        self.plate_solve_on_open_label.grid(row=row, column=0, sticky=tk.E)
         self.plate_solve_on_open = tk.BooleanVar()
-        self.plate_solve_on_open_checkbox = tk.Checkbutton(
-            self.settings_frame, variable=self.plate_solve_on_open)
-        self.plate_solve_on_open_checkbox.grid(row=row, column=1, sticky=tk.W)
         self.plate_solve_on_open.set(True)
-        row += 1
+
+
+        row = 0
 
         self.stretching_label = tk.Label(
             self.settings_frame, text="Image Stretching:")
@@ -3186,10 +2981,14 @@ class MyGUI:
         self.stretch_high.set(5)
         self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
 
+        #
+        # laumch_settings; pops up settings window and initializes all settings
+        #
+        self.launch_settings()
 
         """
         valid_parameter_list facilitates loading from and saving to a settings file
-        using File-->Load Settings... and File-->Save Settings...
+        buttons in popup window: Settings
         """
         self.valid_parameter_list = {
             'photometry_aperture_entry': self.photometry_aperture_entry,
