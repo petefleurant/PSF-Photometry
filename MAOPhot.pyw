@@ -190,6 +190,7 @@ To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO L
 	Y And,2459839.71998,13.794,0.02,B,YES,STD,ENSEMBLE,na,130,13.668,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.668|KMAGINS=-7.763|KREFMAG=13.664|Tbv=1.186|VMAGINS=-7.659 
 	Y And,2459839.73034,12.398,0.019,V,YES,STD,ENSEMBLE,na,130,13.012,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.012|KMAGINS=-8.265|KREFMAG=13.019|Tv_bv=-0.131|VMAGINS=-8.782 
     
+    2459839.73034 = 17 Sept 2022
 	
 	Examine in aavso_reports/ directory and submit to AAVSO using WebObs 
 
@@ -1300,11 +1301,38 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
             
-            
-    def two_color_photometry_BV(self):
+
+    #
+    #   BV_two_color_photometry: called from Menu selection  Two Color Photometry->(B-V)
+    #
+    def BV_two_color_photometry(self):
+        self.two_color_photometry('B-V')
+
+    #
+    #   VR_two_color_photometry: called from Menu selection  Two Color Photometry->(V-R)
+    #
+    def VR_two_color_photometry(self):
+        self.two_color_photometry('V-R')
+
+    #
+    # two_color_phtometry
+    # 
+    # This calculates the two color photometry process as executed in AAVSO VPhot
+    # TwoColorPhotometry. 
+    # The parameter input_color is either 'B-V' or 'V-R' The formulae are the same/
+    #
+    def two_color_photometry(self, input_color):
         try:
             """
+            #
+            # NOTE! Since B-V was implemented first, the B-V filternames are
+            # still used even though imput_color may be V-R; 
+            # Only when it counts does the B-V change to the real V-R
+            #
+
             Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'
+
+            These comments illustrate the case when input_color is B-V
             
             The following formulas are calculated for each comp star and var = check star;
             then calculated again for each comp star and var = "Object Name". Eg. V1117 Her
@@ -1338,6 +1366,17 @@ class MyGUI:
             V_star                   Vvar = Δv + Tv_bv * Δ(B-V) + Vcomp
 
             """
+            # use first_filter, amd second_filter dict to index into appropriate filter
+            first_filter = {'B-V': 'B', 'V-R': 'V'}
+            second_filter = {'B-V': 'V', 'V-R': 'R'}
+
+            #
+            # NOTE! Since B-V was implemented first, the B-V filternames are
+            # still used even though imput_color may be V-R; 
+            # Only when it counts does the B-V change to the real V-R
+            #
+
+
             variable_star = self.object_name_entry.get().strip()
             if len(variable_star) == 0:
                 self.console_msg(
@@ -1348,31 +1387,36 @@ class MyGUI:
             options = {}
             options['defaultextension'] = '.csv'
             options['filetypes'] = [('CSV', '.csv')]
-            #options['initialdir'] = "E:\Astronomy\AstronomyData\MAO\2022\2022 6 4 V1117 Her\PIData\master\MAOPhot"
-            #options['initialfile'] = ''
-            options['title'] = 'Choose a file for color B'
+            options['title'] = 'Choose a file for filter ' + first_filter[input_color]
 
             file_name = fd.askopenfilename(**options)
 
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
-                self.console_msg("Loading color B from " + str(file_name))
+                self.console_msg("Loading filter " + first_filter[input_color] + " from " + str(file_name))
                 self.results_tab_df_colorB = pd.read_csv(str(file_name))
             else:
                 return
                 
-            options['title'] = 'Choose a file for color V'
+            options['title'] = 'Choose a file for filter ' + second_filter[input_color]
             file_name = fd.askopenfilename(**options)
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
-                self.console_msg("Loading color V from " + str(file_name))
+                self.console_msg("Loading filter " + second_filter[input_color] + " from " + str(file_name))
                 self.results_tab_df_colorV = pd.read_csv(str(file_name))
             else:
                 return
             self.console_msg("Performing Two Color Photometry...")
             
             #get the transformation coefficients
-            tbv_coefficient = float(self.tbv_entry.get())
-            tb_bv_coefficient = float(self.tb_bv_entry.get())
-            tv_bv_coefficient = float(self.tv_bv_entry.get())
+            if input_color == 'B-V':
+                tbv_coefficient = float(self.tbv_entry.get())
+                tb_bv_coefficient = float(self.tb_bv_entry.get())
+                tv_bv_coefficient = float(self.tv_bv_entry.get())
+            elif input_color == 'V-R':
+                tbv_coefficient = float(self.tvr_entry.get())
+                tb_bv_coefficient = float(self.tv_vr_entry.get())
+                tv_bv_coefficient = float(self.tr_vr_entry.get())
+            else:
+                raise Exception("two_color_photometry: unknown imput_color entered")
 
          
             #
@@ -1409,11 +1453,21 @@ class MyGUI:
             spreadsheet ProcessingMaoImages_202281V1117Her.xlsx
             """
             
-            result_check_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
+            if input_color == 'B-V':
+                result_check_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
                                                       "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star", "outlier"])
             
-            result_var_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
+                result_var_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
                                                     "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star"])
+            elif input_color == 'V-R':
+                result_check_star = pd.DataFrame(columns=["star", "label", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
+                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star", "outlier"])
+            
+                result_var_star = pd.DataFrame(columns=["star", "label", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
+                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star"])
+            else:
+                raise Exception("two_color_photometry: unknown imput_color entered")
+
             
 
             """
@@ -1429,11 +1483,11 @@ class MyGUI:
             for comp in sel_comps:
                 #selected comp must be in both tables
                 if comp not in self.results_tab_df_colorB["label"].values:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in B table")
+                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
                     continue
 
                 if comp not in self.results_tab_df_colorV["label"].values:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in V table")
+                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + second_filter[input_color] + " table")
                     continue
                 
                 #Dont use the check star 
@@ -1452,23 +1506,48 @@ class MyGUI:
                 V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
                 
                 
-                result_check_star = result_check_star.append({
-                    "star": "check",
-                    "label": int(comp),
-                    "IMB": comp_star_B["inst_mag"],
-                    "IMV": comp_star_V["inst_mag"],
-                    "B": comp_star_B["match_mag"],
-                    "V": comp_star_V["match_mag"],
-                    "delta_b_minus_v": delta_b_minus_v,
-                    "delta_B_minus_V": delta_B_minus_V,
-                    "delta_b": delta_b,
-                    "delta_v": delta_v,
-                    "comp_b_minus_v": comp_b_minus_v,
-                    "B_star": B_star,
-                    "V_star": V_star,
-                    "outlier": ''
-                    }, ignore_index=True)
-          
+                if input_color == 'B-V':
+                    result_check_star = result_check_star.append({
+                        "star": "check",
+                        "label": int(comp),
+                        "IMB": comp_star_B["inst_mag"],
+                        "IMV": comp_star_V["inst_mag"],
+                        "B": comp_star_B["match_mag"],
+                        "V": comp_star_V["match_mag"],
+                        "delta_b_minus_v": delta_b_minus_v,
+                        "delta_B_minus_V": delta_B_minus_V,
+                        "delta_b": delta_b,
+                        "delta_v": delta_v,
+                        "comp_b_minus_v": comp_b_minus_v,
+                        "B_star": B_star,
+                        "V_star": V_star,
+                        "outlier": ''
+                        }, ignore_index=True)
+                elif input_color == 'V-R':
+                    result_check_star = result_check_star.append({
+                        "star": "check",
+                        "label": int(comp),
+                        "IMV": comp_star_B["inst_mag"],
+                        "IMR": comp_star_V["inst_mag"],
+                        "V": comp_star_B["match_mag"],
+                        "R": comp_star_V["match_mag"],
+                        "delta_v_minus_r": delta_b_minus_v,
+                        "delta_V_minus_R": delta_B_minus_V,
+                        "delta_v": delta_b,
+                        "delta_r": delta_v,
+                        "comp_v_minus_r": comp_b_minus_v,
+                        "V_star": B_star,
+                        "R_star": V_star,
+                        "outlier": ''
+                        }, ignore_index=True)
+                else:
+                    raise Exception("two_color_photometry: unknown imput_color entered")
+
+                #
+                # NOTE! Since B-V was implemented first, the B-V filternames are
+                # still used even though imput_color may be V-R; 
+                # Only when it counts does the B-V change to the real V-R
+                #
 
                 # comp_b_minus_v , calculated above
                 delta_b_minus_v = (var_IMB - var_IMV) - comp_b_minus_v
@@ -1479,108 +1558,196 @@ class MyGUI:
                 V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
                 
                 
-                result_var_star = result_var_star.append({
-                    "star": "var",
-                    "label": int(comp),
-                    "IMB": comp_star_B["inst_mag"],
-                    "IMV": comp_star_V["inst_mag"],
-                    "B": comp_star_B["match_mag"],
-                    "V": comp_star_V["match_mag"],
-                    "delta_b_minus_v": delta_b_minus_v,
-                    "delta_B_minus_V": delta_B_minus_V,
-                    "delta_b": delta_b,
-                    "delta_v": delta_v,
-                    "comp_b_minus_v": comp_b_minus_v,
-                    "B_star": B_star,
-                    "V_star": V_star
-                    }, ignore_index=True)
+                if input_color == 'B-V':
+                    result_var_star = result_var_star.append({
+                        "star": "var",
+                        "label": int(comp),
+                        "IMB": comp_star_B["inst_mag"],
+                        "IMV": comp_star_V["inst_mag"],
+                        "B": comp_star_B["match_mag"],
+                        "V": comp_star_V["match_mag"],
+                        "delta_b_minus_v": delta_b_minus_v,
+                        "delta_B_minus_V": delta_B_minus_V,
+                        "delta_b": delta_b,
+                        "delta_v": delta_v,
+                        "comp_b_minus_v": comp_b_minus_v,
+                        "B_star": B_star,
+                        "V_star": V_star
+                        }, ignore_index=True)
+                elif input_color == 'V-R':
+                    result_var_star = result_var_star.append({
+                        "star": "var",
+                        "label": int(comp),
+                        "IMV": comp_star_B["inst_mag"],
+                        "IMR": comp_star_V["inst_mag"],
+                        "V": comp_star_B["match_mag"],
+                        "R": comp_star_V["match_mag"],
+                        "delta_v_minus_r": delta_b_minus_v,
+                        "delta_V_minus_R": delta_B_minus_V,
+                        "delta_v": delta_b,
+                        "delta_r": delta_v,
+                        "comp_v_minus_r": comp_b_minus_v,
+                        "V_star": B_star,
+                        "R_star": V_star
+                        }, ignore_index=True)
+                else:
+                    raise Exception("two_color_photometry: unknown imput_color entered")
+
+            #
+            # NOTE! Since B-V was implemented first, the B-V filternames are
+            # still used even though imput_color may be V-R; 
+            # Only when it counts does the B-V change to the real V-R
+            #
+
+
+
           
-            B_mean_check = result_check_star["B_star"].mean()
-            V_mean_check = result_check_star["V_star"].mean()
-            B_mean_var = result_var_star["B_star"].mean()
-            V_mean_var = result_var_star["V_star"].mean()
+            B_mean_check = result_check_star[first_filter[input_color] + "_star"].mean()
+            V_mean_check = result_check_star[second_filter[input_color] + "_star"].mean()
+            B_mean_var = result_var_star[first_filter[input_color] + "_star"].mean()
+            V_mean_var = result_var_star[second_filter[input_color] + "_star"].mean()
             
-            B_std_check = result_check_star["B_star"].std()
-            V_std_check = result_check_star["V_star"].std()
-            B_std_var = result_var_star["B_star"].  std()
-            V_std_var = result_var_star["V_star"].std()
+            B_std_check = result_check_star[first_filter[input_color] + "_star"].std()
+            V_std_check = result_check_star[second_filter[input_color] + "_star"].std()
+            B_std_var = result_var_star[first_filter[input_color] + "_star"].std()
+            V_std_var = result_var_star[second_filter[input_color] + "_star"].std()
 
             #Find IQR and iqr 
-            q3, q1 = np.percentile(result_check_star["B_star"], [75 ,25])
+            q3, q1 = np.percentile(result_check_star[first_filter[input_color] + "_star"], [75 ,25])
             b_iqr = q3 - q1
             b_upper_limit = q3 + (b_iqr * 1.5)
             b_lower_limit = q1 - (b_iqr * 1.5)
 
-            q3, q1 = np.percentile(result_check_star["V_star"], [75 ,25])
+            q3, q1 = np.percentile(result_check_star[second_filter[input_color] + "_star"], [75 ,25])
             v_iqr = q3 - q1
             v_upper_limit = q3 + (v_iqr * 1.5)
             v_lower_limit = q1 - (v_iqr * 1.5)
 
             #record any outliers
             
-            if (result_check_star["B_star"] < b_lower_limit).any():
-                result_check_star.loc[result_check_star.loc[result_check_star["B_star"] < b_lower_limit].index, "outlier"] = "<--OUTLIER"
+            if (result_check_star[first_filter[input_color] + "_star"] < b_lower_limit).any():
+                result_check_star.loc[result_check_star.loc[result_check_star[first_filter[input_color] + "_star"] < b_lower_limit].index, "outlier"] = "<--OUTLIER"
             
-            if (result_check_star["B_star"] > b_upper_limit).any():
-                result_check_star.loc[result_check_star.loc[result_check_star["B_star"] > b_upper_limit].index, "outlier"] = "<--OUTLIER"
+            if (result_check_star[first_filter[input_color] + "_star"] > b_upper_limit).any():
+                result_check_star.loc[result_check_star.loc[result_check_star[first_filter[input_color] + "_star"] > b_upper_limit].index, "outlier"] = "<--OUTLIER"
             
-            if (result_check_star["V_star"] < v_lower_limit).any():
-                result_check_star.loc[result_check_star.loc[result_check_star["V_star"] < v_lower_limit].index, "outlier"] = "<--OUTLIER"
+            if (result_check_star[second_filter[input_color] + "_star"] < v_lower_limit).any():
+                result_check_star.loc[result_check_star.loc[result_check_star[second_filter[input_color] + "_star"] < v_lower_limit].index, "outlier"] = "<--OUTLIER"
             
-            if (result_check_star["V_star"] > v_upper_limit).any():
-                result_check_star.loc[result_check_star.loc[result_check_star["V_star"] > v_upper_limit].index, "outlier"] = "<--OUTLIER"
-            
-            #create an aux table containing misc data needed for AAVSO report
-            #this data is appended to the notes section 
-            #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-            result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tb_bv", "T_bv", "VMAGINS", "Date-Obs"])
-            
-            result_aux_report = result_aux_report.append({
-                "color" : "B",
-                "JD" : comp_star_B["date-obs"],
-                "KMAGS" : B_mean_check,
-                "KMAGINS" : check_IMB,
-                "KREFMAG" : check_B,
-                "T_bv" : tbv_coefficient,
-                "Tv_bv" : tv_bv_coefficient,
-                "VMAGINS" : var_IMB,
-                "Date-Obs" : date_obs_B
-                }, ignore_index=True)                     
-            
-            result_aux_report = result_aux_report.append({
-                "color" : "V",
-                "JD" : comp_star_V["date-obs"],
-                "KMAGS" : V_mean_check,
-                "KMAGINS" : check_IMV,
-                "KREFMAG" : check_V,
-                "T_bv" : tbv_coefficient,
-                "Tv_bv" : tv_bv_coefficient,
-                "VMAGINS" : var_IMV,
-                "Date-Obs" : date_obs_V
-                }, ignore_index=True)                     
+            if (result_check_star[second_filter[input_color] + "_star"] > v_upper_limit).any():
+                result_check_star.loc[result_check_star.loc[result_check_star[second_filter[input_color] + "_star"] > v_upper_limit].index, "outlier"] = "<--OUTLIER"
             
             self.console_msg("\n")
-            self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
-                             result_check_star.sort_values(by="label").to_string() +
-                             '\n' +
-                             ("B* Ave: " + format(B_mean_check, ' >6.3f') +
-                             "  V* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
-                             '\n' +
-                             ("B* Std: " + format(B_std_check, ' >6.3f') +
-                             "  V* Std: " + format(V_std_check, ' >6.3f')).rjust(137))
+            #
+            # NOTE! Since B-V was implemented first, the B-V filternames are
+            # still used even though imput_color may be V-R; 
+            # Only when it counts does the B-V change to the real V-R, 
+            # like in the following..
 
-            self.console_msg(("Check Star IQR limit for B*: " + format(b_lower_limit, ' >6.3f') + ';' + format(b_upper_limit, ' >6.3f')).rjust(123))
-            self.console_msg(("Check Star IQR limit for V*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
-            self.console_msg('\n')
+            if input_color == 'B-V':
+                #create an aux table containing misc data needed for AAVSO report
+                #this data is appended to the notes section 
+                #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tb_bv", "T_bv", "VMAGINS", "Date-Obs"])
+                
+                result_aux_report = result_aux_report.append({
+                    "color" : "B",
+                    "JD" : comp_star_B["date-obs"],
+                    "KMAGS" : B_mean_check,
+                    "KMAGINS" : check_IMB,
+                    "KREFMAG" : check_B,
+                    "T_bv" : tbv_coefficient,
+                    "Tv_bv" : tv_bv_coefficient,
+                    "VMAGINS" : var_IMB,
+                    "Date-Obs" : date_obs_B
+                    }, ignore_index=True)                     
+                
+                result_aux_report = result_aux_report.append({
+                    "color" : "V",
+                    "JD" : comp_star_V["date-obs"],
+                    "KMAGS" : V_mean_check,
+                    "KMAGINS" : check_IMV,
+                    "KREFMAG" : check_V,
+                    "T_bv" : tbv_coefficient,
+                    "Tv_bv" : tv_bv_coefficient,
+                    "VMAGINS" : var_IMV,
+                    "Date-Obs" : date_obs_V
+                    }, ignore_index=True)                     
+            
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                                result_check_star.sort_values(by="label").to_string() +
+                                '\n' +
+                                ("B* Ave: " + format(B_mean_check, ' >6.3f') +
+                                "  V* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
+                                '\n' +
+                                ("B* Std: " + format(B_std_check, ' >6.3f') +
+                                "  V* Std: " + format(V_std_check, ' >6.3f')).rjust(137))
 
-            self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
-                             result_var_star.sort_values(by="label").to_string() +
-                             '\n' + 
-                             ("B* Ave: " + format(B_mean_var, ' >6.3f') +
-                             "  V* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
-                             '\n' +
-                             ("B* Std: " + format(B_std_var, ' >6.3f') +  
-                             "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
+                self.console_msg(("Check Star IQR limit for B*: " + format(b_lower_limit, ' >6.3f') + ';' + format(b_upper_limit, ' >6.3f')).rjust(123))
+                self.console_msg(("Check Star IQR limit for V*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
+                self.console_msg('\n')
+
+                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
+                                result_var_star.sort_values(by="label").to_string() +
+                                '\n' + 
+                                ("B* Ave: " + format(B_mean_var, ' >6.3f') +
+                                "  V* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
+                                '\n' +
+                                ("B* Std: " + format(B_std_var, ' >6.3f') +  
+                                "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
+            elif input_color == 'V-R':
+                #create an aux table containing misc data needed for AAVSO report
+                #this data is appended to the notes section 
+                #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tv_vr", "T_vr", "VMAGINS", "Date-Obs"])
+                
+                result_aux_report = result_aux_report.append({
+                    "color" : "V",
+                    "JD" : comp_star_B["date-obs"],
+                    "KMAGS" : B_mean_check,
+                    "KMAGINS" : check_IMB,
+                    "KREFMAG" : check_B,
+                    "T_vr" : tbv_coefficient,
+                    "Tr_vr" : tv_bv_coefficient,
+                    "VMAGINS" : var_IMB,
+                    "Date-Obs" : date_obs_B
+                    }, ignore_index=True)                     
+                
+                result_aux_report = result_aux_report.append({
+                    "color" : "R",
+                    "JD" : comp_star_V["date-obs"],
+                    "KMAGS" : V_mean_check,
+                    "KMAGINS" : check_IMV,
+                    "KREFMAG" : check_V,
+                    "T_vr" : tbv_coefficient,
+                    "Tr_vr" : tv_bv_coefficient,
+                    "VMAGINS" : var_IMV,
+                    "Date-Obs" : date_obs_V
+                    }, ignore_index=True)                     
+            
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (V: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                                result_check_star.sort_values(by="label").to_string() +
+                                '\n' +
+                                ("V* Ave: " + format(B_mean_check, ' >6.3f') +
+                                "  R* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
+                                '\n' +
+                                ("V* Std: " + format(B_std_check, ' >6.3f') +
+                                "  R* Std: " + format(V_std_check, ' >6.3f')).rjust(137))
+
+                self.console_msg(("Check Star IQR limit for V*: " + format(b_lower_limit, ' >6.3f') + ';' + format(b_upper_limit, ' >6.3f')).rjust(123))
+                self.console_msg(("Check Star IQR limit for R*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
+                self.console_msg('\n')
+
+                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
+                                result_var_star.sort_values(by="label").to_string() +
+                                '\n' + 
+                                ("V* Ave: " + format(B_mean_var, ' >6.3f') +
+                                "  R* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
+                                '\n' +
+                                ("V* Std: " + format(B_std_var, ' >6.3f') +  
+                                "  R* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
+            else:
+                raise Exception("two_color_photometry: unknown imput_color entered")
                              
             #concat result_aux_report, result_check_star, and result_var_star
             master_frames = [result_check_star, result_var_star, result_aux_report]
@@ -1589,10 +1756,8 @@ class MyGUI:
             
             dir_path = os.path.dirname(os.path.realpath(file_name)) + "\\"
             
-            master_report.to_csv(dir_path + self.object_name_entry.get() + "-Master-Report.csv", index=False)
-            self.console_msg("Master Report saved to " + str(dir_path + self.object_name_entry.get() + "-Master-Report.csv"))
-
-
+            master_report.to_csv(dir_path + self.object_name_entry.get() + "-" + input_color + "-Master-Report.csv", index=False)
+            self.console_msg("Master Report saved to " + str(dir_path + self.object_name_entry.get() + "-" + input_color + "-Master-Report.csv"))
 
             pass
             
@@ -1989,6 +2154,8 @@ class MyGUI:
             es_.title("Settings")
             self.es_top = es_
 
+            self.es_top.protocol("WM_DELETE_WINDOW", self.es_top.withdraw)
+
             self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*.55))
 
             tk.Grid.columnconfigure(self.es_top, 0, weight=1)
@@ -2126,18 +2293,18 @@ class MyGUI:
             self.tbv_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            tv_bv_label = tk.Label(self.es_top, text="Tv_bv:")
-            tv_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tv_bv_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width, background='pink')
-            self.tv_bv_entry.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
-
             tb_bv_label = tk.Label(self.es_top, text="Tb_bv:")
             tb_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.tb_bv_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.tb_bv_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            tv_bv_label = tk.Label(self.es_top, text="Tv_bv:")
+            tv_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.tv_bv_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.tv_bv_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             #
@@ -2329,9 +2496,21 @@ class MyGUI:
                     is_check_star = "False"
                             
                 
+                # init mag here because if 
+                # chart doesn't have the mag for 
+                # this comp or check star, then it is not used
+                mag = None
                 for band in star['bands']:
                     if band['band'] == filter_band:
                         mag = band['mag']
+
+                if mag == None:
+                    self.console_msg("label: " + str(label) + " has no mag for " + filter_band + "..skipping")
+                    continue #skip this one
+                    if is_check_star:
+                        self.console_msg("CHECK STAR label: " + str(label) + " has no mag for " + filter_band 
+                                        + "Choose another....aborting", logging.WARNING)
+                        return
                         
                 result = result.append({
                     "AUID": auid,
@@ -2528,9 +2707,25 @@ class MyGUI:
 
         return
         
+    #
+    #   BV_generate_aavso_report_2color: called from Menu selection 
+    #   Generate AAVSO Report->Two Color Photometry->(B-V)
+    #
+    def BV_generate_aavso_report_2color(self):
+        self.generate_aavso_report_2color('B-V')
 
+    #
+    #   VR_generate_aavso_report_2color: called from Menu selection 
+    #   Generate AAVSO Report->Two Color Photometry->(V-R)
+    #
+    def VR_generate_aavso_report_2color(self):
+        self.generate_aavso_report_2color('V-R')
 
-    def generate_aavso_report_2color(self):
+    #
+    # generate_aavso_report_2color; this generates a AAVSO report in extended format
+    #
+
+    def generate_aavso_report_2color(self, input_color):
         global image_width, image_height
         
         """
@@ -2548,6 +2743,12 @@ class MyGUI:
 
         """
 
+        # use first_filter, amd second_filter dict to index into appropriate filter
+        first_filter = {'B-V': 'B', 'V-R': 'V'}
+        second_filter = {'B-V': 'V', 'V-R': 'R'}
+        t_coefficient_tbv = {'B-V': 'T_bv', 'V-R': 'T_vr'}
+        t_coefficient_tv_bv = {'B-V': 'Tv_bv', 'V-R': 'Tr_vr'}
+
 
         self.console_msg("Beginning Generate AAVSO Two Color Ensemble Report...")
         var_star_name = self.object_name_entry.get().strip()
@@ -2555,24 +2756,10 @@ class MyGUI:
             self.console_msg(
                 "Object Name must be specified; eg. 'V1117 Her'")
             return
-        report_dir = "aavso_reports"
-        
-        if os.path.isdir(os.path.dirname(self.image_file)):
-            os.chdir(os.path.dirname(self.image_file))
-            if not os.path.exists(report_dir):
-                os.mkdir(report_dir)
-        else:
-            self.console_msg("Dir path: \"" + str(self.image_file) + "\" does not exist; check if file loaded")
-            return
-            
-
-        image_basename = os.path.basename(self.image_file)
-        report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
-            image_basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
 
         """
         Report is generated from 'Saved' master_result DataFrame
-        that was saved as <object_name_entry>-Master-Result.csv
+        that was saved as <object_name_entry>-X-Y-Master-Result.csv
         
         """
         #Ask user for <ObjectID>-Master-Report.csv
@@ -2580,7 +2767,7 @@ class MyGUI:
         options = {}
         options['defaultextension'] = '.csv'
         options['filetypes'] = [('CSV', '.csv')]
-        options['title'] = 'Choose the ' + var_star_name + '-Master-Report.csv'
+        options['title'] = 'Choose the ' + var_star_name + '-X-Y-Master-Report.csv'
 
         file_name = fd.askopenfilename(**options)
 
@@ -2590,42 +2777,88 @@ class MyGUI:
         else:
             return
             
+        report_dir = "aavso_reports"
+        try:        
+            if os.path.isdir(os.path.dirname(str(file_name))):
+                os.chdir(os.path.dirname(str(file_name)))
+                if not os.path.exists(report_dir):
+                    os.mkdir(report_dir)
+            else:
+                raise Exception("Can't create report_dir: aavso_reports")
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+            
+
+        image_basename = os.path.basename(self.image_file)
+        report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
+            image_basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
+
 
         decimal_places = 3 #report is usually 3
         
+        #
+        # NOTE! Since B-V was implemented first, the B-V filternames are
+        # still used even though imput_color may be V-R; 
+        # Only when it counts does the B-V change to the real V-R, 
+        # like in the following..
+
         #extract the estimates
         result_check_star = master_report[master_report["star"] == "check"]
         result_var_star = master_report[master_report["star"] == "var"]
 
-        B_mean_check = result_check_star["B_star"].mean()
-        V_mean_check = result_check_star["V_star"].mean()
-        B_mean_var = result_var_star["B_star"].mean()
-        V_mean_var = result_var_star["V_star"].mean()
+        B_mean_check = result_check_star[first_filter[input_color] + "_star"].mean()
+        V_mean_check = result_check_star[second_filter[input_color] + "_star"].mean()
+        B_mean_var = result_var_star[first_filter[input_color] + "_star"].mean()
+        V_mean_var = result_var_star[second_filter[input_color] + "_star"].mean()
         
-        B_std_check = result_check_star["B_star"].std()
-        V_std_check = result_check_star["V_star"].std()
-        B_std_var = result_var_star["B_star"].std()
-        V_std_var = result_var_star["V_star"].std()
+        B_std_check = result_check_star[first_filter[input_color] + "_star"].std()
+        V_std_check = result_check_star[second_filter[input_color] + "_star"].std()
+        B_std_var = result_var_star[first_filter[input_color] + "_star"].std()
+        V_std_var = result_var_star[second_filter[input_color] + "_star"].std()
             
-        self.console_msg("Check Star Estimates\n" + 
-                         ("B* Ave: " + format(B_mean_check, ' >6.3f') +
-                         "  V* Ave: " + format(V_mean_check, ' >6.3f') +
-                         "  (B-V)*: " + format(B_mean_check-V_mean_check, ' >6.3f')).rjust(72) +
-                         '\n' +
-                         ("B* Std: " + format(B_std_check, ' >6.3f') +
-                         "  V* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
 
-        self.console_msg("Variable Star Estimates\n" +
-                         ("B* Ave: " + format(B_mean_var, ' >6.3f') +
-                         "  V* Ave: " + format(V_mean_var, ' >6.3f') +
-                         "  (B-V)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
-                         '\n' +
-                         ("B* Std: " + format(B_std_var, ' >6.3f') +  
-                         "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(56))
-        
-        
-        pass
-                         
+        #
+        # NOTE! Since B-V was implemented first, the B-V filternames are
+        # still used even though imput_color may be V-R; 
+        # Only when it counts does the B-V change to the real V-R, 
+        # like in the following..
+
+        if input_color == 'B-V':
+            self.console_msg("Check Star Estimates\n" + 
+                            ("B* Ave: " + format(B_mean_check, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_check, ' >6.3f') +
+                            "  (B-V)*: " + format(B_mean_check-V_mean_check, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_check, ' >6.3f') +
+                            "  V* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
+
+            self.console_msg("Variable Star Estimates\n" +
+                            ("B* Ave: " + format(B_mean_var, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_var, ' >6.3f') +
+                            "  (B-V)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_var, ' >6.3f') +  
+                            "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(56))
+        elif input_color == 'V-R':
+            self.console_msg("Check Star Estimates\n" + 
+                            ("V* Ave: " + format(B_mean_check, ' >6.3f') +
+                            "  R* Ave: " + format(V_mean_check, ' >6.3f') +
+                            "  (V-R)*: " + format(B_mean_check-V_mean_check, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("V* Std: " + format(B_std_check, ' >6.3f') +
+                            "  R* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
+
+            self.console_msg("Variable Star Estimates\n" +
+                            ("V* Ave: " + format(B_mean_var, ' >6.3f') +
+                            "  R* Ave: " + format(V_mean_var, ' >6.3f') +
+                            "  (V-R)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("V* Std: " + format(B_std_var, ' >6.3f') +  
+                            "  R* Std: " + format(V_std_var, ' >6.3f')).rjust(56))
+        else:
+            raise Exception("generate_aavso_report_2color: unknown imput_color entered")
 
         try:
             with open(report_filename, mode='w') as f:
@@ -2638,13 +2871,13 @@ class MyGUI:
                 f.write("#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES\n")
 
                 #B filter
-                aux_result = master_report[master_report["color"] == "B"]
+                aux_result = master_report[master_report["color"] == first_filter[input_color]]
                 
                 starid = str(self.object_name_entry.get())
                 date = format(float(aux_result['Date-Obs']), '.5f') 
                 mag = str(round(B_mean_var, decimal_places))
                 merr = str(round(B_std_check,decimal_places))
-                filt = "B"
+                filt = first_filter[input_color]
                 trans = "YES"
                 mtype = "STD"
                 cname = "ENSEMBLE"
@@ -2658,7 +2891,7 @@ class MyGUI:
                 notes += "|KMAG=" + str(round(B_mean_check, decimal_places)) + \
                          "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
-                         "|Tbv="  + str(round(float(aux_result['T_bv']), decimal_places)) + \
+                         "|" + t_coefficient_tbv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 
@@ -2668,13 +2901,13 @@ class MyGUI:
 
                 #V filter (easier just to repeat most of this)
                 
-                aux_result = master_report[master_report["color"] == "V"]
+                aux_result = master_report[master_report["color"] == second_filter[input_color]]
                 
                 starid = str(self.object_name_entry.get())
                 date = format(float(aux_result['Date-Obs']), '.5f') 
                 mag = str(round(V_mean_var, decimal_places))
                 merr = str(round(V_std_check,decimal_places))
-                filt = "V"
+                filt = second_filter[input_color]
                 trans = "YES"
                 mtype = "STD"
                 cname = "ENSEMBLE"
@@ -2688,7 +2921,7 @@ class MyGUI:
                 notes += "|KMAG=" + str(round(V_mean_check, decimal_places)) + \
                          "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
-                         "|Tv_bv="  + str(round(float(aux_result['Tv_bv']), decimal_places)) + \
+                         "|" + t_coefficient_tv_bv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tv_bv[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 # Add " " after notes, because TA clobbers last char
@@ -2818,10 +3051,12 @@ class MyGUI:
             label="Solve Image", command=self.solve_image)
         self.menubar.add_cascade(label="Photometry", menu=self.photometrymenu)
         
-        self.two_color_photometry = tk.Menu(self.menubar, tearoff=0)
-        self.two_color_photometry.add_command(
-            label="Two Color Photometry (B,V)", command=self.two_color_photometry_BV)
-        self.menubar.add_cascade(label="Two Color Photometry", menu=self.two_color_photometry)
+        self.two_color_photo_menu = tk.Menu(self.menubar, tearoff=0)
+        self.two_color_photo_menu.add_command(
+            label="(B,V)", command=self.BV_two_color_photometry)
+        self.two_color_photo_menu.add_command(
+            label="(V,R)", command=self.VR_two_color_photometry)
+        self.menubar.add_cascade(label="Two Color Photometry", menu=self.two_color_photo_menu)
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
         self.reportmenu.add_command(
@@ -2829,6 +3064,14 @@ class MyGUI:
 
         self.reportmenu.add_command(
             label="Two Color Photometry", command=self.generate_aavso_report_2color)
+        self.two_color_sub_menu = tk.Menu(self.reportmenu, tearoff=False)
+        self.two_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
+        self.two_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
+        self.reportmenu.add_cascade(label="Generate AAVSO Report", menu=self.two_color_sub_menu)
+
+
+
+
         self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
 
         self.window.config(menu=self.menubar)
