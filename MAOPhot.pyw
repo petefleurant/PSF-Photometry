@@ -460,7 +460,6 @@ class MyGUI:
     sharplo_entry = None
     bkg_filter_size_entry = None
     matching_radius_entry = None
-    decimal_places_entry = None
     aavso_obscode_entry = None
     telescope_entry = None
     tbv_entry = None
@@ -839,9 +838,10 @@ class MyGUI:
         self.console_msg("Clearing ePSF Rejection List...")
         #drop all the rows but keep the 'x' and 'y' column
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
+        self.console_msg("Ready")
         return
 
-    def open_ePSF_rejection_list(self):
+    def load_ePSF_rejection_list(self):
         global header
 
         try:
@@ -853,11 +853,12 @@ class MyGUI:
             file_name = fd.askopenfilename(**options)
 
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
-                self.console_msg("Loading Rejection list from" + str(file_name))
+                self.console_msg("Loading Rejection list from: " + str(file_name))
                 self.ePSF_rejection_list = pd.read_csv(str(file_name))
                 self.display_image()
             else:
                 return
+            self.console_msg("Ready")
 
         except Exception as e:
             self.error_raised = True
@@ -882,6 +883,8 @@ class MyGUI:
                 self.console_msg("Saving Rejection List as " + file_name.name)
                 dir_path = os.path.dirname(os.path.realpath(file_name.name)) + "\\"
                 self.ePSF_rejection_list.to_csv(file_name.name, index=False)
+
+            self.console_msg("Ready")
 
         except Exception as e:
             self.error_raised = True
@@ -1144,7 +1147,6 @@ class MyGUI:
             self.display_image()
 
         elif self.photometry_results_plotted:
-            decimal_places = int(self.decimal_places_entry.get())
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
             self.display_image()
             self.console_msg("")
@@ -1291,11 +1293,14 @@ class MyGUI:
             self.wcs_header = ast.solve_from_source_list(sources_df['x_fit'], sources_df['y_fit'],
                                                          width, height,
                                                          solve_timeout=360)
-            self.console_msg(
-                "Astrometry.Net solution reference point RA: " + str(self.wcs_header["CRVAL1"]) + " Dec: " + str(
-                    self.wcs_header["CRVAL2"]))
+            self.console_msg("Astrometry.Net solution reference point RA: " + 
+                                str(self.wcs_header["CRVAL1"]) + " Dec: " + 
+                                str(self.wcs_header["CRVAL2"]))
+            self.console_msg("Ready")
+
             header = header + self.wcs_header
             self.wcs_header = WCS(header)
+            
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -1725,7 +1730,7 @@ class MyGUI:
                     "Date-Obs" : date_obs_V
                     }, ignore_index=True)                     
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (V: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="label").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2191,7 +2196,7 @@ class MyGUI:
 
 
             star_detection_threshold_label = tk.Label(
-                self.es_top, text="StarFinder Threshold k in (k * std):")
+                self.es_top, text="StarFinder Threshold:")
             star_detection_threshold_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.star_detection_threshold_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
@@ -2222,28 +2227,12 @@ class MyGUI:
             self.bkg_filter_size_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            exposure_label = tk.Label(
-                self.es_top, text="Exposure Time:")
-            exposure_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.exposure_entry = tk.Entry(
-                self.es_top, width=settings_entry_width)
-            self.exposure_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-            row += 1
-
             matching_radius_label = tk.Label(
                 self.es_top, text="Matching Radius, arcsec:")
             matching_radius_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.matching_radius_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
             self.matching_radius_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-            row += 1
-
-            decimal_places_label = tk.Label(
-                self.es_top, text="Decimal Places to Report:")
-            decimal_places_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.decimal_places_entry = tk.Entry(
-                self.es_top, width=settings_entry_width)
-            self.decimal_places_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             astrometrynet_label = tk.Label(
@@ -2263,14 +2252,6 @@ class MyGUI:
             self.astrometrynet_key_entry.config(show="*")
             row += 1
 
-            aavso_obscode_label = tk.Label(
-                self.es_top, text="AAVSO Observer Code:")
-            aavso_obscode_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.aavso_obscode_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width, background='pink')
-            self.aavso_obscode_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
-            row += 1
-
             separator_telescope = ttk.Separator(self.es_top, orient='horizontal')
             separator_telescope.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
@@ -2278,7 +2259,7 @@ class MyGUI:
             telescope_label = tk.Label(self.es_top, text="Telescope:")
             telescope_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.telescope_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width, background='pink')
+                self.es_top, width=extended_settings_entry_width)
             self.telescope_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
@@ -2333,6 +2314,22 @@ class MyGUI:
 
             separator_telescope_ = ttk.Separator(self.es_top, orient='horizontal')
             separator_telescope_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            aavso_obscode_label = tk.Label(
+                self.es_top, text="AAVSO Observer Code:")
+            aavso_obscode_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.aavso_obscode_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.aavso_obscode_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
+            row += 1
+
+            exposure_label = tk.Label(
+                self.es_top, text="Exposure Time:")
+            exposure_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.exposure_entry = tk.Entry(
+                self.es_top, width=settings_entry_width, background='pink')
+            self.exposure_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             filter_label = tk.Label(self.es_top, text="CCD Filter:")
@@ -3037,8 +3034,9 @@ class MyGUI:
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
         self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
-        self.photometrymenu.add_command(label="Open Rejection List...", command=self.open_ePSF_rejection_list)
+        self.photometrymenu.add_command(label="Load Rejection List...", command=self.load_ePSF_rejection_list)
         self.photometrymenu.add_command(label="Save Rejection List As...", command=self.save_as_ePSF_rejection_list)
+        self.photometrymenu.add_command(label="Clear Rejection List", command=self.clear_ePSF_rejection_list)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
@@ -3059,18 +3057,11 @@ class MyGUI:
         self.menubar.add_cascade(label="Two Color Photometry", menu=self.two_color_photo_menu)
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
-        self.reportmenu.add_command(
-            label="Single Image Photometry", command=self.generate_aavso_report_1image)
-
-        self.reportmenu.add_command(
-            label="Two Color Photometry", command=self.generate_aavso_report_2color)
+        self.reportmenu.add_command(label="Single Image Photometry", command=self.generate_aavso_report_1image)
         self.two_color_sub_menu = tk.Menu(self.reportmenu, tearoff=False)
         self.two_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
         self.two_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
-        self.reportmenu.add_cascade(label="Generate AAVSO Report", menu=self.two_color_sub_menu)
-
-
-
+        self.reportmenu.add_cascade(label="Two Color Photometry", menu=self.two_color_sub_menu)
 
         self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
 
@@ -3242,7 +3233,6 @@ class MyGUI:
             'sharplo_entry': self.sharplo_entry,
             'bkg_filter_size_entry': self.bkg_filter_size_entry,
             'matching_radius_entry': self.matching_radius_entry,
-            'decimal_places_entry': self.decimal_places_entry,
             'aavso_obscode_entry': self.aavso_obscode_entry,
             'telescope_entry': self.telescope_entry,
             'tbv_entry': self.tbv_entry,
