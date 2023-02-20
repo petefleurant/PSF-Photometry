@@ -78,7 +78,7 @@
             - then select 'Photometry->Create Effective PSF' again and repeat 
 			if necessary
 
-        Step 5- Photometry->Interatively Subtracted PSF Photometry
+        Step 5- Photometry->Iteratively Subtracted PSF Photometry
         
         Step 6- Photometry->Get Comparison Stars
         
@@ -125,7 +125,7 @@
             - then select 'Photometry->Create Effective PSF' again and repeat 
 			if necessary
 
-        Step 5- Photometry->Interatively Subtracted PSF Photometry
+        Step 5- Photometry->Iteratively Subtracted PSF Photometry
         
         Step 6- Photometry->Get Comparison Stars
         
@@ -335,6 +335,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from astroquery.vizier import Vizier
 from astroquery.astrometry_net import AstrometryNet
+from tqdm import tqdm
 from PIL import Image, ImageTk, ImageMath
 import pandas as pd
 import logging
@@ -591,6 +592,8 @@ class MyGUI:
                 self.image_bkg_value = np.median(image_data)
                 self.console_msg("Median background level, ADU: " 
                     + str(self.image_bkg_value))
+                self.console_msg("Ready")
+
                 
         except Exception as e:
             self.error_raised = True
@@ -614,8 +617,8 @@ class MyGUI:
                 
                 self.load_FITS(image_file)
                 self.display_image()
-                self.clear_psf()
-                self.clear_epsf()
+                self.clear_psf_label()
+                self.clear_epsf_plot()
                 
 
                 if self.plate_solve_on_open.get():
@@ -800,7 +803,7 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=False)  
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True)
             self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
 
             model_length = len(self.epsf_model.data)
@@ -814,7 +817,7 @@ class MyGUI:
             self.psf_plot_canvas.draw()
 
             #plot it in the ePSF
-            self.clear_epsf()
+            self.clear_epsf_plot()
             self.plot_ePSF()
 
             norm = simple_norm(self.epsf_model.data, 'log', percent=99.)
@@ -833,11 +836,16 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
 
-    def clear_ePSF_rejection_list(self):
+    def clear_ePSF(self):
         global header
-        self.console_msg("Clearing ePSF Rejection List...")
+        self.console_msg("Clearing ePSF model, Rejection List, plot...")
         #drop all the rows but keep the 'x' and 'y' column
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
+        self.epsf_model = None #reset
+        self.clear_psf_label()
+        self.clear_epsf_plot()
+        self.ePSF_results_plotted = False
+        self.display_image()
         self.console_msg("Ready")
         return
 
@@ -917,20 +925,17 @@ class MyGUI:
             sharplo = float(self.sharplo_entry.get())
             bkg_filter_size = int(self.bkg_filter_size_entry.get())
             self.console_msg("Finding stars...")
-            iraffind = IRAFStarFinder(threshold = star_detection_threshold, # * std,
-                                      fwhm = fwhm,
-                                      #minsep_fwhm=0,
-                                      exclude_border=True,
-                                      roundhi = 3.0,
-                                      roundlo = -5.0,
-                                      sharplo = sharplo,
-                                      sharphi = 2.0)
+            star_find = IRAFStarFinder(threshold = star_detection_threshold,
+                                        fwhm = fwhm,
+                                        exclude_border=True,
+                                        roundhi = 3.0,
+                                        roundlo = -5.0,
+                                        sharplo = sharplo,
+                                        sharphi = 2.0)
 
-         
             daogroup = DAOGroup(2.0 * fwhm)
             sigma_clip = SigmaClip(sigma=3.0)
             mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-
 
             if self.fitter_stringvar.get() == "Sequential LS Programming":
                 self.console_msg(
@@ -957,7 +962,7 @@ class MyGUI:
             #Dont do the next line, see https://photutils.readthedocs.io/en/stable/psf.html)
             #This results in more complicated outcomes
             #psf_model.sigma.fixed = False   # This allows to fit Gaussian PRF sigma as well 
-            photometry = IterativelySubtractedPSFPhotometry(finder=iraffind,
+            photometry = IterativelySubtractedPSFPhotometry(finder=star_find,
                                                             group_maker = daogroup,
                                                             psf_model = psf_model,
                                                             bkg_estimator = mmm_bkg,
@@ -978,15 +983,16 @@ class MyGUI:
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
-            self.results_tab_df["date-obs"] = float(float(self.date_obs_entry.get()))
+            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
 
             # Calculate instrumental magnitudes
             # Following added for "True" inst mag used in AAVSO report
-            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / float(self.exposure_entry.get()))
+            image_exposure_time = float(self.exposure_entry.get())
+            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / image_exposure_time)
 
             # Create a "inst_mag_unc" column used for err in the reports 
             if "flux_unc" in self.results_tab_df:
-                self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / float(self.exposure_entry.get())))
+                self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / image_exposure_time))
 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
@@ -1223,7 +1229,7 @@ class MyGUI:
             self.error_raised = True
             pass
 
-    def clear_epsf(self):
+    def clear_epsf_plot(self):
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
         self.ePSF_plot_canvas.draw()
@@ -1235,7 +1241,7 @@ class MyGUI:
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.ePSF_canvas.grid(row=3, column=0)   #was row0
 
-    def clear_psf(self):
+    def clear_psf_label(self):
         #clear plot label
         self.plotname_label['text'] = "Plot: "
         self.psf_plot.clear()
@@ -1942,14 +1948,33 @@ class MyGUI:
                     
 
                     if separation < matching_radius * u.deg:
-                        #uniq
+                        # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
+                        # That causes a blank inst_mag (can't take a log of neg number) 
+                        # Check for this and if so, ignore
+                        # 
+                        if self.results_tab_df.loc[index, "flux_fit"] < 0:
+                            continue
+
+                        # Make sure the earliest iteration is used
+                        # The first iteration is not necessarily iter_detected = 1
+                        # The first or earliest detection could be any int up to max iterations
+                        
                         if "label" in self.results_tab_df:
                             already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == str(match_label)]    
                             if not already_gotten.empty:
-                                #no need to add 'ghost'
-                                continue
+                                # Confirm that this already gotten one has an EARLIER iteration,
+                                # and if so, then we can continue, else
+                                # we have to erase already gotten and use the new one
+                                if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
+                                    self.results_tab_df.loc[index, "label"] = ""
+                                    continue
+                                else:
+                                    #erase already_gotten label 
+                                    already_gotten.iloc[0]['label'] = ""
+                                    # fall thru and label the new index 
 
-                        #Here if not already_gotten                        
+                        #Here if not already_gotten or the already_gotten has 
+                        # a "later/stale" iteration
                         self.results_tab_df.loc[index, "match_id"] = \
                             str(self.catalog_stringvar.get()) + \
                                 " " + str(match_id)
@@ -1975,7 +2000,6 @@ class MyGUI:
                     "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
                 vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
                 # print(vsx_result)
-                matched_match_id = 0 #init
 
                 """
                 Look for any and all VSX stars
@@ -2000,13 +2024,33 @@ class MyGUI:
                         separation = photometry_star_coordinates.separation(
                             match_coordinates)
                         if separation < matching_radius * u.deg:
-                            if match_id == matched_match_id:
-                                self.console_msg("WARNING: VSX source: " + str(match_id) + " already matched! XXghostXX")
-                                self.results_tab_df.loc[index, "vsx_id"] = str(match_id) + "XXghostXX"
-                            else:
-                                self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
-                                self.console_msg("Match VSX source: " + str(match_id))
-                            matched_match_id = match_id
+                            # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
+                            # That causes a blank inst_mag (can't take a log of neg number) 
+                            # Check for this and if so, ignore
+                            # 
+                            if self.results_tab_df.loc[index, "flux_fit"] < 0:
+                                continue
+
+                            # Make sure the earliest iteration is used
+                            # The first iteration is not necessarily iter_detected = 1
+                            # The first or earliest detection could be any int up to max iterations
+                            if "vsx_id" in self.results_tab_df:
+                                already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == str(match_id)]    
+                                if not already_gotten.empty:
+                                    # Confirm that this already gotten one has an EARLIER iteration,
+                                    # and if so, then we can continue, else
+                                    # we have to erase already gotten and use the new one
+                                    if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
+                                        self.results_tab_df.loc[index, "vsx_id"] = ""
+                                        continue
+                                    else:
+                                        #erase already_gotten label 
+                                        already_gotten.iloc[0]['vsx_id'] = ""
+                                        # fall thru and label the new index 
+
+                            #Found a match...should be earliest iteration
+                            self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
+                            self.console_msg("Match VSX source: " + str(match_id))
                         else:
                             self.results_tab_df.loc[index, "vsx_id"] = ""
                 else:
@@ -3034,9 +3078,10 @@ class MyGUI:
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
         self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
+        self.photometrymenu.add_separator()
         self.photometrymenu.add_command(label="Load Rejection List...", command=self.load_ePSF_rejection_list)
         self.photometrymenu.add_command(label="Save Rejection List As...", command=self.save_as_ePSF_rejection_list)
-        self.photometrymenu.add_command(label="Clear Rejection List", command=self.clear_ePSF_rejection_list)
+        self.photometrymenu.add_command(label="Clear ePSF Data", command=self.clear_ePSF)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
