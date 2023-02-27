@@ -1,198 +1,47 @@
 4# -*- coding: utf-8 -*-
 """
-	Welcome to MAOPhot 0.1,  a PSF Photometry tool using Astropy and Photutil.psf
+	Welcome to MAOPhot 0.1, a PSF Photometry tool using Astropy and Photutils.psf
 
-	MAOPhot calculates stellar magnitudes from 2 dimensional digital 
-	astrophotographs. It can produce an extended AAVSO (American Association of 
-	Variable Star Observers) report which can later be submitted to the AAVSO 
-	using the online tool WebObs (http://www.aavso.org/webobs).
+MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
+It produces an extended AAVSO (American Association of Variable Star Observers)
+ report which can be submitted to the AAVSO using the online tool WebObs 
+ (http://www.aavso.org/webobs).
 
-    There are many photometry measuring programs available such as VPhot 
-	(http://www.aavso.org/vphot) and AstroImageJ (University of Louisville). 
-	VPhot uses the aperture photometry method.
+There are many photometry measuring programs available such as VPhot 
+(http://www.aavso.org/vphot) and AstroImageJ (University of Louisville). VPhot
+uses the aperture photometry method. 
 
-    MAOPhot uses the PSF Photometry method exclusively. PSF (point spread 
-	function) modeling is 
-    well suited for measuring stellar magnitudes in crowded fields, or the 
-	magnitude of a star that has a close companion, e.g., Z Tau.
+MAOPhot uses the PSF Photometry method exclusively. PSF (point spread function)
+modeling is well suited for measuring stellar magnitudes in crowded  fields,
+or the magnitude of a star that has a close companion, e.g., Z Tau.
+(See https://www.aavso.org/lpv-double-trouble-campaign-0)
 
-    MAOPhot uses many 'astropy' libraries. The astropy package contains key 
-	functionality and common 
-    tools needed for performing astronomy and astrophysics with Python. Included
-	 in the package is Photutils.psf.
-    See "PSF Photometry" (https://photutils.readthedocs.io/en/stable/psf.html)
-	 which describes many 
-    of the classes and methods used in MAOPhot
+MAOPhot is written in Python. It uses many Python 'astropy' 
+(https://www.astropy.org/) libraries. The astropy package contains key 
+functionality and common tools for performing astronomy and astrophysics
+ with Python. Included in the package is Photutils.psf.  See "PSF Photometry" 
+ (https://photutils.readthedocs.io/en/stable/psf.html) which describes many of 
+ the classes and methods used in MAOPhot 
 
-    Features:
-        - Generation of Effective PSF model, and ability to pick and choose 
-		which stars can be included
-         in te generation of the model
-        - option to use an IntegratedGaussianPRF as model 
-        - PSF Photometry using iterative algorithm to perform point spread 
-		function photometry in crowded fields
-        - Photometry using an ensemble of comparison stars. 
-        - Generation of Two Color Photometry (B, V) only, and Single Image 
-		Photometry reports in AAVSO extended format 
-        - Use of telescope Transformation Coefficients 
-        - Image display shows comp star AAVSO label number and name of any 
-		found VSX objects 
-        - Intermediate results are saved as .csv files 
-        - User enters AAVSO Chart ID when retrieving comparison stars
-        - User can specify check star and list of comp stars to use
+This program was derived from MetroPSF by Maxym Usatov.  
+It has been redesigned for AAVSO reporting only and includes, but not limited 
+to the following enhancements:
 
+- Generation of Effective PSF model, and ability to create a ‘rejection list’
+- option to use an Integrated Gaussian PRF (Pixel Response Function) as model 
+- PSF Photometry using an iterative algorithm to perform point spread function 
+photometry in crowded fields
+- Photometry using an ensemble of comparison stars or a single comp star
+- Generation of Two-Color Photometry (B, V), (V, R) or (V, I), and Single Image
+ Photometry reports in AAVSO extended format 
+- Use of telescope Transformation Coefficients (needed for Two Color Photometry)
+- Image display shows comp star AAVSO label number and name of any found VSX 
+objects in image field
+- Intermediate results are saved as .csv files 
+- User can optionally enter a AAVSO Chart ID when retrieving comparison star
+ data
+- User can specify check star and list of comp stars to use
 
-    
-    This program was derived from MetroPSF by Maxym Usatov. It has been 
-	extensively redesigned and includes 
-    but not limited to the following enhancements:
-    - generation of an Effective PSF (ePSF)
-        - ability to tailor which stars are included in derived ePSF
-    - Use of telescope Transformation Coefficients (e.g., Tvb)
-    - Generation of Two Color Photometry (ensemble) report with Transform
-        - ability to remove comp stars which are outliers
-    - Generation of Single Image Photometry report (non-ensemble)
-
-							Single Image Photometry
-
-    General Workflow for Single Image Photometry and AAVSO report generation:
-        Step 1- Prepare master images 
-            - The master should be calibrated and in proper FIT format. It 
-			should be cropped such that no 'black' or zero value ADU exists at 
-			the edges. The image need not be plate solved but RA and DEC values
-			should exist for proper plate solving in MAOPhot
-        
-        Step 2- In Settings popup window 'Load...'
-            - Fill in settings and then Save...
-
-        Step 3- 'File->Open...' 
-		(e.g., 'ZTau_I_300s_30pct.fit')
-            - Adjust Image Stretching and Histogram Stretch if necessary
-            - 'Photometry->Solve Image' to plate solve if necessary
-            - After solving, 'File->Save' to keep WCS data
-        
-        Step 4- [Optional] 'Photometry->Create Effective PSF'
-            - Select stars to be rejected; these are 
-                - stars NOT well isolated from their neighbors
-                - stars NOT with high SNR levels
-            - then select 'Photometry->Create Effective PSF' again and repeat 
-			if necessary
-
-        Step 5- Photometry->Iteratively Subtracted PSF Photometry
-        
-        Step 6- Photometry->Get Comparison Stars
-        
-        Step 7- 'Generate AAVSO Report->Single Image Photometry'
-			- Select the <fits filename>.csv file that was generated 
-			by Step 6 (e.g, 'ZTau_I_300s_30pct.fit.csv')
-			- this generates the AAVSO report in a subdirectory aavso_reports/
-
-	-example AAVSO report:
-	#TYPE=Extended
-	#OBSCODE=FPIA
-	#SOFTWARE=Self-developed using photutils.psf; DAOPHOT
-	#DELIM=,
-	#DATE=JD
-	#OBSTYPE=CCD
-	#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-	Z Tau,2459598.66432,11.075,0.040,I,NO,STD,130,-7.922,154,-5.7,na,na,X28313F,Mittelman ATMoB Observatory|
-	CMAGINS=-7.922|CREFERR=na|CREFMAG=12.17|KMAG=14.392|KMAGINS=-5.7|KREFERR=na|KREFMAG=14.342|VMAGINS=-9.017 
-
-
-							Two Color Photometry
-
-    General Workflow for Two Color Photometry and AAVSO report generation:
-        Step 1- Prepare B and V master images 
-            - The B filter and V filter masters should be calibrated and in 
-			proper FIT format. They should be cropped such that no 'black' or 
-			zero value ADU exists at the edges. The images need not be plate
-			solved but RA and DEC values should exist for proper plate solving
-			in MAOPhot 
-        
-        Step 2- In Settings popup window 'Load...'
-            - Fill in settings and then Save...
-
-        Step 3- 'File->Open...' B color FIT file 
-		(e.g., 'W Her V CROP_60.fits')
-            - Adjust Image Stretching and Histogram Stretch if necessary
-            - 'Photometry->Solve Image' to plate solve if necessary
-            - After solving, 'File->Save' to keep WCS data
-        
-        Step 4- [Optional] 'Photometry->Create Effective PSF'
-            - Select stars to be rejected; these are 
-                - stars NOT well isolated from their neighbors
-                - stars NOT with high SNR levels
-            - then select 'Photometry->Create Effective PSF' again and repeat 
-			if necessary
-
-        Step 5- Photometry->Iteratively Subtracted PSF Photometry
-        
-        Step 6- Photometry->Get Comparison Stars
-        
-        Step 7- Repeat steps 2-6 for V color
-        
-        Step 8- 'Two Color Photometry->Two Color Photometry (B,V)'
-			-Select the 2 csv files that were genertated in step 6 (1 for B
-			and 1 for V; e.g., 'W Her B CROP_60.fits.csv' and
-			'W Her V CROP_60.fits.csv'
-			- If any outliers (comparison stars) noted, delete from 
-			'Select Comp Stars (AAVSO Label)' list;
-				select 'Two Color Photometry->Two Color Photometry (B,V)' again 
-
-Typical Output after running Two Color Photometry->Two Color Photometry (B,V):   (Variable is W Her)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------
-28 Oct 2022 15:52:45      Check Star Estimates using check star: 144 (B: 14.933) (V: 14.404)
-    star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star     outlier
-0  check   113 -9.625943 -10.379204  12.144  11.277        -0.267405        -0.317142  2.794538  3.061943        0.753261  14.928707  14.380488            
-1  check   132 -7.841239  -8.512675  13.963  13.178        -0.185579        -0.220097  1.009835  1.195414        0.671436  14.966012  14.402247            
-2  check   138 -7.219232  -7.874955  14.560  13.811        -0.169865        -0.201460  0.387828  0.557693        0.655722  14.941583  14.395085            
-3  check   139 -7.089318  -7.820401  14.709  13.873        -0.245227        -0.290839  0.257913  0.503140        0.731083  14.957897  14.414240            
-4  check   141 -6.871317  -7.597812  14.902  14.092        -0.240638        -0.285397  0.039912  0.280550        0.726495  14.933065  14.409937            
-5  check   142 -6.881629  -7.476356  14.892  14.227        -0.108870        -0.129119  0.050224  0.159094        0.594727  14.938222  14.403009            
-6  check   150 -5.915583  -6.694471  15.853  15.024        -0.293032        -0.347536 -0.915822 -0.622790        0.778889  14.926404  14.446737  <--OUTLIER
-                                                                                                           B* Ave: 14.942  V* Ave: 14.407
-                                                                                                           B* Std:  0.015  V* Std:  0.021
-28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for B*: 14.903;14.978
-28 Oct 2022 15:52:45                                                                                       Check Star IQR limit for V*: 14.379;14.432
-28 Oct 2022 15:52:45      
-
-28 Oct 2022 15:52:45      Variable Star Estimates of Var: W Her
-  star label       IMB        IMV       B       V  delta_b_minus_v  delta_B_minus_V   delta_b   delta_v  comp_b_minus_v     B_star     V_star
-0  var   113 -9.625943 -10.379204  12.144  11.277         0.470010         0.557432  2.470806  2.000796        0.753261  14.632086  13.204772
-1  var   132 -7.841239  -8.512675  13.963  13.178         0.551835         0.654477  0.686102  0.134267        0.671436  14.669391  13.226530
-2  var   138 -7.219232  -7.874955  14.560  13.811         0.567549         0.673113  0.064095 -0.503454        0.655722  14.644962  13.219368
-3  var   139 -7.089318  -7.820401  14.709  13.873         0.492188         0.583735 -0.065819 -0.558007        0.731083  14.661276  13.238523
-4  var   141 -6.871317  -7.597812  14.902  14.092         0.496776         0.589177 -0.283820 -0.780597        0.726495  14.636444  13.234221
-5  var   142 -6.881629  -7.476356  14.892  14.227         0.628545         0.745454 -0.273508 -0.902053        0.594727  14.641601  13.227293
-6  var   150 -5.915583  -6.694471  15.853  15.024         0.444383         0.527038 -1.239554 -1.683937        0.778889  14.629784  13.271021
-                                                                                                           B* Ave: 14.645  V* Ave: 13.232
-                                                                                                           B* Std:  0.015  V* Std:  0.021
----------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Note the comp star 150 is an outlier (<--OUTLIER). MAOPhot checks for values outside the IQR (interquartile range) to detect outliers
-
-To remove the 150 outlier simply remove 150 from the 'Select Comp Stars (AAVSO Label)' list, then repeat 'Two Color Photometry->Two Color Photometry (B,V)'
-
-        
-        Step 9- 'Generate AAVSO Report->Two Color Photometry'
-			- Select the Master-Report csv file that was generated 
-			by Step 8 (e.g, 'W Her-Master-Report.csv')
-			- this generates the AAVSO report in a subdirectory aavso_reports/ 
-	-example AAVSO report:
-	#TYPE=Extended
-	#OBSCODE=FPIA
-	#SOFTWARE=MAOPhot; Self-developed using photutils.psf; DAOPHOT
-	#DELIM=,
-	#DATE=JD
-	#OBSTYPE=CCD
-	#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-	Y And,2459839.71998,13.794,0.02,B,YES,STD,ENSEMBLE,na,130,13.668,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.668|KMAGINS=-7.763|KREFMAG=13.664|Tbv=1.186|VMAGINS=-7.659 
-	Y And,2459839.73034,12.398,0.019,V,YES,STD,ENSEMBLE,na,130,13.012,na,na,X28199GB,Mittelman ATMoB Observatory|KMAG=13.012|KMAGINS=-8.265|KREFMAG=13.019|Tv_bv=-0.131|VMAGINS=-8.782 
-    
-    2459839.73034 = 17 Sept 2022
-	
-	Examine in aavso_reports/ directory and submit to AAVSO using WebObs 
 
 
     More about Single Image Photometry
@@ -1740,7 +1589,7 @@ class MyGUI:
                     }, ignore_index=True)                     
             
                 self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
-                                result_check_star.sort_values(by="label").to_string() +
+                                result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
                                 "  V* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
@@ -1753,7 +1602,7 @@ class MyGUI:
                 self.console_msg('\n')
 
                 self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
-                                result_var_star.sort_values(by="label").to_string() +
+                                result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("B* Ave: " + format(B_mean_var, ' >6.3f') +
                                 "  V* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
@@ -1793,7 +1642,7 @@ class MyGUI:
                     }, ignore_index=True)                     
             
                 self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
-                                result_check_star.sort_values(by="label").to_string() +
+                                result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
                                 "  R* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
@@ -1806,7 +1655,7 @@ class MyGUI:
                 self.console_msg('\n')
 
                 self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
-                                result_var_star.sort_values(by="label").to_string() +
+                                result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("V* Ave: " + format(B_mean_var, ' >6.3f') +
                                 "  R* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
@@ -1897,6 +1746,13 @@ class MyGUI:
 
             frame_center = self.wcs_header.pixel_to_world(
                 int(image_width / 2), (image_height / 2))
+
+            if not hasattr(frame_center, "ra"):
+                #file needs to be plate solved first
+                self.console_msg("Image needs to be plate solved first! execute 'Photometry->Solve Image'")
+                self.console_msg("Ready")
+                return
+
             frame_center_coordinates = SkyCoord(
                 ra=frame_center.ra, dec=frame_center.dec)
             frame_edge = self.wcs_header.pixel_to_world(
