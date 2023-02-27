@@ -346,7 +346,6 @@ import os.path
 import numpy as np
 import warnings
 import datetime
-import VerticalScrolledFrame as vsf
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
@@ -475,7 +474,6 @@ class MyGUI:
     catalog_stringvar = None
     vizier_catalog_entry = None
     fitter_stringvar = None
-    plate_solve_on_open = None
     astrometrynet_entry = None
     astrometrynet_key_entry = None
     object_kref_entry = None
@@ -622,24 +620,6 @@ class MyGUI:
                 self.display_image()
                 self.clear_psf_label()
                 self.clear_epsf_plot()
-                
-
-                if self.plate_solve_on_open.get():
-                    self.console_msg("Solving via Astrometry.Net...")
-                    
-                    ast = AstrometryNet()
-                    ast.api_key = self.astrometrynet_key_entry.get()
-                    ast.URL = "http://" + self.astrometrynet_entry.get()
-                    ast.API_URL = "http://" + self.astrometrynet_entry.get() + "/api"
-        
-                    self.wcs_header = ast.solve_from_image(image_file, force_image_upload=True)
-                    
-                    self.console_msg(
-                        "Astrometry.Net solution reference point RA: " + str(self.wcs_header["CRVAL1"]) + " Dec: " + str(
-                            self.wcs_header["CRVAL2"]))
-                    
-                    header = header + self.wcs_header
-                    self.wcs_header = WCS(header)
                 
             except Exception as e:
                 self.error_raised = True
@@ -1378,7 +1358,8 @@ class MyGUI:
             E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 6 4 V1117 Her/
             TwoColor V1117_Her 2022 6 4.xlsx)
             
-            star                     "check" or "var"
+            type                     "check" or "var"
+            name                     <check star label> or <var name>
             label                    label of comp star
             IMB                      instrumental mag of comp (B)
             IMV                      instrumental mag of comp (V)
@@ -1402,7 +1383,6 @@ class MyGUI:
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
-
 
             variable_star = self.object_name_entry.get().strip()
             if len(variable_star) == 0:
@@ -1461,8 +1441,10 @@ class MyGUI:
             #
             # Find the check star; 
             check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]
-            
-            self.console_msg("Using check star " + str(int(check_star_B["label"])))
+
+            check_star_label = check_star_B["label"]
+
+            self.console_msg("Using check star " + str(int(check_star_label)))
 
             check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
@@ -1474,6 +1456,8 @@ class MyGUI:
             # Find the variable_star; 
             var_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["vsx_id"] == variable_star].iloc[0]
             var_IMB = var_star_B["inst_mag"]
+
+            var_star_label = var_star_B["vsx_id"]
 
             var_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["vsx_id"] == variable_star].iloc[0]
             var_IMV = var_star_V["inst_mag"]
@@ -1491,22 +1475,22 @@ class MyGUI:
             """
             
             if input_color == 'B-V':
-                result_check_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
+                result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
                                                       "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star", "outlier"])
             
-                result_var_star = pd.DataFrame(columns=["star", "label", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
+                result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
                                                     "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star"])
             elif input_color == 'V-R':
-                result_check_star = pd.DataFrame(columns=["star", "label", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
+                result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
                                                       "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star", "outlier"])
             
-                result_var_star = pd.DataFrame(columns=["star", "label", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
+                result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
                                                       "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star"])
             elif input_color == 'V-I':
-                result_check_star = pd.DataFrame(columns=["star", "label", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
+                result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
                                                       "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star", "outlier"])
             
-                result_var_star = pd.DataFrame(columns=["star", "label", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
+                result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
                                                       "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star"])
             else:
                 raise Exception("two_color_photometry: unknown imput_color entered")
@@ -1534,7 +1518,7 @@ class MyGUI:
                     continue
                 
                 #Dont use the check star 
-                if comp == int(check_star_B["label"]):
+                if comp == int(check_star_label):
                     continue
                 
                 comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
@@ -1551,8 +1535,9 @@ class MyGUI:
                 
                 if input_color == 'B-V':
                     result_check_star = result_check_star.append({
-                        "star": "check",
-                        "label": int(comp),
+                        "type": "check",
+                        "name": int(check_star_label),
+                        "comp": int(comp),
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -1568,8 +1553,9 @@ class MyGUI:
                         }, ignore_index=True)
                 elif input_color == 'V-R':
                     result_check_star = result_check_star.append({
-                        "star": "check",
-                        "label": int(comp),
+                        "type": "check",
+                        "name": int(check_star_label),
+                        "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1585,8 +1571,9 @@ class MyGUI:
                         }, ignore_index=True)
                 elif input_color == 'V-I':
                     result_check_star = result_check_star.append({
-                        "star": "check",
-                        "label": int(comp),
+                        "type": "check",
+                        "name": int(check_star_label),
+                        "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1620,8 +1607,9 @@ class MyGUI:
                 
                 if input_color == 'B-V':
                     result_var_star = result_var_star.append({
-                        "star": "var",
-                        "label": int(comp),
+                        "type": "var",
+                        "name": var_star_label,
+                        "comp": int(comp),
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -1636,8 +1624,9 @@ class MyGUI:
                         }, ignore_index=True)
                 elif input_color == 'V-R':
                     result_var_star = result_var_star.append({
-                        "star": "var",
-                        "label": int(comp),
+                        "type": "var",
+                        "name": var_star_label,
+                        "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1652,8 +1641,9 @@ class MyGUI:
                         }, ignore_index=True)
                 elif input_color == 'V-I':
                     result_var_star = result_var_star.append({
-                        "star": "var",
-                        "label": int(comp),
+                        "type": "var",
+                        "name": var_star_label,
+                        "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1733,7 +1723,7 @@ class MyGUI:
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
                 
                 result_aux_report = result_aux_report.append({
@@ -1746,10 +1736,10 @@ class MyGUI:
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="label").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -1786,7 +1776,7 @@ class MyGUI:
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
                 
                 result_aux_report = result_aux_report.append({
@@ -1799,10 +1789,10 @@ class MyGUI:
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="label").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -1839,7 +1829,7 @@ class MyGUI:
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
                 
                 result_aux_report = result_aux_report.append({
@@ -1852,11 +1842,11 @@ class MyGUI:
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V,
-                    "KNAME" : check_star_B['label']
+                    "KNAME" : check_star_label
                     }, ignore_index=True)                     
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_B["label"])) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
-                                result_check_star.sort_values(by="label").to_string() +
+                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
+                                result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
                                 "  I* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
@@ -1869,7 +1859,7 @@ class MyGUI:
                 self.console_msg('\n')
 
                 self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
-                                result_var_star.sort_values(by="label").to_string() +
+                                result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("V* Ave: " + format(B_mean_var, ' >6.3f') +
                                 "  I* Ave: " + format(V_mean_var, ' >6.3f')).rjust(137) +
@@ -2566,12 +2556,13 @@ class MyGUI:
             catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
             catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             catalog_dropdown = tk.OptionMenu(
-                self.es_top, self.catalog_stringvar, "AAVSO", "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog")
+                self.es_top, self.catalog_stringvar, "AAVSO")
+                # , "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog") <--not supporting now
             catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
-            vizier_catalog_label = tk.Label(self.es_top, text="AAVSO ChartID or VizieR Catalog Number:")
-            vizier_catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.W)
+            vizier_catalog_label = tk.Label(self.es_top, text="AAVSO ChartID:")
+            vizier_catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.vizier_catalog_entry = tk.Entry(self.es_top,width=extended_settings_entry_width)
             self.vizier_catalog_entry.grid(row=row, column=2, sticky=tk.E)
             row += 1
@@ -2581,13 +2572,6 @@ class MyGUI:
             fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
                                                 "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
             fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
-
-            plate_solve_on_open_label = tk.Label(self.es_top, text="Plate solve when loading FITS file:")
-            plate_solve_on_open_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.plate_solve_on_open_checkbox = tk.Checkbutton(
-                self.es_top, variable=self.plate_solve_on_open)
-            self.plate_solve_on_open_checkbox.grid(row=row, column=2, sticky=tk.W)
             row += 1
 
             separator_ = ttk.Separator(self.es_top, orient='horizontal')
@@ -2691,10 +2675,6 @@ class MyGUI:
                 if mag == None:
                     self.console_msg("label: " + str(label) + " has no mag for " + filter_band + "..skipping")
                     continue #skip this one
-                    if is_check_star:
-                        self.console_msg("CHECK STAR label: " + str(label) + " has no mag for " + filter_band 
-                                        + "Choose another....aborting", logging.WARNING)
-                        return
                         
                 result = result.append({
                     "AUID": auid,
@@ -3002,8 +2982,8 @@ class MyGUI:
         # like in the following..
 
         #extract the estimates
-        result_check_star = master_report[master_report["star"] == "check"]
-        result_var_star = master_report[master_report["star"] == "var"]
+        result_check_star = master_report[master_report["type"] == "check"]
+        result_var_star = master_report[master_report["type"] == "var"]
 
         B_mean_check = result_check_star[first_filter[input_color] + "_star"].mean()
         V_mean_check = result_check_star[second_filter[input_color] + "_star"].mean()
@@ -3162,42 +3142,6 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
 
-    def next_vsx_source(self):
-        mask = self.results_tab_df['vsx_id'].notnull()
-        vsx_sources = self.results_tab_df.loc[mask]
-        next_vsx_source_id = ""
-        next_row = False
-        if self.object_name_entry.get() == "":
-            # Reset to first VSX source
-            next_vsx_source_id = vsx_sources.iloc[0]['vsx_id']
-        if len(vsx_sources) > 0 and self.object_name_entry.get() != "":
-            for index, row in vsx_sources.iterrows():
-                if next_row:
-                    next_vsx_source_id = row['vsx_id']
-                    break
-                if row['vsx_id'] == self.object_name_entry.get():
-                    next_row = True
-            if next_vsx_source_id == "":
-                # Reset to first VSX source
-                next_vsx_source_id = vsx_sources.iloc[0]['vsx_id']
-        self.console_msg("Next VSX Source: "+next_vsx_source_id)
-        x = int(self.results_tab_df.loc[self.results_tab_df['vsx_id']
-                == next_vsx_source_id]['x_0'] * self.zoom_level)
-        y = int(self.results_tab_df.loc[self.results_tab_df['vsx_id']
-                == next_vsx_source_id]['y_0'] * self.zoom_level)
-        self.canvas.xview(tk.MOVETO, 0)     # Reset canvas position
-        self.canvas.yview(tk.MOVETO, 0)
-        # Simulate a mouse click
-        self.canvas.event_generate('<Button-1>', x=x, y=y)
-        width, height = generated_image.size
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-        # Center canvas on the object
-        self.canvas.xview(tk.MOVETO, (x-canvas_width/2)/width)
-        self.canvas.yview(tk.MOVETO, (y-canvas_height/2)/height)
-
-
-
     def exit_app(self):
         os._exit(0)
 
@@ -3250,14 +3194,9 @@ class MyGUI:
         self.menubar.add_cascade(label="File", menu=self.filemenu)
 
         self.viewmenu = tk.Menu(self.menubar, tearoff=0)
-        self.viewmenu.add_command(label="Update", command=self.update_display)
-        self.viewmenu.add_separator()
         self.viewmenu.add_command(label="Zoom In", command=self.zoom_in)
         self.viewmenu.add_command(label="Zoom Out", command=self.zoom_out)
         self.viewmenu.add_command(label="100% Zoom", command=self.zoom_100)
-        self.viewmenu.add_separator()
-        self.viewmenu.add_command(
-            label="Next VSX Source", command=self.next_vsx_source)
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
@@ -3271,11 +3210,11 @@ class MyGUI:
         self.photometrymenu.add_command(
             label="Iteratively Subtracted PSF Photometry", command=self.execute_psf_photometry)
         self.photometrymenu.add_command(
-            label="Get Comparison Stars", command=self.get_comparison_stars)
+            label="Solve Image", command=self.solve_image)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Solve Image", command=self.solve_image)
+            label="Get Comparison Stars", command=self.get_comparison_stars)
         self.menubar.add_cascade(label="Photometry", menu=self.photometrymenu)
         
         self.two_color_photo_menu = tk.Menu(self.menubar, tearoff=0)
@@ -3414,9 +3353,6 @@ class MyGUI:
         self.catalog_stringvar.set("AAVSO")
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("Levenberg-Marquardt")
-        self.plate_solve_on_open = tk.BooleanVar()
-        self.plate_solve_on_open.set(True)
-
 
         row = 0
 
@@ -3479,7 +3415,6 @@ class MyGUI:
             'catalog_stringvar': self.catalog_stringvar,
             'vizier_catalog_entry': self.vizier_catalog_entry,
             'fitter_stringvar': self.fitter_stringvar,
-            'plate_solve_on_open': self.plate_solve_on_open,
             'astrometrynet_entry': self.astrometrynet_entry,
             'astrometrynet_key_entry': self.astrometrynet_key_entry,
             'object_kref_entry': self.object_kref_entry,
