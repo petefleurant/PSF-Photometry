@@ -163,10 +163,12 @@ from astropy.wcs import WCS
 from astropy import units as u
 from astropy.time import Time
 from astropy.io import fits
-from photutils import Background2D, MedianBackground
+from photutils.background import Background2D
+from photutils.background import MedianBackground
+from photutils.background import MADStdBackgroundRMS
+from photutils.background import MMMBackground
 from photutils.detection import find_peaks
 from photutils.psf import IterativelySubtractedPSFPhotometry
-from photutils.background import MMMBackground, MADStdBackgroundRMS
 from photutils.psf import IntegratedGaussianPRF, DAOGroup
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
@@ -635,7 +637,7 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True)
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=100, progress_bar=True)
             self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
 
             model_length = len(self.epsf_model.data)
@@ -803,15 +805,15 @@ class MyGUI:
                                                             niters = iterations,
                                                             fitshape = (self.fit_shape, self.fit_shape))
             self.console_msg("Performing photometry...")
-            result_tab = photometry(image = image_data)
+            result_tab = photometry.do_photometry(image = image_data, progress_bar=True)
             residual_image = photometry.get_residual_image()
-            fits.writeto("residuals.fits", residual_image, header, overwrite=True)
+            fits.writeto(str(self.image_file) + "-residuals.fits", residual_image, header, overwrite=True)
+            self.console_msg("Residuals file save to " + str(self.image_file) + "-residuals.fits")
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
             else:
                 self.console_msg("Done. PSF fitter; no message available")
-
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
@@ -1252,7 +1254,12 @@ class MyGUI:
                 self.results_tab_df_colorB = pd.read_csv(str(file_name))
             else:
                 return
-                
+
+            #Test to make sure csv file is ready                
+            if "label" not in self.results_tab_df_colorB:
+                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' first.")
+                return
+
             options['title'] = 'Choose a file for filter ' + second_filter[input_color]
             file_name = fd.askopenfilename(**options)
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
@@ -1260,6 +1267,12 @@ class MyGUI:
                 self.results_tab_df_colorV = pd.read_csv(str(file_name))
             else:
                 return
+            
+            #Test to make sure csv file is ready                
+            if "label" not in self.results_tab_df_colorV:
+                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' first.")
+                return
+
             self.console_msg("Performing Two Color Photometry...")
             
             #get the transformation coefficients
@@ -2619,7 +2632,12 @@ class MyGUI:
             self.results_tab_df_color = pd.read_csv(str(file_name))
         else:
             return
-            
+
+        #Test to make sure csv file is ready                
+        if "vsx_id" not in self.results_tab_df_color:
+            self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' first.")
+            return
+
         try:
             """
             Typical Single Image Report (note only 1 check and 1 comp star)
