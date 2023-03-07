@@ -2,7 +2,7 @@
 
 Welcome to MAOPhot 0.1, a PSF Photometry tool using Astropy and Photutils.psf
 
-MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
+MAOPhot calculates stellar magnitudes from Fit formatted digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
 report which can be submitted to the AAVSO using the online tool WebObs 
 (http://www.aavso.org/webobs).
