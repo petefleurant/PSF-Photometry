@@ -2520,8 +2520,8 @@ class MyGUI:
                 auid = star['auid']
                 ra = star['ra']
                 dec = star['dec']
-                label = star['label']
-                
+                label = int(star['label'])
+
                 if label not in sel_comps:
                     continue #skip
                 
