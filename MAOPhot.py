@@ -1,6 +1,12 @@
 4# -*- coding: utf-8 -*-
 """
-	Welcome to MAOPhot 0.1, a PSF Photometry tool using Astropy and Photutils.psf
+	Welcome to MAOPhot 0.2, a PSF Photometry tool using Astropy and Photutils.psf
+
+    0.2 Revision
+    - Upgraded to Photutils 1.10.0 and Panda 2.1.4, etc.
+    - changed "Close" button in Settings window to "Dismiss"
+    - report JD is DATE-OBS + EXPOSURE/2 (like AAVSO report)
+    - minor changes to Notes in report to reflect current AAVSO report
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -161,7 +167,7 @@ from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy import units as u
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from astropy.io import fits
 from photutils.background import Background2D
 from photutils.background import MedianBackground
@@ -214,7 +220,7 @@ def save_background_image(stretch_min, stretch_max, zoom_level, image_data):
     background_image = Image.fromarray(image_data)
     width, height = background_image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
-    background_image = background_image.resize(new_size, Image.ANTIALIAS)
+    background_image = background_image.resize(new_size, Image.LANCZOS)
     background_image = ImageMath.eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
                                       ") * 255 / " + str(stretch_max / 100 * FITS_maximum), a=background_image)
     background_image = ImageMath.eval("convert(a, 'L')", a=background_image)
@@ -227,7 +233,7 @@ def save_image(stretch_min, stretch_max, zoom_level, image_data, filename):
     _image = Image.fromarray(image_data)
     width, height = _image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
-    _image = _image.resize(new_size, Image.ANTIALIAS)
+    _image = _image.resize(new_size, Image.LANCZOS)
     _image = ImageMath.eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
                             ") * 255 / " +
                             str(stretch_max / 100 * FITS_maximum),
@@ -265,7 +271,7 @@ def generate_FITS_thumbnail(stretch_min, stretch_max, zoom_level,
     FITS_maximum = np.max(converted_data)
     width, height = generated_image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
-    generated_image = generated_image.resize(new_size, Image.ANTIALIAS)
+    generated_image = generated_image.resize(new_size, Image.LANCZOS)
     generated_image = ImageMath.eval("(a + " +
                                      str(stretch_min / 100 * FITS_maximum) +
                                      ") * 255 / " +
@@ -366,8 +372,7 @@ class MyGUI:
             self.canvas.bind("<Button-1>", self.mouse_click)
             if self.ePSF_results_plotted:
                 self.plot_ePSF()
-            elif self.photometry_results_plotted:
-                self.plot_photometry()
+            self.plot_photometry()
 
     def load_FITS(self, image_file):
         global image_figure
@@ -388,7 +393,11 @@ class MyGUI:
                 self.zoom_level = 1
                 self.photometry_results_plotted = False
                 self.ePSF_results_plotted = False
-                self.results_tab_df = pd.DataFrame()
+                #Load previous work if it exists
+                if os.path.isfile(self.image_file+".csv"):
+                    self.results_tab_df = pd.read_csv(self.image_file + ".csv")
+                else:
+                    self.results_tab_df = pd.DataFrame()
                 header = image[0].header
                 image_data = fits.getdata(image_file)
                 image_width = image_data.shape[1]
@@ -526,7 +535,7 @@ class MyGUI:
             return
 
         try:
-            # Find local peaks in an image that are above above a specified 
+            # Find local peaks in an image that are above a specified 
             # threshold value. Threshold determined 
             # 
             #determine the background, it will be subtrated from image_data, later
@@ -824,6 +833,10 @@ class MyGUI:
             image_exposure_time = float(self.exposure_entry.get())
             self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / image_exposure_time)
 
+            #record for later 
+            self.results_tab_df["exposure"] = image_exposure_time
+
+
             # Create a "inst_mag_unc" column used for err in the reports 
             if "flux_unc" in self.results_tab_df:
                 self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / image_exposure_time))
@@ -899,7 +912,7 @@ class MyGUI:
                 for index, row in self.results_tab_df.iterrows():
                     outline = "grey50"
                     if labels_in_photometry_table:
-                        if len(str(row["label"])) > 0 and str(row["label"]) != "nan":
+                        if len(str(row["label"])) > 0 and str(row["label"]) != "nan" and str(row["label"]).isnumeric():
                             outline = "green"
                             self.create_circle(x=row["x_fit"] * self.zoom_level,
                                 y=row["y_fit"] * self.zoom_level,
@@ -1302,16 +1315,16 @@ class MyGUI:
             #   CHECK STAR Calculations
             #
             # Find the check star; 
-            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]
+            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]
 
             check_star_label = check_star_B["label"]
 
-            self.console_msg("Using check star " + str(int(check_star_label)))
+            self.console_msg("Using check star " + check_star_label)
 
             check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
 
-            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
+            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]
             check_IMV = check_star_V["inst_mag"]
             check_V = check_star_V["match_mag"]
             
@@ -1325,11 +1338,21 @@ class MyGUI:
             var_IMV = var_star_V["inst_mag"]
 
 
-            # The proper dae-obs should be set in post-processing, where the number of subs and exposure time is 
-            #taken into consideration
-            date_obs_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]["date-obs"]
-            date_obs_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["date-obs"]
+            # AAVSO adds EXPOSURE/2 to this time and sets it in the report
+            # E.g., Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,...
+            date_obs_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["date-obs"]
+            date_obs_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["date-obs"]
             
+            # add EXPOSURE/2 
+            half_exposure_B = (self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["exposure"])/2
+            half_exposure_V = (self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["exposure"])/2
+
+            #use Julian Datw
+            _obs_B = Time(date_obs_B, format='jd') + TimeDelta(half_exposure_B, format='sec')
+            _obs_V = Time(date_obs_V, format='jd') + TimeDelta(half_exposure_V, format='sec')
+
+            date_obs_B = _obs_B.jd
+            date_obs_V = _obs_V.jd
             
             """
             Build the result_check_star and result_var_table which are similar to the aforementioed 
@@ -1360,16 +1383,16 @@ class MyGUI:
             
 
             """
-            loop through all the selected comp stars and fill the result_check_star table
+            loop through all the selected comp stars and fill the * table
             """
             sel_comps = [] #init
             sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
 
-            #make array of int                
+            #make array of int csalled sel_comps            
             for comp in sel_comps_to_use:
                 sel_comps.append(int(comp.strip()))
             
-            for comp in sel_comps:
+            for comp in sel_comps_to_use:
                 #selected comp must be in both tables
                 if comp not in self.results_tab_df_colorB["label"].values:
                     self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
@@ -1380,7 +1403,7 @@ class MyGUI:
                     continue
                 
                 #Dont use the check star 
-                if comp == int(check_star_label):
+                if comp == check_star_label:
                     continue
                 
                 comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
@@ -1391,12 +1414,13 @@ class MyGUI:
                 delta_B_minus_V = tbv_coefficient*delta_b_minus_v
                 delta_b = check_IMB - comp_star_B["inst_mag"]
                 delta_v = check_IMV - comp_star_V["inst_mag"]
-                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + comp_star_B["match_mag"]
-                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
+                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + float(comp_star_B["match_mag"])
+                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + float(comp_star_V["match_mag"])
                 
                 
                 if input_color == 'B-V':
-                    result_check_star = result_check_star.append({
+                    result_check_star.loc[len(result_check_star)] =\
+                        {
                         "type": "check",
                         "name": int(check_star_label),
                         "comp": int(comp),
@@ -1412,9 +1436,10 @@ class MyGUI:
                         "B_star": B_star,
                         "V_star": V_star,
                         "outlier": ''
-                        }, ignore_index=True)
+                        }
                 elif input_color == 'V-R':
-                    result_check_star = result_check_star.append({
+                    result_check_star.loc[len(result_check_star)] =\
+                        {
                         "type": "check",
                         "name": int(check_star_label),
                         "comp": int(comp),
@@ -1430,9 +1455,10 @@ class MyGUI:
                         "V_star": B_star,
                         "R_star": V_star,
                         "outlier": ''
-                        }, ignore_index=True)
+                        }
                 elif input_color == 'V-I':
-                    result_check_star = result_check_star.append({
+                    result_check_star.loc[len(result_check_star)] =\
+                        {
                         "type": "check",
                         "name": int(check_star_label),
                         "comp": int(comp),
@@ -1448,7 +1474,7 @@ class MyGUI:
                         "V_star": B_star,
                         "I_star": V_star,
                         "outlier": ''
-                        }, ignore_index=True)
+                        }
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
 
@@ -1463,12 +1489,13 @@ class MyGUI:
                 delta_B_minus_V = tbv_coefficient*delta_b_minus_v
                 delta_b = var_IMB - comp_star_B["inst_mag"]
                 delta_v = var_IMV - comp_star_V["inst_mag"]
-                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + comp_star_B["match_mag"]
-                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + comp_star_V["match_mag"]
+                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + float(comp_star_B["match_mag"])
+                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + float(comp_star_V["match_mag"])
                 
                 
                 if input_color == 'B-V':
-                    result_var_star = result_var_star.append({
+                    result_var_star.loc[len(result_var_star)] =\
+                        {
                         "type": "var",
                         "name": var_star_label,
                         "comp": int(comp),
@@ -1483,9 +1510,10 @@ class MyGUI:
                         "comp_b_minus_v": comp_b_minus_v,
                         "B_star": B_star,
                         "V_star": V_star
-                        }, ignore_index=True)
+                        }
                 elif input_color == 'V-R':
-                    result_var_star = result_var_star.append({
+                    result_var_star.loc[len(result_var_star)] =\
+                        {
                         "type": "var",
                         "name": var_star_label,
                         "comp": int(comp),
@@ -1500,9 +1528,10 @@ class MyGUI:
                         "comp_v_minus_r": comp_b_minus_v,
                         "V_star": B_star,
                         "R_star": V_star
-                        }, ignore_index=True)
+                        }
                 elif input_color == 'V-I':
-                    result_var_star = result_var_star.append({
+                    result_var_star.loc[len(result_var_star)] =\
+                        {
                         "type": "var",
                         "name": var_star_label,
                         "comp": int(comp),
@@ -1517,7 +1546,7 @@ class MyGUI:
                         "comp_v_minus_i": comp_b_minus_v,
                         "V_star": B_star,
                         "I_star": V_star
-                        }, ignore_index=True)
+                        }
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
 
@@ -1573,33 +1602,35 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tb_bv", "T_bv", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_bv", "Tv_bv", "VMAGINS", "Date-Obs", "KNAME"])
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "B",
-                    "JD" : comp_star_B["date-obs"],
+                    "JD" : comp_star_B["date-obs"], #orig
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
                     "T_bv" : tbv_coefficient,
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
-                    "Date-Obs" : date_obs_B,
+                    "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "V",
-                    "JD" : comp_star_V["date-obs"],
+                    "JD" : comp_star_V["date-obs"], #orig 
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
                     "T_bv" : tbv_coefficient,
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
-                    "Date-Obs" : date_obs_V,
+                    "Date-Obs" : date_obs_V,  #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
             
                 self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
@@ -1626,33 +1657,35 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tv_vr", "T_vr", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vr", "Tr_vr", "VMAGINS", "Date-Obs", "KNAME"])
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "V",
-                    "JD" : comp_star_B["date-obs"],
+                    "JD" : comp_star_B["date-obs"], #orig 
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
                     "T_vr" : tbv_coefficient,
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
-                    "Date-Obs" : date_obs_B,
+                    "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "R",
-                    "JD" : comp_star_V["date-obs"],
+                    "JD" : comp_star_V["date-obs"], #orig 
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
                     "T_vr" : tbv_coefficient,
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
-                    "Date-Obs" : date_obs_V,
+                    "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
             
                 self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
@@ -1679,33 +1712,35 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tv_vi", "T_vi", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vi", "Ti_vi", "VMAGINS", "Date-Obs", "KNAME"])
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "V",
-                    "JD" : comp_star_B["date-obs"],
+                    "JD" : comp_star_B["date-obs"], #orig 
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
                     "T_vi" : tbv_coefficient,
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
-                    "Date-Obs" : date_obs_B,
+                    "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
                 
-                result_aux_report = result_aux_report.append({
+                result_aux_report.loc[len(result_aux_report)] =\
+                    {
                     "color" : "I",
-                    "JD" : comp_star_V["date-obs"],
+                    "JD" : comp_star_V["date-obs"], #orig 
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
                     "T_vi" : tbv_coefficient,
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
-                    "Date-Obs" : date_obs_V,
+                    "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label
-                    }, ignore_index=True)                     
+                    }
             
                 self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
@@ -2454,7 +2489,7 @@ class MyGUI:
             load_settings_button.grid(row=row, column=0, padx=20, sticky=tk.W)
             save_settings_button = tk.Button(self.es_top, text="Save As...", command=self.save_settings_as)
             save_settings_button.grid(row=row, column=1, padx=20) #, sticky=tk.W)
-            close_settings_button = tk.Button(self.es_top, text="Close", command=self.es_top.withdraw) #hide
+            close_settings_button = tk.Button(self.es_top, text="Dismiss", command=self.es_top.withdraw) #hide
             close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
             row += 1
 
@@ -2513,8 +2548,8 @@ class MyGUI:
             chart_id = r.json()['chartid']
             self.console_msg(
                 'Downloaded AAVSO Comparison Star Chart ID ' + str(chart_id))
-            result = pd.DataFrame(columns=["AUID", "RA", "Dec", "Mag", "Label", "Chart ID"])
-
+            
+            result = pd.DataFrame(columns=["AUID", "RA", "Dec", "Mag", "Label", "Chart ID", "Check Star"])
 
             for star in r.json()['photometry']:
                 auid = star['auid']
@@ -2545,16 +2580,14 @@ class MyGUI:
                     self.console_msg("label: " + str(label) + " has no mag for " + filter_band + "..skipping")
                     continue #skip this one
                         
-                result = result.append({
-                    "AUID": auid,
+                result.loc[len(result)] = {"AUID": auid,
                     "RA": ra,
                     "Dec": dec,
                     "Mag": mag,
                     "Label": label,
                     "Chart ID": chart_id,
-                    "Check Star": is_check_star
-                }, ignore_index=True)
-                
+                    "Check Star": is_check_star}
+
             return result
         
         except Exception as e:
@@ -2671,7 +2704,7 @@ class MyGUI:
     
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
-                f.write("#SOFTWARE=Self-developed using photutils.psf; DAOPHOT\n") 
+                f.write("#SOFTWARE=Self-developed using photutils.psf; IRAFStarFinder\n") 
                 f.write("#DELIM=,\n")
                 f.write("#DATE=JD\n")
                 f.write("#OBSTYPE=CCD\n")
@@ -2784,13 +2817,16 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=VPhot 4.0.27
+        #SOFTWARE=VPhot 4.0.44
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
         #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-        V1117 Her,2459735.67981,12.891,0.013,B,YES,STD,ENSEMBLE,na,120,13.019,na,na,X27876MZ,Mittelman ATMoB Observatory|KMAG=13.019|KMAGINS=-8.706|KREFMAG=13.019|Tbv=1.182|VMAGINS=-8.809
-        V1117 Her,2459735.66950,12.549,0.007,V,YES,STD,ENSEMBLE,na,120,12.029,na,na,X27876MZ,Mittelman ATMoB Observatory|KMAG=12.029|KMAGINS=-9.497|KREFMAG=12.033|Tv_bv=-0.115|VMAGINS=-9.051
+        Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,Mittelman ATMoB Observatory|KMAGINS=-8.083|KMAGSTD=13.592|KREFMAG=13.585|Tvi=1.194|VMAGINS=-8.606
+        Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,Mittelman ATMoB Observatory|KMAGINS=-7.134|KMAGSTD=12.722|KREFMAG=12.731|Ti_vi=-0.138|VMAGINS=-11.032
+
+        Note:
+          DATE (in JD) is DATE-OBS + EXPOSURE/2
 
         """
 
@@ -2800,6 +2836,7 @@ class MyGUI:
         t_coefficient_tbv = {'B-V': 'T_bv', 'V-R': 'T_vr', 'V-I': 'T_vi'}
         t_coefficient_tv_bv = {'B-V': 'Tv_bv', 'V-R': 'Tr_vr', 'V-I': 'Ti_vi'}
 
+        t_coefficient_tbv_for_report_only = {'B-V': 'Tbv', 'V-R': 'Tvr', 'V-I': 'Tvi'}
 
         self.console_msg("Beginning Generate AAVSO Two Color Ensemble Report...")
         var_star_name = self.object_name_entry.get().strip()
@@ -2943,7 +2980,7 @@ class MyGUI:
             with open(report_filename, mode='w') as f:
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
-                f.write("#SOFTWARE=Self-developed using photoutils.psf; DAOPHOT\n") 
+                f.write("#SOFTWARE=Self-developed using photutils.psf; IRAFStarFinder\n") 
                 f.write("#DELIM=,\n")
                 f.write("#DATE=JD\n")
                 f.write("#OBSTYPE=CCD\n")
@@ -2967,10 +3004,10 @@ class MyGUI:
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
-                notes += "|KMAG=" + str(round(B_mean_check, decimal_places)) + \
-                         "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
+                notes += "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
+                         "|KMAGSTD=" + str(round(B_mean_check, decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
-                         "|" + t_coefficient_tbv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tbv_for_report_only[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 
@@ -2997,8 +3034,8 @@ class MyGUI:
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
-                notes += "|KMAG=" + str(round(V_mean_check, decimal_places)) + \
-                         "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
+                notes += "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
+                         "|KMAGSTD=" + str(round(V_mean_check, decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
                          "|" + t_coefficient_tv_bv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tv_bv[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
@@ -3022,7 +3059,7 @@ class MyGUI:
     def __init__(self):
         #Wis heisen Sie?
         self.program_name = "MAOPhot"
-        self.program_version = "0.1"
+        self.program_version = "0.2"
         self.program_name_note = ""
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
@@ -3234,7 +3271,7 @@ class MyGUI:
             self.settings_frame, text="Image Stretching:")
         self.stretching_label.grid(row=row, column=0, sticky=tk.E)
         self.stretching_stringvar = tk.StringVar()
-        self.stretching_stringvar.set("None")
+        self.stretching_stringvar.set("Asinh")
         self.stretching_dropdown = tk.OptionMenu(
             self.settings_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
         self.stretching_dropdown.grid(row=row, column=1, sticky=tk.EW)
