@@ -7,6 +7,7 @@
     - changed "Close" button in Settings window to "Dismiss"
     - report JD is DATE-OBS + EXPOSURE/2 (like AAVSO report)
     - minor changes to Notes in report to reflect current AAVSO report
+    - added AMASS to AAVSO report
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -418,6 +419,13 @@ class MyGUI:
                 else:
                     self.console_msg(
                         "Filter name not in FITS header. Set filter manually.")
+                if 'airmass' in header:
+                    self.airmass = str(header['airmass'])
+                    self.set_entry_text(self.airmass_entry, self.airmass)
+                    self.console_msg("Airmass: " + self.airmass)
+                else:
+                    self.console_msg(
+                        "Airmass not in FITS header. Airmass may be required for AAVSO report. Set Airmass manually.")
                 if 'exptime' in header:
                     exptime = header['exptime']
                     self.set_entry_text(self.exposure_entry, exptime)
@@ -430,7 +438,6 @@ class MyGUI:
 
                 if 'date-obs' in header:
                     try:
-                        
                         date_obs = Time(header['date-obs'])
                         self.jd = Time(date_obs, format='jd')
                         self.console_msg("DATE-OBS: " + str(self.jd.to_value('iso')) + " UTC; JD: " + str(self.jd))
@@ -827,6 +834,7 @@ class MyGUI:
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
+            self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
 
             # Calculate instrumental magnitudes
             # Following added for "True" inst mag used in AAVSO report
@@ -1317,9 +1325,9 @@ class MyGUI:
             # Find the check star; 
             check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]
 
-            check_star_label = check_star_B["label"]
+            check_star_label = int(check_star_B["label"])
 
-            self.console_msg("Using check star " + check_star_label)
+            self.console_msg("Using check star " + str(check_star_label))
 
             check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
@@ -1353,7 +1361,11 @@ class MyGUI:
 
             date_obs_B = _obs_B.jd
             date_obs_V = _obs_V.jd
-            
+
+            #AIRMASS
+            amass_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["AMASS"]
+            amass_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["AMASS"]
+
             """
             Build the result_check_star and result_var_table which are similar to the aforementioed 
             spreadsheet ProcessingMaoImages_202281V1117Her.xlsx
@@ -1392,7 +1404,7 @@ class MyGUI:
             for comp in sel_comps_to_use:
                 sel_comps.append(int(comp.strip()))
             
-            for comp in sel_comps_to_use:
+            for comp in sel_comps:
                 #selected comp must be in both tables
                 if comp not in self.results_tab_df_colorB["label"].values:
                     self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
@@ -1422,7 +1434,7 @@ class MyGUI:
                     result_check_star.loc[len(result_check_star)] =\
                         {
                         "type": "check",
-                        "name": int(check_star_label),
+                        "name": check_star_label,
                         "comp": int(comp),
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
@@ -1441,7 +1453,7 @@ class MyGUI:
                     result_check_star.loc[len(result_check_star)] =\
                         {
                         "type": "check",
-                        "name": int(check_star_label),
+                        "name": check_star_label,
                         "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
@@ -1460,7 +1472,7 @@ class MyGUI:
                     result_check_star.loc[len(result_check_star)] =\
                         {
                         "type": "check",
-                        "name": int(check_star_label),
+                        "name": check_star_label,
                         "comp": int(comp),
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
@@ -1602,7 +1614,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_bv", "Tv_bv", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_bv", "Tv_bv", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -1615,7 +1627,8 @@ class MyGUI:
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_B
                     }
                 
                 result_aux_report.loc[len(result_aux_report)] =\
@@ -1629,10 +1642,11 @@ class MyGUI:
                     "Tv_bv" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V,  #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -1670,7 +1684,8 @@ class MyGUI:
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_B
                     }
                 
                 result_aux_report.loc[len(result_aux_report)] =\
@@ -1684,10 +1699,11 @@ class MyGUI:
                     "Tr_vr" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -1725,7 +1741,8 @@ class MyGUI:
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_B
                     }
                 
                 result_aux_report.loc[len(result_aux_report)] =\
@@ -1739,10 +1756,11 @@ class MyGUI:
                     "Ti_vi" : tv_bv_coefficient,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
-                    "KNAME" : check_star_label
+                    "KNAME" : check_star_label,
+                    "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(int(check_star_label)) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2253,7 +2271,7 @@ class MyGUI:
 
 
             star_detection_threshold_label = tk.Label(
-                self.es_top, text="StarFinder Threshold:")
+                self.es_top, text="IRAFStarFinder Threshold:")
             star_detection_threshold_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.star_detection_threshold_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
@@ -2418,6 +2436,13 @@ class MyGUI:
             self.filter_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.filter_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            airmass_label = tk.Label(self.es_top, text="Airmass:")
+            airmass_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.airmass_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.airmass_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             date_obs_label = tk.Label(
@@ -2757,7 +2782,7 @@ class MyGUI:
                 cmag = str(round(comp_IM, decimal_places))
                 kname = check_star_name
                 kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
-                amass = "na"
+                amass = self.airmass_entry.get().strip()
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3000,7 +3025,7 @@ class MyGUI:
                 cmag = "na"
                 kname = str(int(aux_result_first_color["KNAME"]))
                 kmag = str(round(B_mean_check, decimal_places))
-                amass = "na"
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f')
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3030,7 +3055,7 @@ class MyGUI:
                 cmag = "na"
                 kname = self.object_kref_entry.get().strip()
                 kmag = str(round(V_mean_check, decimal_places))
-                amass = "na"
+                amass = format(float(aux_result_second_color["AMASS"]), '.3f')
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
