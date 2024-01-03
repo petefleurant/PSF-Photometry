@@ -1,10 +1,18 @@
 4# -*- coding: utf-8 -*-
 """
-	Welcome to MAOPhot 0.2, a PSF Photometry tool using Astropy and Photutils.psf
+#     #    #    ####### ######                           ###        #####  
+##   ##   # #   #     # #     # #    #  ####  #####     #   #      #     # 
+# # # #  #   #  #     # #     # #    # #    #   #      #     #           # 
+#  #  # #     # #     # ######  ###### #    #   #      #     #      #####  
+#     # ####### #     # #       #    # #    #   #      #     # ### #       
+#     # #     # #     # #       #    # #    #   #       #   #  ### #       
+#     # #     # ####### #       #    #  ####    #        ###   ### ####### 
+
+Welcome to MAOPhot 0.2, a PSF Photometry tool using Astropy and Photutils.psf
 
     0.2 Revision
     - Upgraded to Photutils 1.10.0 and Panda 2.1.4, etc.
-    - changed "Close" button in Settings window to "Dismiss"
+    - changed "Close" button in Settings window to "OK"
     - report JD is DATE-OBS + EXPOSURE/2 (like AAVSO report)
     - minor changes to Notes in report to reflect current AAVSO report
     - added AMASS to AAVSO report
@@ -173,10 +181,10 @@ from astropy.io import fits
 from photutils.background import Background2D
 from photutils.background import MedianBackground
 from photutils.background import MADStdBackgroundRMS
-from photutils.background import MMMBackground
+from photutils.background import LocalBackground
 from photutils.detection import find_peaks
-from photutils.psf import IterativelySubtractedPSFPhotometry
-from photutils.psf import IntegratedGaussianPRF, DAOGroup
+from photutils.psf import IterativePSFPhotometry
+from photutils.psf import IntegratedGaussianPRF, SourceGrouper
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
 from photutils.psf import EPSFBuilder
@@ -568,10 +576,10 @@ class MyGUI:
             #mask out peaks near the boundary; use twice the aperature entry
             #
             ##Calculate size of cutouts for EPSFBuilder
-            ## make it twice the aperture entry
+            ## make it 10 times the aperture entry
             ##same size used in plot_ePSF
             self.fit_shape = int(self.photometry_aperture_entry.get())
-            size = 2*self.fit_shape + 1
+            size = 10*self.fit_shape + 1
             hsize = (size - 1)/2
             x = peaks_tbl['x_peak']  
             y = peaks_tbl['y_peak']  
@@ -653,7 +661,7 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=100, progress_bar=True)
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True)
             self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
 
             model_length = len(self.epsf_model.data)
@@ -754,7 +762,7 @@ class MyGUI:
     def execute_psf_photometry(self):
         global header
         self.console_msg(
-            "Initiating iteratively subtracted PSF photometry...")
+            "Initiating iterative PSF photometry...")
         if len(image_data) == 0:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
             return
@@ -773,7 +781,7 @@ class MyGUI:
                 iterations = int(self.photometry_iterations_entry.get())
 
             sharplo = float(self.sharplo_entry.get())
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            #bkg_filter_size = int(self.bkg_filter_size_entry.get())
             self.console_msg("Finding stars...")
             star_find = IRAFStarFinder(threshold = star_detection_threshold,
                                         fwhm = fwhm,
@@ -783,9 +791,11 @@ class MyGUI:
                                         sharplo = sharplo,
                                         sharphi = 2.0)
 
-            daogroup = DAOGroup(2.0 * fwhm)
-            sigma_clip = SigmaClip(sigma=3.0)
-            mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
+           
+            # the 2.5 in the following is from 
+            # https://photutils.readthedocs.io/en/stable/grouping.html#getting-started
+            grouper = SourceGrouper(2.5 * fwhm)
+            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
 
             if self.fitter_stringvar.get() == "Sequential LS Programming":
                 self.console_msg(
@@ -805,36 +815,56 @@ class MyGUI:
                 self.console_msg("Using derived Effective PSF Model")
                 psf_model = self.epsf_model
             else:
-                self.console_msg("Using Gaussian PRF for model")
                 #Use Gausian
-                psf_model = IntegratedGaussianPRF(fwhm / gaussian_sigma_to_fwhm)
+                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
+                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
+                                 "; fwhm = "+format(fwhm, '.1f')+\
+                                 "; fitting width/height = "+str(self.fit_shape))
+                psf_model = IntegratedGaussianPRF(sigma)
 
-            #Dont do the next line, see https://photutils.readthedocs.io/en/stable/psf.html)
-            #This results in more complicated outcomes
-            #psf_model.sigma.fixed = False   # This allows to fit Gaussian PRF sigma as well 
-            photometry = IterativelySubtractedPSFPhotometry(finder=star_find,
-                                                            group_maker = daogroup,
-                                                            psf_model = psf_model,
-                                                            bkg_estimator = mmm_bkg,
-                                                            fitter = selected_fitter,
-                                                            aperture_radius=2*fwhm,
-                                                            niters = iterations,
-                                                            fitshape = (self.fit_shape, self.fit_shape))
+            photometry = IterativePSFPhotometry(
+                                                psf_model = psf_model,
+                                                fit_shape = (self.fit_shape, self.fit_shape),
+                                                finder=star_find,
+                                                grouper = grouper,
+                                                fitter = selected_fitter,
+                                                fitter_maxiters = 100,
+                                                maxiters = iterations,
+                                                localbkg_estimator = local_bkg,
+                                                aperture_radius=1.5*fwhm,
+                                                sub_shape=None,
+                                                progress_bar=True
+                                                )
+
+            """
+            IterativelySubtractedPSFPhotometry has been deprecated since 1.9.0
+                        photometry = IterativelySubtractedPSFPhotometry(finder=star_find,
+                                                                        group_maker = daogroup,
+                                                                        psf_model = psf_model,
+                                                                        bkg_estimator = mmm_bkg,
+                                                                        fitter = selected_fitter,
+                                                                        aperture_radius=2*fwhm,
+                                                                        niters = iterations,
+                                                                        fitshape = (self.fit_shape, self.fit_shape))
+            """
+
             self.console_msg("Performing photometry...")
-            result_tab = photometry.do_photometry(image = image_data, progress_bar=True)
-            residual_image = photometry.get_residual_image()
-            fits.writeto(str(self.image_file) + "-residuals.fits", residual_image, header, overwrite=True)
-            self.console_msg("Residuals file save to " + str(self.image_file) + "-residuals.fits")
+            result_tab = photometry(data=image_data)
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
             else:
                 self.console_msg("Done. PSF fitter; no message available")
 
-            self.results_tab_df = result_tab.to_pandas()
+            self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
+            if self.airmass_entry.get().isnumeric():
+                self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
+            else:
+                self.results_tab_df["AMASS"] = "na"
+                
+
 
             # Calculate instrumental magnitudes
             # Following added for "True" inst mag used in AAVSO report
@@ -857,7 +887,6 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
-
 
 
 
@@ -1142,7 +1171,7 @@ class MyGUI:
         global header
 
         if "flux_fit" not in self.results_tab_df:
-            self.console_msg("Cannot plate solve before executing PSF Photometry; execute 'Photometry->Iteratively Subtracted PSF Photometry' first.")
+            self.console_msg("Cannot plate solve before executing PSF Photometry; execute 'Photometry->Iterative PSF Photometry' first.")
             self.console_msg("Ready")
             return
 
@@ -1402,24 +1431,31 @@ class MyGUI:
 
             #make array of int csalled sel_comps            
             for comp in sel_comps_to_use:
-                sel_comps.append(int(comp.strip()))
+                sel_comps.append(comp.strip())
             
             for comp in sel_comps:
-                #selected comp must be in both tables
-                if comp not in self.results_tab_df_colorB["label"].values:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
-                    continue
 
-                if comp not in self.results_tab_df_colorV["label"].values:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + second_filter[input_color] + " table")
-                    continue
-                
                 #Dont use the check star 
                 if comp == check_star_label:
                     continue
+
+                #selected comp must be in both tables
+                if str(comp) in self.results_tab_df_colorB["label"].values:
+                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == str(comp)].iloc[0]
+                elif int(comp) in self.results_tab_df_colorB["label"].values:
+                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == int(comp)].iloc[0]
+                else:
+                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
+                    continue
+
+                if str(comp) in self.results_tab_df_colorV["label"].values:
+                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == str(comp)].iloc[0]
+                elif int(comp) in self.results_tab_df_colorV["label"].values:
+                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == int(comp)].iloc[0]
+                else:
+                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + second_filter[input_color] + " table")
+                    continue
                 
-                comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
-                comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == comp].iloc[0]
 
                 comp_b_minus_v = comp_star_B["inst_mag"] - comp_star_V["inst_mag"]
                 delta_b_minus_v = (check_IMB - check_IMV) - comp_b_minus_v
@@ -1982,6 +2018,8 @@ class MyGUI:
                         # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
                         # That causes a blank inst_mag (can't take a log of neg number) 
                         # Check for this and if so, ignore
+                        # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
+                        # IterativePSFPhotometry; not known if following is still needed)
                         # 
                         if self.results_tab_df.loc[index, "flux_fit"] < 0:
                             continue
@@ -1991,7 +2029,7 @@ class MyGUI:
                         # The first or earliest detection could be any int up to max iterations
                         
                         if "label" in self.results_tab_df:
-                            already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == str(match_label)]    
+                            already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == int(match_label)]    
                             if not already_gotten.empty:
                                 # Confirm that this already gotten one has an EARLIER iteration,
                                 # and if so, then we can continue, else
@@ -2009,7 +2047,7 @@ class MyGUI:
                         self.results_tab_df.loc[index, "match_id"] = \
                             str(self.catalog_stringvar.get()) + \
                                 " " + str(match_id)
-                        self.results_tab_df.loc[index, "label"] = str(match_label)
+                        self.results_tab_df.loc[index, "label"] = int(match_label)
                         self.results_tab_df.loc[index, "match_ra"] = match_ra
                         self.results_tab_df.loc[index, "match_dec"] = match_dec
                         self.results_tab_df.loc[index, "match_mag"] = match_mag
@@ -2058,6 +2096,8 @@ class MyGUI:
                             # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
                             # That causes a blank inst_mag (can't take a log of neg number) 
                             # Check for this and if so, ignore
+                            # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
+                            # IterativePSFPhotometry; not known if following is still needed)
                             # 
                             if self.results_tab_df.loc[index, "flux_fit"] < 0:
                                 continue
@@ -2248,7 +2288,7 @@ class MyGUI:
             row = 0
 
             photometry_aperture_label = tk.Label(
-                self.es_top, text="Fitting Width/Height, px:")
+                self.es_top, text="Fitting Width/Height, px (odd only):")
             photometry_aperture_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.photometry_aperture_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
@@ -2514,7 +2554,7 @@ class MyGUI:
             load_settings_button.grid(row=row, column=0, padx=20, sticky=tk.W)
             save_settings_button = tk.Button(self.es_top, text="Save As...", command=self.save_settings_as)
             save_settings_button.grid(row=row, column=1, padx=20) #, sticky=tk.W)
-            close_settings_button = tk.Button(self.es_top, text="Dismiss", command=self.es_top.withdraw) #hide
+            close_settings_button = tk.Button(self.es_top, text="  OK  ", command=self.es_top.withdraw) #hide
             close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
             row += 1
 
@@ -3144,7 +3184,7 @@ class MyGUI:
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Iteratively Subtracted PSF Photometry", command=self.execute_psf_photometry)
+            label="Iterative PSF Photometry", command=self.execute_psf_photometry)
         self.photometrymenu.add_command(
             label="Solve Image", command=self.solve_image)
         self.photometrymenu.add_separator()
