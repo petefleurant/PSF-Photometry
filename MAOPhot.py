@@ -11,6 +11,9 @@
 Welcome to MAOPhot 0.2, a PSF Photometry tool using Astropy and Photutils.psf
 
     0.2 Revision
+    - Added Non Iterative PSF Photometry option which uses class
+       PSFPhotometry 
+    - check_star boolean in DataFrame is bool type throughout, not str
     - Upgraded to Photutils 1.10.0 and Panda 2.1.4, etc.
     - changed "Close" button in Settings window to "OK"
     - report JD is DATE-OBS + EXPOSURE/2 (like AAVSO report)
@@ -183,7 +186,7 @@ from photutils.background import MedianBackground
 from photutils.background import MADStdBackgroundRMS
 from photutils.background import LocalBackground
 from photutils.detection import find_peaks
-from photutils.psf import IterativePSFPhotometry
+from photutils.psf import IterativePSFPhotometry, PSFPhotometry
 from photutils.psf import IntegratedGaussianPRF, SourceGrouper
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
@@ -561,9 +564,13 @@ class MyGUI:
             sigma_clip = SigmaClip(sigma=3.0)
             bkg_estimator = MedianBackground()
             self.console_msg("Estimating background...")
-            self.bkg2D = Background2D(image_data, (self.fit_shape * 1, self.fit_shape * 1),
-                               filter_size=(bkg_filter_size, bkg_filter_size), sigma_clip=sigma_clip,
-                               bkg_estimator=bkg_estimator)
+            self.bkg2D = Background2D(
+                                image_data, 
+                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
+                                filter_size=(bkg_filter_size, bkg_filter_size), 
+                                edge_method='crop',
+                                sigma_clip=sigma_clip,
+                                bkg_estimator=bkg_estimator)
 
             self.console_msg("Median Background2D level: " 
                 + str(self.bkg2D.background_median))
@@ -759,29 +766,47 @@ class MyGUI:
 
         return
 
-    def execute_psf_photometry(self):
+    def execute_noniterative_psf_photometry(self):
         global header
         self.console_msg(
-            "Initiating iterative PSF photometry...")
+            "Initiating Non-iterative PSF photometry...")
         if len(image_data) == 0:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
             return
         try:
-            bkgrms = MADStdBackgroundRMS()
-            std = bkgrms(image_data)
-            self.console_msg("Background STD: " + str(format(std, '.2f')))
+            #determine the background, it will be subtrated from image_data, later
+            bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            #make sure this is not an even number 
+            if bkg_filter_size % 2 == 0:
+                bkg_filter_size += 1
             self.fit_shape = int(self.photometry_aperture_entry.get())
+            sigma_clip = SigmaClip(sigma=3.0)
+            bkg_estimator = MedianBackground()
+            self.console_msg("Estimating background...")
+            #Backgound2D used because background may vary over FOV
+            self.bkg2D = Background2D(
+                                image_data, 
+                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
+                                filter_size=(bkg_filter_size, bkg_filter_size), 
+                                edge_method='crop',
+                                sigma_clip=sigma_clip,
+                                bkg_estimator=bkg_estimator)
+
+            self.console_msg("Median Background2D level: "
+                             + str(self.bkg2D.background_median))
+
+            # Subtract background from image_data
+            # bkg.background is a 2D ndarray of background image
+            clean_image = image_data-self.bkg2D.background
+
+            working_image = NDData(data=clean_image)
+
             fwhm = float(self.fwhm_entry.get())
             star_detection_threshold = float(
                 self.star_detection_threshold_entry.get())
 
-            if self.photometry_iterations_entry.get() == "":
-                iterations = None
-            else:
-                iterations = int(self.photometry_iterations_entry.get())
-
             sharplo = float(self.sharplo_entry.get())
-            #bkg_filter_size = int(self.bkg_filter_size_entry.get())
+
             self.console_msg("Finding stars...")
             star_find = IRAFStarFinder(threshold = star_detection_threshold,
                                         fwhm = fwhm,
@@ -794,7 +819,140 @@ class MyGUI:
            
             # the 2.5 in the following is from 
             # https://photutils.readthedocs.io/en/stable/grouping.html#getting-started
-            grouper = SourceGrouper(2.5 * fwhm)
+            #grouper = SourceGrouper(2.5 * fwhm)
+
+            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
+
+            if self.fitter_stringvar.get() == "Sequential LS Programming":
+                self.console_msg(
+                    "Setting fitter to Sequential Least Squares Programming")
+                selected_fitter = SLSQPLSQFitter()
+
+            elif self.fitter_stringvar.get() == "Simplex LS":
+                self.console_msg(
+                    "Setting fitter to Simplex and Least Squares Statistic")
+                selected_fitter = SimplexLSQFitter()
+
+            else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
+                self.console_msg("Setting fitter to Levenberg-Marquardt")
+                selected_fitter = LevMarLSQFitter()
+
+            if self.epsf_model != None:
+                self.console_msg("Using derived Effective PSF Model")
+                psf_model = self.epsf_model
+            else:
+                #Use Gausian
+                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
+                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
+                                 "; fwhm = "+format(fwhm, '.1f')+\
+                                 "; fitting width/height = "+str(self.fit_shape))
+                psf_model = IntegratedGaussianPRF(sigma)
+
+
+            photometry = PSFPhotometry(
+                                        psf_model = psf_model,
+                                        fit_shape = self.fit_shape,
+                                        finder = star_find,
+                                        grouper = None,
+                                        fitter = selected_fitter,
+                                        fitter_maxiters = 100,
+                                        localbkg_estimator = local_bkg,
+                                        aperture_radius=1.5*fwhm,
+                                        progress_bar=True
+                                        )
+            
+
+
+            self.console_msg("Performing photometry...")
+            result_tab = photometry(data=working_image)
+
+            if 'message' in selected_fitter.fit_info:
+                self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
+            else:
+                self.console_msg("Done. PSF fitter; no message available")
+
+            self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
+            self.results_tab_df["removed_from_ensemble"] = False
+            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
+            if self.airmass_entry.get().isnumeric():
+                self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
+            else:
+                self.results_tab_df["AMASS"] = "na"
+                
+
+
+            # Calculate instrumental magnitudes
+            # Following added for "True" inst mag used in AAVSO report
+            image_exposure_time = float(self.exposure_entry.get())
+            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / image_exposure_time)
+
+            #record for later 
+            self.results_tab_df["exposure"] = image_exposure_time
+
+            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+            self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
+            self.plot_photometry()
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+    def execute_iterative_psf_photometry(self):
+        global header
+        self.console_msg(
+            "Initiating iterative PSF photometry...")
+        if len(image_data) == 0:
+            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            return
+        try:
+            #determine the background, it will be subtrated from image_data, later
+            bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            #make sure this is not an even number 
+            if bkg_filter_size % 2 == 0:
+                bkg_filter_size += 1
+
+            self.fit_shape = int(self.photometry_aperture_entry.get())
+            sigma_clip = SigmaClip(sigma=3.0)
+            bkg_estimator = MedianBackground()
+            self.console_msg("Estimating background...")
+            #Backgound2D used because background may vary over FOV
+            self.bkg2D = Background2D(
+                                image_data, 
+                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
+                                filter_size=(bkg_filter_size, bkg_filter_size), 
+                                edge_method='crop',
+                                sigma_clip=sigma_clip,
+                                bkg_estimator=bkg_estimator)
+
+            self.console_msg("Median Background2D level: "
+                             + str(self.bkg2D.background_median))
+
+            # Subtract background from image_data
+            # bkg.background is a 2D ndarray of background image
+            clean_image = image_data-self.bkg2D.background
+
+            working_image = NDData(data=clean_image)
+
+            fwhm = float(self.fwhm_entry.get())
+            star_detection_threshold = float(
+                self.star_detection_threshold_entry.get())
+
+            iterations = int(self.photometry_iterations_entry.get()) if self.photometry_iterations_entry.get().isnumeric() else None
+
+            sharplo = float(self.sharplo_entry.get())
+
+            #bkg_filter_size = int(self.bkg_filter_size_entry.get())
+            self.console_msg("Finding stars...")
+            star_find = IRAFStarFinder(threshold = star_detection_threshold,
+                                        fwhm = fwhm,
+                                        exclude_border=True,
+                                        roundhi = 3.0,
+                                        roundlo = -5.0,
+                                        sharplo = sharplo,
+                                        sharphi = 2.0)
+
+           
             local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
 
             if self.fitter_stringvar.get() == "Sequential LS Programming":
@@ -824,47 +982,33 @@ class MyGUI:
 
             photometry = IterativePSFPhotometry(
                                                 psf_model = psf_model,
-                                                fit_shape = (self.fit_shape, self.fit_shape),
-                                                finder=star_find,
-                                                grouper = grouper,
+                                                fit_shape = self.fit_shape,
+                                                finder = star_find,
+                                                grouper = None,
                                                 fitter = selected_fitter,
                                                 fitter_maxiters = 100,
                                                 maxiters = iterations,
                                                 localbkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
-                                                sub_shape=None,
+                                                sub_shape=None, #defaults to fit_shape
                                                 progress_bar=True
                                                 )
 
-            """
-            IterativelySubtractedPSFPhotometry has been deprecated since 1.9.0
-                        photometry = IterativelySubtractedPSFPhotometry(finder=star_find,
-                                                                        group_maker = daogroup,
-                                                                        psf_model = psf_model,
-                                                                        bkg_estimator = mmm_bkg,
-                                                                        fitter = selected_fitter,
-                                                                        aperture_radius=2*fwhm,
-                                                                        niters = iterations,
-                                                                        fitshape = (self.fit_shape, self.fit_shape))
-            """
-
-            self.console_msg("Performing photometry...")
-            result_tab = photometry(data=image_data)
+            result_tab = photometry(data=working_image)
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
             else:
                 self.console_msg("Done. PSF fitter; no message available")
 
-            self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
+            #self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
+            self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
             if self.airmass_entry.get().isnumeric():
                 self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
             else:
                 self.results_tab_df["AMASS"] = "na"
-                
-
 
             # Calculate instrumental magnitudes
             # Following added for "True" inst mag used in AAVSO report
@@ -873,11 +1017,6 @@ class MyGUI:
 
             #record for later 
             self.results_tab_df["exposure"] = image_exposure_time
-
-
-            # Create a "inst_mag_unc" column used for err in the reports 
-            if "flux_unc" in self.results_tab_df:
-                self.results_tab_df["inst_mag_unc"] = abs(-2.5 * np.log10(self.results_tab_df["flux_unc"] / image_exposure_time))
 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
@@ -1301,7 +1440,7 @@ class MyGUI:
 
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
                 self.console_msg("Loading filter " + first_filter[input_color] + " from " + str(file_name))
-                self.results_tab_df_colorB = pd.read_csv(str(file_name))
+                self.results_tab_df_colorB = pd.read_csv(str(file_name), dtype={'check_star': bool})
             else:
                 return
 
@@ -1314,7 +1453,7 @@ class MyGUI:
             file_name = fd.askopenfilename(**options)
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
                 self.console_msg("Loading filter " + second_filter[input_color] + " from " + str(file_name))
-                self.results_tab_df_colorV = pd.read_csv(str(file_name))
+                self.results_tab_df_colorV = pd.read_csv(str(file_name), dtype={'check_star': bool})
             else:
                 return
             
@@ -1352,7 +1491,7 @@ class MyGUI:
             #   CHECK STAR Calculations
             #
             # Find the check star; 
-            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]
+            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]
 
             check_star_label = int(check_star_B["label"])
 
@@ -1361,7 +1500,7 @@ class MyGUI:
             check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
 
-            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]
+            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
             check_IMV = check_star_V["inst_mag"]
             check_V = check_star_V["match_mag"]
             
@@ -1377,12 +1516,12 @@ class MyGUI:
 
             # AAVSO adds EXPOSURE/2 to this time and sets it in the report
             # E.g., Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,...
-            date_obs_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["date-obs"]
-            date_obs_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["date-obs"]
+            date_obs_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]["date-obs"]
+            date_obs_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["date-obs"]
             
             # add EXPOSURE/2 
-            half_exposure_B = (self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["exposure"])/2
-            half_exposure_V = (self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["exposure"])/2
+            half_exposure_B = (self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]["exposure"])/2
+            half_exposure_V = (self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["exposure"])/2
 
             #use Julian Datw
             _obs_B = Time(date_obs_B, format='jd') + TimeDelta(half_exposure_B, format='sec')
@@ -1392,8 +1531,8 @@ class MyGUI:
             date_obs_V = _obs_V.jd
 
             #AIRMASS
-            amass_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == "True"].iloc[0]["AMASS"]
-            amass_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == "True"].iloc[0]["AMASS"]
+            amass_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]["AMASS"]
+            amass_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["AMASS"]
 
             """
             Build the result_check_star and result_var_table which are similar to the aforementioed 
@@ -1707,7 +1846,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vr", "Tr_vr", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vr", "Tr_vr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -1764,7 +1903,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vi", "Ti_vi", "VMAGINS", "Date-Obs", "KNAME"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vi", "Ti_vi", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -1868,16 +2007,14 @@ class MyGUI:
 
             fov_horizontal = frame_top_right.separation(frame_top_left).arcminute
 
-
-            if True:
-                self.console_msg("Updating photometry table with Sky coordinates...")
-                for index, row in self.results_tab_df.iterrows():
-                    sky = self.wcs_header.pixel_to_world(row["x_fit"], row["y_fit"])
-                    c = SkyCoord(ra=sky.ra, dec=sky.dec)
-                    self.results_tab_df.loc[index, "ra_fit"] = c.ra / u.deg
-                    self.results_tab_df.loc[index, "dec_fit"] = c.dec / u.deg
-                self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-                self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
+            self.console_msg("Updating photometry table with Sky coordinates...")
+            for index, row in self.results_tab_df.iterrows():
+                sky = self.wcs_header.pixel_to_world(row["x_fit"], row["y_fit"])
+                c = SkyCoord(ra=sky.ra, dec=sky.dec)
+                self.results_tab_df.loc[index, "ra_fit"] = c.ra / u.deg
+                self.results_tab_df.loc[index, "dec_fit"] = c.dec / u.deg
+            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+            self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
 
 
             catalog_selection = self.catalog_stringvar.get()
@@ -1967,53 +2104,129 @@ class MyGUI:
                     "Found " + str(len(comparison_stars)) + " objects in the field.")
 
 
+            self.console_msg("Matching image to catalog...")
+            matching_radius = float(
+                self.matching_radius_entry.get()) * 0.000277778  # arcsec to degrees
+            
+            if using_aavso_catalog:
+                catalog_comparison = SkyCoord(
+                    comparison_stars[ra_column_name],
+                    comparison_stars[dec_column_name],
+                    unit=(u.hourangle, u.deg))
+            else:
+                catalog_comparison = SkyCoord(
+                    comparison_stars[ra_column_name],
+                    comparison_stars[dec_column_name])
 
-            if True:
-                self.console_msg("Matching image to catalog...")
-                matching_radius = float(
-                    self.matching_radius_entry.get()) * 0.000277778  # arcsec to degrees
                 
-                
+            for index, row in self.results_tab_df.iterrows():
+                photometry_star_coordinates = SkyCoord(
+                    ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
+                match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
+                    catalog_comparison)
+                # print(str(photometry_star_coordinates))
+                # print(match_index)
+                # Name of the catalog
                 if using_aavso_catalog:
-                    catalog_comparison = SkyCoord(
-                        comparison_stars[ra_column_name],
-                        comparison_stars[dec_column_name],
-                        unit=(u.hourangle, u.deg))
+                    match_id = comparison_stars.iloc[match_index]["AUID"]
+                    match_label = comparison_stars.iloc[match_index]["Label"]
+                    match_ra = catalog_comparison[match_index].ra.degree
+                    match_dec= catalog_comparison[match_index].dec.degree
+                    match_mag = comparison_stars.iloc[match_index][mag_column_name]
+                    match_is_check = comparison_stars.iloc[match_index]["Check Star"]
                 else:
-                    catalog_comparison = SkyCoord(
-                        comparison_stars[ra_column_name],
-                        comparison_stars[dec_column_name])
-
+                    match_id = comparison_stars[match_index][0]
+                    match_label = ""
+                    match_ra = comparison_stars[match_index][ra_column_name]
+                    match_dec = comparison_stars[match_index][dec_column_name]
+                    match_mag = comparison_stars[match_index][mag_column_name]
                     
+                    
+                match_coordinates = SkyCoord(
+                    ra=match_ra * u.deg, dec=match_dec * u.deg)
+                separation = photometry_star_coordinates.separation(
+                    match_coordinates)
+                
+
+                if separation < matching_radius * u.deg:
+                    # Sometimes the flux_fit is negative.
+                    # That causes a blank inst_mag (can't take a log of neg number) 
+                    # Check for this and if so, ignore
+                    # 
+                    if self.results_tab_df.loc[index, "flux_fit"] < 0:
+                        self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean
+                        continue
+
+                    # Make sure the earliest iteration is used
+                    # The first iteration is not necessarily iter_detected = 1
+                    # The first or earliest detection could be any int up to max iterations
+                    
+                    # "iter_detected" may not exisit becase Non-iterative PSF Photometry was used
+                    if "label" in self.results_tab_df and "iter_detected" in self.results_tab_df:
+                        already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == int(match_label)]    
+                        if not already_gotten.empty:
+                            # Confirm that this already gotten one has an EARLIER iteration,
+                            # and if so, then we can continue, else
+                            # we have to erase already gotten and use the new one
+                            if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
+                                self.results_tab_df.loc[index, "label"] = ""
+                                self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean
+                                continue
+                            else:
+                                #erase already_gotten label 
+                                already_gotten.iloc[0]['label'] = ""
+                                # fall thru and label the new index 
+
+                    #Here if not already_gotten or the already_gotten has 
+                    # a "later/stale" iteration
+                    self.results_tab_df.loc[index, "match_id"] = \
+                        str(self.catalog_stringvar.get()) + \
+                            " " + str(match_id)
+                    self.results_tab_df.loc[index, "label"] = int(match_label)
+                    self.results_tab_df.loc[index, "match_ra"] = match_ra
+                    self.results_tab_df.loc[index, "match_dec"] = match_dec
+                    self.results_tab_df.loc[index, "match_mag"] = match_mag
+                    self.results_tab_df.loc[index, "check_star"] = match_is_check
+                    
+                    #record comp stars used for console if AAVSO comp stars
+                    comp_stars_used.append((match_label, match_is_check))
+                    
+                else:
+                    #Here if separation >= matching_radius
+                    self.results_tab_df.loc[index, "match_id"] = ""
+                    self.results_tab_df.loc[index, "label"] = ""
+                    self.results_tab_df.loc[index, "match_ra"] = ""
+                    self.results_tab_df.loc[index, "match_dec"] = ""
+                    self.results_tab_df.loc[index, "match_mag"] = ""
+                    self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
+
+            self.console_msg(
+                "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
+            vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
+            # print(vsx_result)
+
+            """
+            Look for any and all VSX stars
+            """
+            if len(vsx_result) > 0:
+                vsx_stars = vsx_result[0]
+                self.console_msg(
+                    "Found " + str(len(vsx_stars)) + " VSX sources in the field. Matching...")
+                catalog_vsx = SkyCoord(
+                    vsx_stars["RAJ2000"], vsx_stars["DEJ2000"])
                 for index, row in self.results_tab_df.iterrows():
                     photometry_star_coordinates = SkyCoord(
                         ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
                     match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
-                        catalog_comparison)
-                    # print(str(photometry_star_coordinates))
-                    # print(match_index)
-                    # Name of the catalog
-                    if using_aavso_catalog:
-                        match_id = comparison_stars.iloc[match_index]["AUID"]
-                        match_label = comparison_stars.iloc[match_index]["Label"]
-                        match_ra = catalog_comparison[match_index].ra.degree
-                        match_dec= catalog_comparison[match_index].dec.degree
-                        match_mag = comparison_stars.iloc[match_index][mag_column_name]
-                        match_is_check = comparison_stars.iloc[match_index]["Check Star"]
-                    else:
-                        match_id = comparison_stars[match_index][0]
-                        match_label = ""
-                        match_ra = comparison_stars[match_index][ra_column_name]
-                        match_dec = comparison_stars[match_index][dec_column_name]
-                        match_mag = comparison_stars[match_index][mag_column_name]
-                        
-                        
+                        catalog_vsx)
+                    
+                    match_id = vsx_stars[match_index]["Name"]
+                    match_ra = vsx_stars[match_index]["RAJ2000"]
+                    match_dec = vsx_stars[match_index]["DEJ2000"]
                     match_coordinates = SkyCoord(
                         ra=match_ra * u.deg, dec=match_dec * u.deg)
                     separation = photometry_star_coordinates.separation(
                         match_coordinates)
-                    
-
                     if separation < matching_radius * u.deg:
                         # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
                         # That causes a blank inst_mag (can't take a log of neg number) 
@@ -2027,125 +2240,47 @@ class MyGUI:
                         # Make sure the earliest iteration is used
                         # The first iteration is not necessarily iter_detected = 1
                         # The first or earliest detection could be any int up to max iterations
-                        
-                        if "label" in self.results_tab_df:
-                            already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == int(match_label)]    
+                        if "vsx_id" in self.results_tab_df:
+                            already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == str(match_id)]    
                             if not already_gotten.empty:
                                 # Confirm that this already gotten one has an EARLIER iteration,
                                 # and if so, then we can continue, else
                                 # we have to erase already gotten and use the new one
                                 if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
-                                    self.results_tab_df.loc[index, "label"] = ""
+                                    self.results_tab_df.loc[index, "vsx_id"] = ""
                                     continue
                                 else:
                                     #erase already_gotten label 
-                                    already_gotten.iloc[0]['label'] = ""
+                                    already_gotten.iloc[0]['vsx_id'] = ""
                                     # fall thru and label the new index 
 
-                        #Here if not already_gotten or the already_gotten has 
-                        # a "later/stale" iteration
-                        self.results_tab_df.loc[index, "match_id"] = \
-                            str(self.catalog_stringvar.get()) + \
-                                " " + str(match_id)
-                        self.results_tab_df.loc[index, "label"] = int(match_label)
-                        self.results_tab_df.loc[index, "match_ra"] = match_ra
-                        self.results_tab_df.loc[index, "match_dec"] = match_dec
-                        self.results_tab_df.loc[index, "match_mag"] = match_mag
-                        self.results_tab_df.loc[index, "check_star"] = match_is_check
-                        
-                        #record comp stars used for console if AAVSO comp stars
-                        comp_stars_used.append((match_label, match_is_check))
-                        
+                        #Found a match...should be earliest iteration
+                        self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
+                        self.console_msg("Match VSX source: " + str(match_id))
                     else:
-                        #Here if separation >= matching_radius
-                        self.results_tab_df.loc[index, "match_id"] = ""
-                        self.results_tab_df.loc[index, "label"] = ""
-                        self.results_tab_df.loc[index, "match_ra"] = ""
-                        self.results_tab_df.loc[index, "match_dec"] = ""
-                        self.results_tab_df.loc[index, "match_mag"] = ""
-                        self.results_tab_df.loc[index, "check_star"] = ""
+                        self.results_tab_df.loc[index, "vsx_id"] = ""
+            else:
+                self.console_msg("Found no VSX sources in the field.")
+                
+            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+            self.console_msg("Photometry table saved (with following comp stars) to " + str(self.image_file + ".csv"))
 
-                self.console_msg(
-                    "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
-                vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
-                # print(vsx_result)
-
-                """
-                Look for any and all VSX stars
-                """
-                if len(vsx_result) > 0:
-                    vsx_stars = vsx_result[0]
-                    self.console_msg(
-                        "Found " + str(len(vsx_stars)) + " VSX sources in the field. Matching...")
-                    catalog_vsx = SkyCoord(
-                        vsx_stars["RAJ2000"], vsx_stars["DEJ2000"])
-                    for index, row in self.results_tab_df.iterrows():
-                        photometry_star_coordinates = SkyCoord(
-                            ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
-                        match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
-                            catalog_vsx)
-                        
-                        match_id = vsx_stars[match_index]["Name"]
-                        match_ra = vsx_stars[match_index]["RAJ2000"]
-                        match_dec = vsx_stars[match_index]["DEJ2000"]
-                        match_coordinates = SkyCoord(
-                            ra=match_ra * u.deg, dec=match_dec * u.deg)
-                        separation = photometry_star_coordinates.separation(
-                            match_coordinates)
-                        if separation < matching_radius * u.deg:
-                            # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
-                            # That causes a blank inst_mag (can't take a log of neg number) 
-                            # Check for this and if so, ignore
-                            # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
-                            # IterativePSFPhotometry; not known if following is still needed)
-                            # 
-                            if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                                continue
-
-                            # Make sure the earliest iteration is used
-                            # The first iteration is not necessarily iter_detected = 1
-                            # The first or earliest detection could be any int up to max iterations
-                            if "vsx_id" in self.results_tab_df:
-                                already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == str(match_id)]    
-                                if not already_gotten.empty:
-                                    # Confirm that this already gotten one has an EARLIER iteration,
-                                    # and if so, then we can continue, else
-                                    # we have to erase already gotten and use the new one
-                                    if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
-                                        self.results_tab_df.loc[index, "vsx_id"] = ""
-                                        continue
-                                    else:
-                                        #erase already_gotten label 
-                                        already_gotten.iloc[0]['vsx_id'] = ""
-                                        # fall thru and label the new index 
-
-                            #Found a match...should be earliest iteration
-                            self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
-                            self.console_msg("Match VSX source: " + str(match_id))
-                        else:
-                            self.results_tab_df.loc[index, "vsx_id"] = ""
-                else:
-                    self.console_msg("Found no VSX sources in the field.")
+            if using_aavso_catalog:
+                comp_list = ''
+                #output comp_stars_used
+                found_check = False #init
+                for comp in comp_stars_used:
+                    (label, ischeck) = comp
+                    found_check |= ischeck == True
+                    comp_list += str(label) + ', ' 
+                self.console_msg("AAVSO comp stars used: " + comp_list)
                     
-                self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-                self.console_msg("Photometry table saved (with following comp stars) to " + str(self.image_file + ".csv"))
-
-                if using_aavso_catalog:
-                    comp_list = ''
-                    #output comp_stars_used
-                    found_check = False #init
-                    for comp in comp_stars_used:
-                        (label, ischeck) = comp
-                        found_check |= ischeck == "True"
-                        comp_list += str(label) + ', ' 
-                    self.console_msg("AAVSO comp stars used: " + comp_list)
-                        
-                    check_star = self.object_kref_entry.get().strip()
-                    if not found_check and check_star != '':
-                        self.console_msg("WARNING!! The requested check_star: " + check_star + " was NOT FOUND in image! Choose another.", level=logging.WARNING)
-                        
-                self.display_image()
-                self.console_msg("Ready")
+                check_star = self.object_kref_entry.get().strip()
+                if not found_check and check_star != '':
+                    self.console_msg("WARNING!! The requested check_star: " + check_star + " was NOT FOUND in image! Choose another.", level=logging.WARNING)
+                    
+            self.display_image()
+            self.console_msg("Ready")
         
         except Exception as e:
             self.error_raised = True
@@ -2626,12 +2761,7 @@ class MyGUI:
                     continue #skip
                 
                 # if this label is the selected check star, mark it
-                if label == check_star:
-                    #mark it a True check star
-                    is_check_star = "True"
-                else:
-                    is_check_star = "False"
-                            
+                is_check_star = (label == check_star)
                 
                 # init mag here because if 
                 # chart doesn't have the mag for 
@@ -2822,7 +2952,7 @@ class MyGUI:
                 cmag = str(round(comp_IM, decimal_places))
                 kname = check_star_name
                 kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
-                amass = self.airmass_entry.get().strip()
+                amass = self.airmass_entry.get().strip() if self.airmass_entry.get().isnumeric() else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3065,7 +3195,7 @@ class MyGUI:
                 cmag = "na"
                 kname = str(int(aux_result_first_color["KNAME"]))
                 kmag = str(round(B_mean_check, decimal_places))
-                amass = format(float(aux_result_first_color["AMASS"]), '.3f')
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if aux_result_first_color["AMASS"].iloc[0].isnumeric() else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3095,7 +3225,7 @@ class MyGUI:
                 cmag = "na"
                 kname = self.object_kref_entry.get().strip()
                 kmag = str(round(V_mean_check, decimal_places))
-                amass = format(float(aux_result_second_color["AMASS"]), '.3f')
+                amass = format(float(aux_result_second_color["AMASS"]), '.3f') if aux_result_first_color["AMASS"].iloc[0].isnumeric() else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3184,7 +3314,11 @@ class MyGUI:
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Iterative PSF Photometry", command=self.execute_psf_photometry)
+            label="Non-iterative PSF Photometry", command=self.execute_noniterative_psf_photometry)
+        self.photometrymenu.add_command(
+            label="Iterative PSF Photometry", command=self.execute_iterative_psf_photometry)
+        self.photometrymenu.add_separator()
+
         self.photometrymenu.add_command(
             label="Solve Image", command=self.solve_image)
         self.photometrymenu.add_separator()
