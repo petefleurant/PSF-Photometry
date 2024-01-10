@@ -1,16 +1,34 @@
 4# -*- coding: utf-8 -*-
 """
-#     #    #    ####### ######                           ###        #####  
-##   ##   # #   #     # #     # #    #  ####  #####     #   #      #     # 
-# # # #  #   #  #     # #     # #    # #    #   #      #     #           # 
-#  #  # #     # #     # ######  ###### #    #   #      #     #      #####  
-#     # ####### #     # #       #    # #    #   #      #     # ### #       
-#     # #     # #     # #       #    # #    #   #       #   #  ### #       
-#     # #     # ####### #       #    #  ####    #        ###   ### ####### 
+#     #    #    ####### ######                         
+##   ##   # #   #     # #     # #    #  ####  #####    
+# # # #  #   #  #     # #     # #    # #    #   #      
+#  #  # #     # #     # ######  ###### #    #   #      
+#     # ####### #     # #       #    # #    #   #      
+#     # #     # #     # #       #    # #    #   #      
+#     # #     # ####### #       #    #  ####    #      
+                                                       
+        #         ###         ###   
+       ##        #   #       #   #  
+      # #       #     #     #     # 
+        #       #     #     #     # 
+        #   ### #     # ### #     # 
+        #   ###  #   #  ###  #   #  
+      ##### ###   ###   ###   ###   
+                                    
 
-Welcome to MAOPhot 0.2, a PSF Photometry tool using Astropy and Photutils.psf
 
-    0.2 Revision
+Welcome to MAOPhot 1.0.0, a PSF Photometry tool using Astropy and Photutils.psf
+
+    1.0.0 Revision
+    - get_comparison_stars enhancement; when more than one match found
+      for a given comp star or vsx object, then newly matched star gets id
+      appended with ".1", or ".2", etc. (E.g., comp stars found: 120, 120.1, 
+      120.2; vsx objects: Z Tau, Z Tau.1, Z Tau.2;) Only the comp stars listed
+      in Settings, and the Object Name listed in Settings is used. User can 
+      changed those settings or change the matching radius. There is a 
+      discussion about this in the documentation.
+
     - Added Non Iterative PSF Photometry option which uses class
        PSFPhotometry 
     - check_star boolean in DataFrame is bool type throughout, not str
@@ -301,7 +319,7 @@ class MyGUI:
     linreg_error = 0
     zoom_step = 0.5
     photometry_results_plotted = False
-    ePSF_results_plotted = False
+    ePSF_samples_plotted = False
     results_tab_df = pd.DataFrame()
     image_bkg_value = 0
     bkg2D = None #if fetched, the Background2D object
@@ -382,8 +400,8 @@ class MyGUI:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
             self.canvas.bind("<Button-1>", self.mouse_click)
-            if self.ePSF_results_plotted:
-                self.plot_ePSF()
+            if self.ePSF_samples_plotted:
+                self.display_ePSF_samples()
             self.plot_photometry()
 
     def load_FITS(self, image_file):
@@ -404,7 +422,7 @@ class MyGUI:
                 self.canvas.delete("all")
                 self.zoom_level = 1
                 self.photometry_results_plotted = False
-                self.ePSF_results_plotted = False
+                self.ePSF_samples_plotted = False
                 #Load previous work if it exists
                 if os.path.isfile(self.image_file+".csv"):
                     self.results_tab_df = pd.read_csv(self.image_file + ".csv")
@@ -542,7 +560,7 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)   +" "+str(e), level=logging.ERROR)
-
+            
     def create_ePSF(self):
         global header
         self.console_msg("Initiating Effective PSF building...")
@@ -584,7 +602,7 @@ class MyGUI:
             #
             ##Calculate size of cutouts for EPSFBuilder
             ## make it 10 times the aperture entry
-            ##same size used in plot_ePSF
+            ##same size used in display_ePSF_samples
             self.fit_shape = int(self.photometry_aperture_entry.get())
             size = 10*self.fit_shape + 1
             hsize = (size - 1)/2
@@ -676,14 +694,14 @@ class MyGUI:
             y = np.arange(0, model_length, 1)
             x, y = np.meshgrid(x, y)
 
-            #plot it in the psf
+            #plot the psf model
             self.psf_plot.clear()
             self.psf_plot.plot_surface(x, y, self.epsf_model.data, cmap=cm.jet)
             self.psf_plot_canvas.draw()
 
-            #plot it in the ePSF
+            #plot ePSF samples
             self.clear_epsf_plot()
-            self.plot_ePSF()
+            self.display_ePSF_samples()
 
             norm = simple_norm(self.epsf_model.data, 'log', percent=99.)
             im = self.ePSF_plot.imshow(self.epsf_model.data, norm=norm, origin='lower', cmap='viridis')
@@ -692,7 +710,7 @@ class MyGUI:
 
             self.ePSF_plot_canvas.draw()
 
-            self.ePSF_results_plotted = True
+            self.ePSF_samples_plotted = True
 
             self.console_msg("Ready")
 
@@ -709,7 +727,7 @@ class MyGUI:
         self.epsf_model = None #reset
         self.clear_psf_label()
         self.clear_epsf_plot()
-        self.ePSF_results_plotted = False
+        self.ePSF_samples_plotted = False
         self.display_image()
         self.console_msg("Ready")
         return
@@ -807,14 +825,15 @@ class MyGUI:
 
             sharplo = float(self.sharplo_entry.get())
 
-            self.console_msg("Finding stars...")
             star_find = IRAFStarFinder(threshold = star_detection_threshold,
                                         fwhm = fwhm,
-                                        exclude_border=True,
+                                        #minsep_fwhm = 1,
+                                        exclude_border = True,
                                         roundhi = 3.0,
                                         roundlo = -5.0,
                                         sharplo = sharplo,
-                                        sharphi = 2.0)
+                                        sharphi = 2.0
+                                        )
 
            
             # the 2.5 in the following is from 
@@ -863,7 +882,7 @@ class MyGUI:
             
 
 
-            self.console_msg("Performing photometry...")
+            self.console_msg("Starting Photometry...(check console progress bar)")
             result_tab = photometry(data=working_image)
 
             if 'message' in selected_fitter.fit_info:
@@ -874,7 +893,7 @@ class MyGUI:
             self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            if self.airmass_entry.get().isnumeric():
+            if len(self.airmass_entry.get()) > 0:
                 self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
             else:
                 self.results_tab_df["AMASS"] = "na"
@@ -943,15 +962,15 @@ class MyGUI:
             sharplo = float(self.sharplo_entry.get())
 
             #bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            self.console_msg("Finding stars...")
             star_find = IRAFStarFinder(threshold = star_detection_threshold,
                                         fwhm = fwhm,
-                                        exclude_border=True,
+                                        minsep_fwhm = 1,
+                                        exclude_border = True,
                                         roundhi = 3.0,
                                         roundlo = -5.0,
                                         sharplo = sharplo,
-                                        sharphi = 2.0)
-
+                                        sharphi = 2.0
+                                        )
            
             local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
 
@@ -994,6 +1013,7 @@ class MyGUI:
                                                 progress_bar=True
                                                 )
 
+            self.console_msg("Starting Photometry...(check console progress bar)")
             result_tab = photometry(data=working_image)
 
             if 'message' in selected_fitter.fit_info:
@@ -1005,7 +1025,7 @@ class MyGUI:
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            if self.airmass_entry.get().isnumeric():
+            if len(self.airmass_entry.get()) > 0:
                 self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
             else:
                 self.results_tab_df["AMASS"] = "na"
@@ -1028,7 +1048,6 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
 
 
-
     # center coordinates, radius
     def create_circle(self, x, y, r, canvas_name, outline="grey50"):
         x0 = x - r
@@ -1042,7 +1061,7 @@ class MyGUI:
         y1 = y - 1.25*r
         canvas_name.create_text(x1, y1, fill=fill, anchor=anchor, text=text)
 
-    def plot_ePSF(self):
+    def display_ePSF_samples(self):
         try:
             #display the non-rejected stars as white, and rejected as red circles
 
@@ -1082,13 +1101,13 @@ class MyGUI:
 		            #(now called .csv) files from older versions.
                     self.results_tab_df["removed_from_ensemble"] = False
 
-                self.ePSF_results_plotted = False
+                self.ePSF_samples_plotted = False
                 self.photometry_results_plotted = True
 
                 for index, row in self.results_tab_df.iterrows():
                     outline = "grey50"
                     if labels_in_photometry_table:
-                        if len(str(row["label"])) > 0 and str(row["label"]) != "nan" and str(row["label"]).isnumeric():
+                        if len(str(row["label"])) > 0 and str(row["label"]).isnumeric():
                             outline = "green"
                             self.create_circle(x=row["x_fit"] * self.zoom_level,
                                 y=row["y_fit"] * self.zoom_level,
@@ -1099,7 +1118,8 @@ class MyGUI:
                                 r=self.fit_shape / 2 * self.zoom_level,
                                 canvas_name=self.canvas,
                                 anchor=tk.CENTER,
-                                text=str(int(row["label"])))
+                                text=str(int(row["label"])),
+                                fill='green')
                             continue
 
                     if row["removed_from_ensemble"]:
@@ -1107,7 +1127,7 @@ class MyGUI:
 
                     if vsx_ids_in_photometry_table:
                         if len(str(row["vsx_id"])) > 0 and str(row["vsx_id"]) != "nan":
-                            outline = "yellow"
+                            outline = "green"
                             self.create_circle(x=row["x_fit"] * self.zoom_level,
                                 y=row["y_fit"] * self.zoom_level,
                                 r=self.fit_shape / 2 * self.zoom_level,
@@ -1119,7 +1139,7 @@ class MyGUI:
                                 canvas_name=self.canvas,
                                 anchor=tk.CENTER,
                                 text=str(row["vsx_id"]).strip(),
-                                fill='yellow')
+                                fill='green')
 
             self.console_msg("Plotting Photometry...complete")
             self.console_msg("Ready")
@@ -1159,7 +1179,7 @@ class MyGUI:
 
 
         #clear plot label
-        self.plotname_label['text'] = "Plot: "
+        #%%%self.plotname_label['text'] = "Plot: "
 
         if hasattr(sky, 'ra'):
             c = SkyCoord(ra=sky.ra, dec=sky.dec)
@@ -1169,7 +1189,7 @@ class MyGUI:
         psf_canvas_x = x
         psf_canvas_y = y
 
-        if self.ePSF_results_plotted:
+        if self.ePSF_samples_plotted:
             #add the selected coordinate into the ePSF_rejection_list
             self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y]
             #indicate the rejected ones
@@ -1213,9 +1233,9 @@ class MyGUI:
                                 " magnitude: " + str(matching_star["match_mag"]))
                         self.set_entry_text(self.object_name_entry, str(matching_star["match_id"]))
                         
-                        #update plot label
-                        self.plotname_label['text'] = "Plot: " + str(matching_star["match_id"]) + \
-                            "; " + str(int(matching_star["label"]))
+                        #%%%update plot label
+                        #%%%self.plotname_label['text'] = "Plot: " + str(matching_star["match_id"]) + \
+                        #%%%    "; " + str(int(matching_star["label"]))
                         
                     if vsx_ids_in_photometry_table:
                         if len(str(matching_star["vsx_id"])) > 0 and str(matching_star["vsx_id"]) != "nan":
@@ -1223,10 +1243,10 @@ class MyGUI:
                                 "Matching VSX Source: " + str(matching_star["vsx_id"]))
                             self.set_entry_text(
                                 self.object_name_entry, str(matching_star["vsx_id"]))
-                            #update plot label
-                            self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
+                            #%%%update plot label
+                            #%%%#self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
 
-            self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
+            #%%%#self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
 
     def update_PSF_canvas(self, x, y):
         global image_data
@@ -2106,7 +2126,7 @@ class MyGUI:
 
             self.console_msg("Matching image to catalog...")
             matching_radius = float(
-                self.matching_radius_entry.get()) * 0.000277778  # arcsec to degrees
+                self.matching_radius_entry.get()) / 3600.0  # arcsec to degrees
             
             if using_aavso_catalog:
                 catalog_comparison = SkyCoord(
@@ -2141,23 +2161,29 @@ class MyGUI:
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
                     
-                    
                 match_coordinates = SkyCoord(
                     ra=match_ra * u.deg, dec=match_dec * u.deg)
                 separation = photometry_star_coordinates.separation(
                     match_coordinates)
                 
 
-                if separation < matching_radius * u.deg:
+                if separation < (matching_radius * u.deg):
                     # Sometimes the flux_fit is negative.
                     # That causes a blank inst_mag (can't take a log of neg number) 
                     # Check for this and if so, ignore
                     # 
                     if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                        self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean
+                        self.results_tab_df.loc[index, "match_id"] = ""
+                        self.results_tab_df.loc[index, "label"] = ""
+                        self.results_tab_df.loc[index, "match_ra"] = ""
+                        self.results_tab_df.loc[index, "match_dec"] = ""
+                        self.results_tab_df.loc[index, "match_mag"] = ""
+                        self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
                         continue
 
-                    # Make sure the earliest iteration is used
+
+                    """
+                    # If Make sure the earliest iteration is used
                     # The first iteration is not necessarily iter_detected = 1
                     # The first or earliest detection could be any int up to max iterations
                     
@@ -2176,9 +2202,10 @@ class MyGUI:
                                 #erase already_gotten label 
                                 already_gotten.iloc[0]['label'] = ""
                                 # fall thru and label the new index 
+                    """
 
-                    #Here if not already_gotten or the already_gotten has 
-                    # a "later/stale" iteration
+
+                    #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
                         str(self.catalog_stringvar.get()) + \
                             " " + str(match_id)
@@ -2227,7 +2254,8 @@ class MyGUI:
                         ra=match_ra * u.deg, dec=match_dec * u.deg)
                     separation = photometry_star_coordinates.separation(
                         match_coordinates)
-                    if separation < matching_radius * u.deg:
+                    
+                    if separation < (matching_radius * u.deg):
                         # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
                         # That causes a blank inst_mag (can't take a log of neg number) 
                         # Check for this and if so, ignore
@@ -2235,8 +2263,11 @@ class MyGUI:
                         # IterativePSFPhotometry; not known if following is still needed)
                         # 
                         if self.results_tab_df.loc[index, "flux_fit"] < 0:
+                            self.results_tab_df.loc[index, "vsx_id"] = ""
                             continue
+                        
 
+                        """
                         # Make sure the earliest iteration is used
                         # The first iteration is not necessarily iter_detected = 1
                         # The first or earliest detection could be any int up to max iterations
@@ -2253,10 +2284,16 @@ class MyGUI:
                                     #erase already_gotten label 
                                     already_gotten.iloc[0]['vsx_id'] = ""
                                     # fall thru and label the new index 
-
-                        #Found a match...should be earliest iteration
+                        """
+                        # Found a match within matching_radius
                         self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
-                        self.console_msg("Match VSX source: " + str(match_id))
+                        self.results_tab_df.loc[index, "RAJ2000"] = str(match_ra)
+                        self.results_tab_df.loc[index, "DEJ2000"] = str(match_dec)
+                        self.results_tab_df.loc[index, "separation"] = str(separation)
+                        self.console_msg("Match VSX source: " + str(match_id) +\
+                                          "; RAJ2000:" + str(match_ra) +\
+                                          "; DEJ2000:" + str(match_dec) +\
+                                          "; separation:" + str(separation) )
                     else:
                         self.results_tab_df.loc[index, "vsx_id"] = ""
             else:
@@ -2293,7 +2330,7 @@ class MyGUI:
 
     def update_display(self):
         self.display_image()
-        self.update_PSF_canvas(self.last_clicked_x, self.last_clicked_y)
+        #%%%#self.update_PSF_canvas(self.last_clicked_x, self.last_clicked_y)
 
     def safe_float_convert(self, x):
         try:
@@ -2952,7 +2989,7 @@ class MyGUI:
                 cmag = str(round(comp_IM, decimal_places))
                 kname = check_star_name
                 kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
-                amass = self.airmass_entry.get().strip() if self.airmass_entry.get().isnumeric() else "na"
+                amass = self.airmass_entry.get().strip() if len(self.airmass_entry.get()) > 0 else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3195,7 +3232,8 @@ class MyGUI:
                 cmag = "na"
                 kname = str(int(aux_result_first_color["KNAME"]))
                 kmag = str(round(B_mean_check, decimal_places))
-                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if aux_result_first_color["AMASS"].iloc[0].isnumeric() else "na"
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if len(aux_result_first_color["AMASS"].iloc[0]) > 0 and \
+                                                                              aux_result_first_color["AMASS"].iloc[0] !="na" else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3225,7 +3263,8 @@ class MyGUI:
                 cmag = "na"
                 kname = self.object_kref_entry.get().strip()
                 kmag = str(round(V_mean_check, decimal_places))
-                amass = format(float(aux_result_second_color["AMASS"]), '.3f') if aux_result_first_color["AMASS"].iloc[0].isnumeric() else "na"
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if len(aux_result_first_color["AMASS"].iloc[0]) > 0 and \
+                                                                              aux_result_first_color["AMASS"].iloc[0] !="na" else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3254,7 +3293,7 @@ class MyGUI:
     def __init__(self):
         #Wis heisen Sie?
         self.program_name = "MAOPhot"
-        self.program_version = "0.2"
+        self.program_version = "1.0.0"
         self.program_name_note = ""
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
