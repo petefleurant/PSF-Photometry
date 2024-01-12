@@ -29,6 +29,13 @@ Welcome to MAOPhot 1.0.0, a PSF Photometry tool using Astropy and Photutils.psf
       changed those settings or change the matching radius. There is a 
       discussion about this in the documentation.
 
+    - Radio buttons "Display all objects" and "Display selected objects only"
+      allows user to display all detected objects or only ones listed in 
+      the settings
+
+    - Check star in settings has priority over saved cvs file. User can change
+      check star and then re-run "Two Color Photometry".
+
     - Added Non Iterative PSF Photometry option which uses class
        PSFPhotometry 
     - check_star boolean in DataFrame is bool type throughout, not str
@@ -185,6 +192,13 @@ objects in image field
     detection and photometry of astronomical sources (Bradley et al. 20XX).
 
 """
+#
+# Constants
+#
+__version__ = "1.0.0"
+__label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
+__empty_cell__ = "%" #this forces cell to be type string
+
 from ast import Assert
 from astropy.stats import SigmaClip
 from astropy.stats import sigma_clipped_stats
@@ -367,6 +381,7 @@ class MyGUI:
     object_sel_comp_entry = None
     object_name_entry = None
     object_notes_entry = None
+    display_all_objects = None
 
     #
     # The TopLoevel window containing the settings
@@ -1103,43 +1118,64 @@ class MyGUI:
 
                 self.ePSF_samples_plotted = False
                 self.photometry_results_plotted = True
+                sel_comps = [] #init
+
+                if labels_in_photometry_table and \
+                   self.display_all_objects.get() != '1':
+                    # if here we need to get the list of user selected comp stars
+                    # ony the ones in this list will get displayed
+                    #
+                    # loop through all the selected comp stars and fill this sel_comps list
+                    sel_comps = [] #init
+                    sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
+                    #make array of int csalled sel_comps            
+                    for comp in sel_comps_to_use:
+                        sel_comps.append(comp.strip())
 
                 for index, row in self.results_tab_df.iterrows():
                     outline = "grey50"
                     if labels_in_photometry_table:
-                        if len(str(row["label"])) > 0 and str(row["label"]).isnumeric():
-                            outline = "green"
-                            self.create_circle(x=row["x_fit"] * self.zoom_level,
-                                y=row["y_fit"] * self.zoom_level,
-                                r=self.fit_shape / 2 * self.zoom_level,
-                                canvas_name=self.canvas, outline=outline)
-                            self.create_text(  x=row["x_fit"] * self.zoom_level,
-                                y=row["y_fit"] * self.zoom_level, 
-                                r=self.fit_shape / 2 * self.zoom_level,
-                                canvas_name=self.canvas,
-                                anchor=tk.CENTER,
-                                text=str(int(row["label"])),
-                                fill='green')
-                            continue
+                        if str(row["label"]) != __empty_cell__: 
+                               if self.display_all_objects.get() == '1' or \
+                                  str(row["label"])[len(__label_prefix__):] in sel_comps: #ignore label prefix
+                                # here if all comps are to be displayed or 
+                                # if only user's comps are being displayed 
+                                    outline = "pink"
+                                    self.create_circle(x=row["x_fit"] * self.zoom_level,
+                                        y=row["y_fit"] * self.zoom_level,
+                                        r=self.fit_shape * self.zoom_level,
+                                        canvas_name=self.canvas, outline=outline)
+                                    self.create_text(  x=row["x_fit"] * self.zoom_level,
+                                        y=row["y_fit"] * self.zoom_level, 
+                                        r=self.fit_shape * self.zoom_level,
+                                        canvas_name=self.canvas,
+                                        anchor=tk.CENTER,
+                                        text=str(row["label"])[len(__label_prefix__):],
+                                        fill='pink')
+                                    continue
 
                     if row["removed_from_ensemble"]:
                         assert False, "Found an entry 'removed from ensemble???!'"
 
                     if vsx_ids_in_photometry_table:
-                        if len(str(row["vsx_id"])) > 0 and str(row["vsx_id"]) != "nan":
-                            outline = "green"
-                            self.create_circle(x=row["x_fit"] * self.zoom_level,
-                                y=row["y_fit"] * self.zoom_level,
-                                r=self.fit_shape / 2 * self.zoom_level,
-                                canvas_name=self.canvas,
-                                outline=outline)
-                            self.create_text(  x=row["x_fit"] * self.zoom_level,
-                                y=row["y_fit"] * self.zoom_level, 
-                                r=self.fit_shape / 2 * self.zoom_level,
-                                canvas_name=self.canvas,
-                                anchor=tk.CENTER,
-                                text=str(row["vsx_id"]).strip(),
-                                fill='green')
+                        if str(row["vsx_id"]) != __empty_cell__:
+                            if self.display_all_objects.get() == '1' or \
+                               str(row["vsx_id"]) == self.object_name_entry.get().strip():
+                                # here if all vsx objects to be displayed or 
+                                # if only user's "Object Name" object is being displayed 
+                                outline = "yellow"
+                                self.create_circle(x=row["x_fit"] * self.zoom_level,
+                                    y=row["y_fit"] * self.zoom_level,
+                                    r=self.fit_shape * self.zoom_level,
+                                    canvas_name=self.canvas,
+                                    outline=outline)
+                                self.create_text(  x=row["x_fit"] * self.zoom_level,
+                                    y=row["y_fit"] * self.zoom_level, 
+                                    r=self.fit_shape * self.zoom_level,
+                                    canvas_name=self.canvas,
+                                    anchor=tk.CENTER,
+                                    text=str(row["vsx_id"]).strip(),
+                                    fill='yellow')
 
             self.console_msg("Plotting Photometry...complete")
             self.console_msg("Ready")
@@ -1210,8 +1246,8 @@ class MyGUI:
                 psf_canvas_x = x_fit
                 psf_canvas_y = y_fit
             if str(x_fit)+str(y_fit) in self.photometry_circles:
-                self.canvas.delete(
-                    self.photometry_circles[str(x_fit)+str(y_fit)])
+                self.canvas.delete(self.photometry_circles[str(x_fit)+str(y_fit)])
+
             self.canvas.create_line(x_fit*self.zoom_level, y_fit*self.zoom_level - 35*self.zoom_level, x_fit *
                                     self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
             self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
@@ -1219,8 +1255,10 @@ class MyGUI:
             self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
                 round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
 
-            # Reset object name field in the left panel to avoid user mistakes
-            self.set_entry_text(self.object_name_entry, "")
+
+            #  For now, not using mouse click to change settings
+            # Reset object name field in the setting to avoid user mistakes
+            # self.set_entry_text(self.object_name_entry, "")
             if "match_id" in self.results_tab_df:
                 matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
                     self.results_tab_df["y_fit"] == y_fit)
@@ -1229,24 +1267,26 @@ class MyGUI:
                     if type(matching_star["match_id"]) in (str, int, np.float64):
                         self.console_msg(
                             "Matching catalog source ID: " + str(matching_star["match_id"]) + 
-                                "; label: " + str(int(matching_star["label"])) +
+                                "; label: " + str(matching_star["label"]) +
                                 " magnitude: " + str(matching_star["match_mag"]))
-                        self.set_entry_text(self.object_name_entry, str(matching_star["match_id"]))
+                        #self.set_entry_text(self.object_name_entry, str(matching_star["match_id"]))
                         
                         #%%%update plot label
                         #%%%self.plotname_label['text'] = "Plot: " + str(matching_star["match_id"]) + \
                         #%%%    "; " + str(int(matching_star["label"]))
                         
                     if vsx_ids_in_photometry_table:
-                        if len(str(matching_star["vsx_id"])) > 0 and str(matching_star["vsx_id"]) != "nan":
+                        if len(str(matching_star["vsx_id"])) > 1:
                             self.console_msg(
                                 "Matching VSX Source: " + str(matching_star["vsx_id"]))
-                            self.set_entry_text(
-                                self.object_name_entry, str(matching_star["vsx_id"]))
+                            #self.set_entry_text(
+                            #    self.object_name_entry, str(matching_star["vsx_id"]))
                             #%%%update plot label
                             #%%%#self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
 
             #%%%#self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
+
+
 
     def update_PSF_canvas(self, x, y):
         global image_data
@@ -1507,20 +1547,39 @@ class MyGUI:
                 raise Exception("two_color_photometry: unknown imput_color entered")
 
          
-            #
-            #   CHECK STAR Calculations
-            #
-            # Find the check star; 
+            """
+               CHECK STAR Calculations
+            
+               Check star in the settings has priority. User could have
+               changed check star and then re-ran "Two Color Photometry".
+               
+               So results_tab_df_colorB and results_tab_df_colorV must have same 
+               check star as whst id in Settings
+            """
+            # check if check star changed
+            check_star_in_setting = self.object_kref_entry.get().strip()
+            
             check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]
+            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
+            check_star_label = check_star_B["label"][len(__label_prefix__):] #remove prefix
 
-            check_star_label = int(check_star_B["label"])
+            if check_star_in_setting != check_star_label:
+                # new check star; change it
+                check_star_label = check_star_in_setting # new!!
+                # change check star in B
+                check_star_B["check_star"] = False
+                check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
+                check_star_B["check_star"] = True
+                # change check star in V
+                check_star_V["check_star"] = False
+                check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
+                check_star_V["check_star"] = True
 
-            self.console_msg("Using check star " + str(check_star_label))
+            self.console_msg("Using check star " + check_star_label)
 
             check_IMB = check_star_B["inst_mag"]
             check_B = check_star_B["match_mag"]
 
-            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
             check_IMV = check_star_V["inst_mag"]
             check_V = check_star_V["match_mag"]
             
@@ -1580,7 +1639,6 @@ class MyGUI:
             else:
                 raise Exception("two_color_photometry: unknown imput_color entered")
 
-            
 
             """
             loop through all the selected comp stars and fill the * table
@@ -1588,31 +1646,36 @@ class MyGUI:
             sel_comps = [] #init
             sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
 
-            #make array of int csalled sel_comps            
+            #make list of (comp, _prefix_comp) called sel_comps
+            # Eg., ("120", "comp 120")
             for comp in sel_comps_to_use:
-                sel_comps.append(comp.strip())
+                sel_comps.append((comp.strip(), __label_prefix__ + comp.strip()))
             
-            for comp in sel_comps:
+            
+            for comp_tuple in sel_comps:
+
+                comp = comp_tuple[1]
+                comp_no_prefix = comp_tuple[0]
 
                 #Dont use the check star 
-                if comp == check_star_label:
+                if comp_no_prefix == check_star_label:
                     continue
 
                 #selected comp must be in both tables
-                if str(comp) in self.results_tab_df_colorB["label"].values:
-                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == str(comp)].iloc[0]
-                elif int(comp) in self.results_tab_df_colorB["label"].values:
-                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == int(comp)].iloc[0]
+                if comp in self.results_tab_df_colorB["label"].values:
+                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
+                elif comp in self.results_tab_df_colorB["label"].values:
+                    comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
                 else:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + first_filter[input_color] + " table")
+                    self.console_msg("Comp star: "+ comp_no_prefix + " not in " + first_filter[input_color] + " table")
                     continue
 
-                if str(comp) in self.results_tab_df_colorV["label"].values:
-                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == str(comp)].iloc[0]
-                elif int(comp) in self.results_tab_df_colorV["label"].values:
-                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == int(comp)].iloc[0]
+                if comp in self.results_tab_df_colorV["label"].values:
+                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == comp].iloc[0]
+                elif comp in self.results_tab_df_colorV["label"].values:
+                    comp_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == comp].iloc[0]
                 else:
-                    self.console_msg("Comp star: "+ str(int(comp)) + " not in " + second_filter[input_color] + " table")
+                    self.console_msg("Comp star: "+ comp_no_prefix + " not in " + second_filter[input_color] + " table")
                     continue
                 
 
@@ -1630,7 +1693,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -1649,7 +1712,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1668,7 +1731,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1705,7 +1768,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -1723,7 +1786,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -1741,7 +1804,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp),
+                        "comp": int(comp_no_prefix),
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -2001,7 +2064,7 @@ class MyGUI:
 
     def get_comparison_stars(self):
         global image_width, image_height
-        comp_stars_used = [] #init
+        comp_stars_found = [] #init
         try:
             self.filter = self.filter_entry.get()
 
@@ -2174,7 +2237,7 @@ class MyGUI:
                     # 
                     if self.results_tab_df.loc[index, "flux_fit"] < 0:
                         self.results_tab_df.loc[index, "match_id"] = ""
-                        self.results_tab_df.loc[index, "label"] = ""
+                        self.results_tab_df.loc[index, "label"] = __empty_cell__
                         self.results_tab_df.loc[index, "match_ra"] = ""
                         self.results_tab_df.loc[index, "match_dec"] = ""
                         self.results_tab_df.loc[index, "match_mag"] = ""
@@ -2183,45 +2246,43 @@ class MyGUI:
 
 
                     """
-                    # If Make sure the earliest iteration is used
-                    # The first iteration is not necessarily iter_detected = 1
-                    # The first or earliest detection could be any int up to max iterations
-                    
-                    # "iter_detected" may not exisit becase Non-iterative PSF Photometry was used
-                    if "label" in self.results_tab_df and "iter_detected" in self.results_tab_df:
-                        already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == int(match_label)]    
-                        if not already_gotten.empty:
-                            # Confirm that this already gotten one has an EARLIER iteration,
-                            # and if so, then we can continue, else
-                            # we have to erase already gotten and use the new one
-                            if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
-                                self.results_tab_df.loc[index, "label"] = ""
-                                self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean
-                                continue
-                            else:
-                                #erase already_gotten label 
-                                already_gotten.iloc[0]['label'] = ""
-                                # fall thru and label the new index 
+                    For a given comp star and matching_radius, there could be 
+                    more than one match. Name the successive matches by appending
+                    the string ".n" where n is 0, 1, 2, 3.... 
+                    The original comp star does not get its label appended.
+                    So, you could have comp stars:
+                    120, 120.0, 120.1, 120.2, etc.
                     """
-
+                    if "label" in self.results_tab_df:
+                        already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label))]    
+                        if not already_gotten.empty:
+                            # Here if we already got this comp star 
+                            # So rename it to match_label + ".n" (n = 0, 1, 2, etc.)
+                            # Get the latest (check for ".n")
+                            n = 0
+                            while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
+                                n += 1
+                            
+                            #new comp label
+                            match_label = str(match_label)  + "." + str(n)
 
                     #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
                         str(self.catalog_stringvar.get()) + \
                             " " + str(match_id)
-                    self.results_tab_df.loc[index, "label"] = int(match_label)
+                    self.results_tab_df.loc[index, "label"] = __label_prefix__ + str(match_label)
                     self.results_tab_df.loc[index, "match_ra"] = match_ra
                     self.results_tab_df.loc[index, "match_dec"] = match_dec
                     self.results_tab_df.loc[index, "match_mag"] = match_mag
                     self.results_tab_df.loc[index, "check_star"] = match_is_check
                     
                     #record comp stars used for console if AAVSO comp stars
-                    comp_stars_used.append((match_label, match_is_check))
+                    comp_stars_found.append((str(match_label), match_is_check))
                     
                 else:
                     #Here if separation >= matching_radius
                     self.results_tab_df.loc[index, "match_id"] = ""
-                    self.results_tab_df.loc[index, "label"] = ""
+                    self.results_tab_df.loc[index, "label"] = __empty_cell__ # prevent nan
                     self.results_tab_df.loc[index, "match_ra"] = ""
                     self.results_tab_df.loc[index, "match_dec"] = ""
                     self.results_tab_df.loc[index, "match_mag"] = ""
@@ -2263,28 +2324,32 @@ class MyGUI:
                         # IterativePSFPhotometry; not known if following is still needed)
                         # 
                         if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                            self.results_tab_df.loc[index, "vsx_id"] = ""
+                            self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__
                             continue
                         
-
                         """
-                        # Make sure the earliest iteration is used
-                        # The first iteration is not necessarily iter_detected = 1
-                        # The first or earliest detection could be any int up to max iterations
+                        For a given vsx and matching_radius, there could be 
+                        more than one match. Name the successive matches by appending
+                        the string ".n" where n is 0, 1, 2, 3.... 
+                        The original comp star does not get its label appended.
+                        So, you could have vsx stars:
+                        Z Tau, Z Tau.0, Z Tau.1, Z Tau.2, etc.
+                        """
+                    
                         if "vsx_id" in self.results_tab_df:
-                            already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == str(match_id)]    
+                            already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == match_id]    
                             if not already_gotten.empty:
-                                # Confirm that this already gotten one has an EARLIER iteration,
-                                # and if so, then we can continue, else
-                                # we have to erase already gotten and use the new one
-                                if already_gotten.iloc[0]["iter_detected"] < self.results_tab_df.loc[index, "iter_detected"]:
-                                    self.results_tab_df.loc[index, "vsx_id"] = ""
-                                    continue
-                                else:
-                                    #erase already_gotten label 
-                                    already_gotten.iloc[0]['vsx_id'] = ""
-                                    # fall thru and label the new index 
-                        """
+                                # Here if we already got this vsx
+                                # So rename it to match_id + ".n" (n = 0, 1, 2, etc)
+                                # Get the latest (check for ".n")
+                                n = 0
+                                while(not (self.results_tab_df.loc[self.results_tab_df["vsx_id"] == (str(match_id) + "." + str(n))]).empty):
+                                    n += 1
+                                
+                                #new vsx label
+                                match_id = str(match_id)  + "." + str(n)
+
+
                         # Found a match within matching_radius
                         self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
                         self.results_tab_df.loc[index, "RAJ2000"] = str(match_ra)
@@ -2295,7 +2360,7 @@ class MyGUI:
                                           "; DEJ2000:" + str(match_dec) +\
                                           "; separation:" + str(separation) )
                     else:
-                        self.results_tab_df.loc[index, "vsx_id"] = ""
+                        self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__ # prevent nan
             else:
                 self.console_msg("Found no VSX sources in the field.")
                 
@@ -2304,13 +2369,13 @@ class MyGUI:
 
             if using_aavso_catalog:
                 comp_list = ''
-                #output comp_stars_used
+                #output comp_stars_found
                 found_check = False #init
-                for comp in comp_stars_used:
+                for comp in comp_stars_found:
                     (label, ischeck) = comp
                     found_check |= ischeck == True
                     comp_list += str(label) + ', ' 
-                self.console_msg("AAVSO comp stars used: " + comp_list)
+                self.console_msg("AAVSO comp stars found: " + comp_list)
                     
                 check_star = self.object_kref_entry.get().strip()
                 if not found_check and check_star != '':
@@ -2442,13 +2507,13 @@ class MyGUI:
         try:
             es_ = tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
 
-            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*.55)))
+            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*.6)))
             es_.title("Settings")
             self.es_top = es_
 
             self.es_top.protocol("WM_DELETE_WINDOW", self.es_top.withdraw)
 
-            self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*.55))
+            self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*.6))
 
             tk.Grid.columnconfigure(self.es_top, 0, weight=1)
 
@@ -2665,19 +2730,23 @@ class MyGUI:
             self.date_obs_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
+            object_notes_label = tk.Label(self.es_top, text="Notes:")
+            object_notes_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_notes_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.object_notes_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
             object_name_label = tk.Label(
                 self.es_top, text="Object Name:")
             object_name_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.object_name_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.object_name_entry.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
-
-            object_notes_label = tk.Label(self.es_top, text="Notes:")
-            object_notes_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.object_notes_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width, background='pink')
-            self.object_notes_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             object_kref_label = tk.Label(self.es_top, text="Use Check Star (AAVSO Label):")
@@ -2692,6 +2761,20 @@ class MyGUI:
             self.object_sel_comp_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.object_sel_comp_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            display_users_objects_only = ttk.Radiobutton(self.es_top, text="Display selected objects only",
+                                                         variable=self.display_all_objects, value=0)
+            display_users_objects_only.grid(row=row, column=2, columnspan=2, sticky=tk.W)
+            row += 1
+
+            display_all_objects_rb = ttk.Radiobutton(self.es_top, text="Display all objects",
+                                                  variable=self.display_all_objects,  value=1)
+            display_all_objects_rb.grid(row=row, column=2, columnspan=2, sticky=tk.W )
+            row += 1
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
             catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
@@ -2925,8 +3008,8 @@ class MyGUI:
                 return
 
             #Check if comp star has been measured
-            if not int(comp_star_name) in self.results_tab_df_color["label"].values:
-                self.console_msg("Comp star not found in table; "+ str(comp_star_name) + " not found!", level=logging.ERROR)
+            if not (__label_prefix__ + comp_star_name) in self.results_tab_df_color["label"].values:
+                self.console_msg("Comp star not found in table; "+ comp_star_name + " not found!", level=logging.ERROR)
                 return
 
 
@@ -2944,8 +3027,8 @@ class MyGUI:
 
                 #var_star_name, check_star_name, comp_star_name were determined above
                 var_star = self.results_tab_df_color[self.results_tab_df_color["vsx_id"] == var_star_name].iloc[0]
-                check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(check_star_name)].iloc[0]
-                comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == int(comp_star_name)].iloc[0]
+                check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + check_star_name)].iloc[0]
+                comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)].iloc[0]
 
                 comp_IM = comp_star["inst_mag"]
                 comp_star_mag = comp_star["match_mag"]
@@ -3293,7 +3376,7 @@ class MyGUI:
     def __init__(self):
         #Wis heisen Sie?
         self.program_name = "MAOPhot"
-        self.program_version = "1.0.0"
+        self.program_version = __version__
         self.program_name_note = ""
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
@@ -3502,6 +3585,7 @@ class MyGUI:
         self.catalog_stringvar.set("AAVSO")
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("Levenberg-Marquardt")
+        self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
 
         row = 0
 
@@ -3569,7 +3653,8 @@ class MyGUI:
             'object_kref_entry': self.object_kref_entry,
             'object_sel_comp_entry': self.object_sel_comp_entry,
             'object_name_entry': self.object_name_entry,
-            'object_notes_entry': self.object_notes_entry
+            'object_notes_entry': self.object_notes_entry,
+            'display_all_objects': self.display_all_objects
             }
 
         tk.mainloop()
