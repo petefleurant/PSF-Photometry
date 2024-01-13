@@ -3315,8 +3315,8 @@ class MyGUI:
                 cmag = "na"
                 kname = str(int(aux_result_first_color["KNAME"]))
                 kmag = str(round(B_mean_check, decimal_places))
-                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if len(aux_result_first_color["AMASS"].iloc[0]) > 0 and \
-                                                                              aux_result_first_color["AMASS"].iloc[0] !="na" else "na"
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
+                    if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3346,8 +3346,8 @@ class MyGUI:
                 cmag = "na"
                 kname = self.object_kref_entry.get().strip()
                 kmag = str(round(V_mean_check, decimal_places))
-                amass = format(float(aux_result_first_color["AMASS"]), '.3f') if len(aux_result_first_color["AMASS"].iloc[0]) > 0 and \
-                                                                              aux_result_first_color["AMASS"].iloc[0] !="na" else "na"
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
+                    if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
                 group = "na"
                 chart = self.vizier_catalog_entry.get().strip()
                 notes = self.object_notes_entry.get().strip()
@@ -3425,6 +3425,8 @@ class MyGUI:
         self.viewmenu.add_command(label="Zoom In", command=self.zoom_in)
         self.viewmenu.add_command(label="Zoom Out", command=self.zoom_out)
         self.viewmenu.add_command(label="100% Zoom", command=self.zoom_100)
+        self.viewmenu.add_separator()
+        self.viewmenu.add_command(label="Refresh", command=self.display_image)
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
