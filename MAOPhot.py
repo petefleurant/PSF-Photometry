@@ -222,7 +222,7 @@ from photutils.psf import IterativePSFPhotometry, PSFPhotometry
 from photutils.psf import IntegratedGaussianPRF, SourceGrouper
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
-from photutils.psf import EPSFBuilder
+from photutils.psf import EPSFBuilder,EPSFFitter
 from tkinter import filedialog as fd
 from tkinter import ttk
 import tkinter as tk
@@ -247,6 +247,7 @@ import os.path
 import numpy as np
 import warnings
 import datetime
+from time import gmtime, strftime
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
@@ -348,9 +349,9 @@ class MyGUI:
     image_file = ""
     photometry_circles = {}
     valid_parameter_list = {}
-    ePSF_rejection_list = pd.DataFrame({'x':[],'y':[]})
+    ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
     epsf_model = None
-    stars_tbl = None 
+    stars_tbl = Table()
 
     # Parameter declaration  and init 
     photometry_aperture_entry = None
@@ -701,7 +702,8 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True)
+            epsf_builder = EPSFBuilder(oversampling=2, fitter=EPSFFitter(), maxiters=50)
+            self.console_msg("Starting ePSF Builder...(check console progress bar)")
             self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
 
             model_length = len(self.epsf_model.data)
@@ -740,6 +742,7 @@ class MyGUI:
         #drop all the rows but keep the 'x' and 'y' column
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
         self.epsf_model = None #reset
+        self.stars_tbl = Table()
         self.clear_psf_label()
         self.clear_epsf_plot()
         self.ePSF_samples_plotted = False
@@ -761,6 +764,8 @@ class MyGUI:
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
                 self.console_msg("Loading Rejection list from: " + str(file_name))
                 self.ePSF_rejection_list = pd.read_csv(str(file_name))
+                self.ePSF_rejection_list["stale"] = True #reset 
+                self.ePSF_samples_plotted = True
                 self.display_image()
             else:
                 return
@@ -1013,14 +1018,14 @@ class MyGUI:
                                  "; fwhm = "+format(fwhm, '.1f')+\
                                  "; fitting width/height = "+str(self.fit_shape))
                 psf_model = IntegratedGaussianPRF(sigma)
-
+ 
             photometry = IterativePSFPhotometry(
                                                 psf_model = psf_model,
                                                 fit_shape = self.fit_shape,
                                                 finder = star_find,
-                                                grouper = None,
+                                                grouper = None, #SourceGrouper(min_separation=50),
                                                 fitter = selected_fitter,
-                                                fitter_maxiters = 100,
+                                                fitter_maxiters = 10,
                                                 maxiters = iterations,
                                                 localbkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
@@ -1028,15 +1033,25 @@ class MyGUI:
                                                 progress_bar=True
                                                 )
 
+            sys.setrecursionlimit(10000)
             self.console_msg("Starting Photometry...(check console progress bar)")
             result_tab = photometry(data=working_image)
+            self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
             else:
                 self.console_msg("Done. PSF fitter; no message available")
 
-            #self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
+            #get the residuals
+            residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
+
+            #append current time to residual filename
+            file_base_name_parts = self.image_file.split('.')
+            residual_file_name = file_base_name_parts[0] + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fits"
+            fits.writeto(residual_file_name, residual_image, header, overwrite=True)
+            self.console_msg("Residuals saved to: " + residual_file_name)
+
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
@@ -1078,23 +1093,44 @@ class MyGUI:
 
     def display_ePSF_samples(self):
         try:
-            #display the non-rejected stars as white, and rejected as red circles
-
-            ## make it twice the aperture entry
-            ##same size used in create_ePSF
+            """
+             Circle color
+             white: stars that will be used in the ePSF Generation (stars_tbl)
+             red: stars that rejected by user and in the stars_tbl (ePSF_rejection_list)
+             yellow: stars in a loaded rejection list file that is not presently in the stars_tbl, they 
+             have already been removed (ePSF_rejection_list)
+             
+            """
+            ## make all the circles twice the aperture entry
+            ## same size used in create_ePSF (?)
             self.fit_shape = int(self.photometry_aperture_entry.get())
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
-            for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
-                color = 'white' # it is a white circle until a reject match is found
-                for index, row in self.ePSF_rejection_list.iterrows():
-                    reject_x = row['x']
-                    reject_y = row['y']
-                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
-                        color = 'red'  #paint rejects red
-                        break;
-                self.create_circle(x=psf_x * self.zoom_level, y=psf_y * self.zoom_level,
-                                      r=hsize * self.zoom_level, canvas_name=self.canvas, outline=color)
+
+            if len(self.stars_tbl) != 0:
+                self.console_msg("Displaying ePSF samples; reject list size: " + str(len(self.ePSF_rejection_list)))
+
+                #display the non-rejected stars as white, and rejected as red circles
+                for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
+                    color = 'white' # it is a white circle until a reject match is found
+                    for index, row in self.ePSF_rejection_list.iterrows():
+                        reject_x = row['x']
+                        reject_y = row['y']
+
+                        if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
+                            color = 'red'  #paint rejects red
+                            self.ePSF_rejection_list.loc[index, "stale"] = False
+                            break;
+                    self.create_circle(x=psf_x * self.zoom_level, y=psf_y * self.zoom_level,
+                                        r=hsize * self.zoom_level, canvas_name=self.canvas, outline=color)
+                    
+            #Always make a yellow circle for any stars that are "stale"
+            for index, row in self.ePSF_rejection_list.iterrows():
+                reject_x = row['x']
+                reject_y = row['y']
+                if row["stale"] == True:
+                    self.create_circle(x=reject_x * self.zoom_level, y=reject_y * self.zoom_level,
+                                        r=hsize * self.zoom_level, canvas_name=self.canvas, outline='yellow')
 
         except Exception as e:
             self.error_raised = True
@@ -1116,7 +1152,6 @@ class MyGUI:
 		            #(now called .csv) files from older versions.
                     self.results_tab_df["removed_from_ensemble"] = False
 
-                self.ePSF_samples_plotted = False
                 self.photometry_results_plotted = True
                 sel_comps = [] #init
 
@@ -1143,7 +1178,7 @@ class MyGUI:
                                     outline = "pink"
                                     self.create_circle(x=row["x_fit"] * self.zoom_level,
                                         y=row["y_fit"] * self.zoom_level,
-                                        r=self.fit_shape * self.zoom_level,
+                                        r=(self.fit_shape/2) * self.zoom_level,
                                         canvas_name=self.canvas, outline=outline)
                                     self.create_text(  x=row["x_fit"] * self.zoom_level,
                                         y=row["y_fit"] * self.zoom_level, 
@@ -1166,7 +1201,7 @@ class MyGUI:
                                 outline = "yellow"
                                 self.create_circle(x=row["x_fit"] * self.zoom_level,
                                     y=row["y_fit"] * self.zoom_level,
-                                    r=self.fit_shape * self.zoom_level,
+                                    r=(self.fit_shape/2) * self.zoom_level,
                                     canvas_name=self.canvas,
                                     outline=outline)
                                 self.create_text(  x=row["x_fit"] * self.zoom_level,
@@ -1227,7 +1262,8 @@ class MyGUI:
 
         if self.ePSF_samples_plotted:
             #add the selected coordinate into the ePSF_rejection_list
-            self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y]
+            #initally all assumed to be stale until ePSF builder is run
+            self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y, True]
             #indicate the rejected ones
             self.display_image()
 
@@ -1552,28 +1588,51 @@ class MyGUI:
             
                Check star in the settings has priority. User could have
                changed check star and then re-ran "Two Color Photometry".
-               
+
+               Or, check star may not have been found at all in image and user
+               has just selected one in Settings. In this case if new (or old)
+               check star is not in table, then two_color_photometry returns 
+               with message indicating to select a differnet check star.
+
                So results_tab_df_colorB and results_tab_df_colorV must have same 
-               check star as whst id in Settings
+               check star as what is in Settings.
             """
             # check if check star changed
             check_star_in_setting = self.object_kref_entry.get().strip()
+            check_star_in_setting_with_prefix = __label_prefix__ + check_star_in_setting
+            #check to see if Settings' check star in both tables
+            if not self.results_tab_df_colorB["label"].isin([check_star_in_setting_with_prefix]).any():
+                self.console_msg("Settings check star: " + check_star_in_setting +
+                                  " not found in " + input_color[0] + "; select another check star")
+                return
             
-            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]
-            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]
-            check_star_label = check_star_B["label"][len(__label_prefix__):] #remove prefix
+            if not self.results_tab_df_colorV["label"].isin([check_star_in_setting_with_prefix]).any():
+                self.console_msg("Settings check star: " + check_star_in_setting +
+                                  " not found in " + input_color[2] + "; select another check star")
+                return
 
-            if check_star_in_setting != check_star_label:
-                # new check star; change it
-                check_star_label = check_star_in_setting # new!!
-                # change check star in B
-                check_star_B["check_star"] = False
-                check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
-                check_star_B["check_star"] = True
-                # change check star in V
-                check_star_V["check_star"] = False
-                check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
-                check_star_V["check_star"] = True
+            #Reset the old check_star (if it is True) and set the new one 
+            # for B
+            if self.results_tab_df_colorB["check_star"].isin([True]).any():
+                index = self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].index
+                self.results_tab_df_colorB.loc[index, "check_star"] = False
+
+            label_B_index = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == __label_prefix__ + check_star_in_setting].index
+            self.results_tab_df_colorB.loc[label_B_index, "check_star"] = True
+            check_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
+
+            #Reset the old check_star (if it is True) and set the new one 
+            # for V
+            if self.results_tab_df_colorV["check_star"].isin([True]).any():
+                index = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].index
+                self.results_tab_df_colorV.loc[index, "check_star"] = False
+
+            label_V_index = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == __label_prefix__ + check_star_in_setting].index
+            self.results_tab_df_colorV.loc[label_V_index, "check_star"] = True
+            check_star_V = self.results_tab_df_colorV[self.results_tab_df_colorV["label"] == __label_prefix__ + check_star_in_setting].iloc[0]
+
+
+            check_star_label = check_star_in_setting # could be new!!
 
             self.console_msg("Using check star " + check_star_label)
 
@@ -1904,7 +1963,9 @@ class MyGUI:
                     "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (B: " + str(check_B) +")" + " (V: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
+                                  " (B: " + format(check_B, ' >6.3f') +")" +
+                                    " (V: " + format(check_V, ' >6.3f') +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -1961,8 +2022,10 @@ class MyGUI:
                     "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (V: " + str(check_B) +")" + " (R: " + str(check_V) +")" "\n" +
-                                result_check_star.sort_values(by="name").to_string() +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
+                                  " (V: " + format(check_B, ' >6.3f') +")" +
+                                    " (R: " + format(check_V, ' >6.3f') +")" "\n" +
+                                      result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
                                 "  R* Ave: " + format(V_mean_check, ' >6.3f')).rjust(137) +
@@ -2018,7 +2081,9 @@ class MyGUI:
                     "AMASS" : amass_V
                     }
             
-                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) + " (V: " + str(check_B) +")" + " (I: " + str(check_V) +")" "\n" +
+                self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
+                                  " (V: " + format(check_B, ' >6.3f') +")" +
+                                    " (I: " + format(check_V, ' >6.3f') +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2379,8 +2444,12 @@ class MyGUI:
                     
                 check_star = self.object_kref_entry.get().strip()
                 if not found_check and check_star != '':
-                    self.console_msg("WARNING!! The requested check_star: " + check_star + " was NOT FOUND in image! Choose another.", level=logging.WARNING)
-                    
+                    self.console_msg("WARNING!! The requested check_star: " 
+                                     + check_star + " was NOT FOUND in image! Choose another.", level=logging.WARNING)
+
+            # No need to show ePSF data
+            self.ePSF_samples_plotted = False
+            
             self.display_image()
             self.console_msg("Ready")
         
@@ -3522,8 +3591,6 @@ class MyGUI:
 
         self.console_msg(self.program_full_name)
         self.console_msg("Ready")
-
-
 
 
         # We will lay out interface things into the new right_frame grid
