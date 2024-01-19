@@ -2574,15 +2574,17 @@ class MyGUI:
     #
     def launch_settings(self):
         try:
+            height_factor_ = .7
+
             es_ = tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
 
-            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*.6)))
+            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*height_factor_)))
             es_.title("Settings")
             self.es_top = es_
 
             self.es_top.protocol("WM_DELETE_WINDOW", self.es_top.withdraw)
 
-            self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*.6))
+            self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*height_factor_))
 
             tk.Grid.columnconfigure(self.es_top, 0, weight=1)
 
@@ -2592,6 +2594,23 @@ class MyGUI:
             extended_settings_entry_pad = 0
 
             row = 0
+
+            """
+                    ePSF and PSF Photometry Parameters
+            """
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            _label_ = tk.Label(
+                self.es_top, text="ePSF and PSF Photometry Parameters")
+            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            row += 1
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
 
             photometry_aperture_label = tk.Label(
                 self.es_top, text="Fitting Width/Height, px (odd only):")
@@ -2614,7 +2633,6 @@ class MyGUI:
             self.fwhm_entry = tk.Entry(self.es_top, width=settings_entry_width)
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
-
 
             star_detection_threshold_label = tk.Label(
                 self.es_top, text="IRAFStarFinder Threshold:")
@@ -2656,25 +2674,27 @@ class MyGUI:
             self.matching_radius_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            astrometrynet_label = tk.Label(
-                self.es_top, text="Astrometry.net Server:")
-            astrometrynet_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.astrometrynet_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width)
-            self.astrometrynet_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
-            row += 1
-
-            astrometrynet_key_label = tk.Label(
-                self.es_top, text="Astrometry.net API Key:")
-            astrometrynet_key_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.astrometrynet_key_entry = tk.Entry(
-                self.es_top, width=extended_settings_entry_width)
-            self.astrometrynet_key_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
-            self.astrometrynet_key_entry.config(show="*")
+            fitter_label = tk.Label(self.es_top, text="PSF Fitter:")
+            fitter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
+                                                "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
+            fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             separator_telescope = ttk.Separator(self.es_top, orient='horizontal')
             separator_telescope.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            """
+                    Telescope Parameters
+            """
+            _label_ = tk.Label(
+                self.es_top, text="Telescope Parameters")
+            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            row += 1
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
             telescope_label = tk.Label(self.es_top, text="Telescope:")
@@ -2761,8 +2781,20 @@ class MyGUI:
             separator_telescope_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
+            """
+                    AAVSO Report Settings
+            """
+            _label_ = tk.Label(
+                self.es_top, text="AAVSO Report Settings")
+            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            row += 1
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
             aavso_obscode_label = tk.Label(
-                self.es_top, text="AAVSO Observer Code:")
+                self.es_top, text="Observer Code:")
             aavso_obscode_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.aavso_obscode_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
@@ -2806,6 +2838,33 @@ class MyGUI:
             self.object_notes_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
+            catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
+            catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            catalog_dropdown = tk.OptionMenu(
+                self.es_top, self.catalog_stringvar, "AAVSO")
+                # , "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog") <--not supporting now
+            catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            vizier_catalog_label = tk.Label(self.es_top, text="AAVSO ChartID:")
+            vizier_catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.vizier_catalog_entry = tk.Entry(self.es_top,width=extended_settings_entry_width)
+            self.vizier_catalog_entry.grid(row=row, column=2, sticky=tk.E)
+            row += 1
+
+
+            separator_ = ttk.Separator(self.es_top, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            """
+                    Miscellaneous Settings
+            """
+            _label_ = tk.Label(
+                self.es_top, text="Miscellaneous Settings")
+            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            row += 1
+
             separator_ = ttk.Separator(self.es_top, orient='horizontal')
             separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
@@ -2842,29 +2901,21 @@ class MyGUI:
             display_all_objects_rb.grid(row=row, column=2, columnspan=2, sticky=tk.W )
             row += 1
 
-            separator_ = ttk.Separator(self.es_top, orient='horizontal')
-            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            astrometrynet_label = tk.Label(
+                self.es_top, text="Astrometry.net Server:")
+            astrometrynet_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.astrometrynet_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width)
+            self.astrometrynet_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
             row += 1
 
-            catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
-            catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            catalog_dropdown = tk.OptionMenu(
-                self.es_top, self.catalog_stringvar, "AAVSO")
-                # , "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog") <--not supporting now
-            catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
-
-            vizier_catalog_label = tk.Label(self.es_top, text="AAVSO ChartID:")
-            vizier_catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.vizier_catalog_entry = tk.Entry(self.es_top,width=extended_settings_entry_width)
-            self.vizier_catalog_entry.grid(row=row, column=2, sticky=tk.E)
-            row += 1
-
-            fitter_label = tk.Label(self.es_top, text="PSF Fitter:")
-            fitter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
-                                                "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
-            fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
+            astrometrynet_key_label = tk.Label(
+                self.es_top, text="Astrometry.net API Key:")
+            astrometrynet_key_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.astrometrynet_key_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width)
+            self.astrometrynet_key_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
+            self.astrometrynet_key_entry.config(show="*")
             row += 1
 
             separator_ = ttk.Separator(self.es_top, orient='horizontal')
