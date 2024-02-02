@@ -354,7 +354,7 @@ class MyGUI:
     stars_tbl = Table()
 
     # Parameter declaration  and init 
-    photometry_aperture_entry = None
+    fit_width_entry = None
     max_ensemble_magnitude_entry = None
     fwhm_entry = None
     star_detection_threshold_entry = None
@@ -619,7 +619,7 @@ class MyGUI:
             ##Calculate size of cutouts for EPSFBuilder
             ## make it 10 times the aperture entry
             ##same size used in display_ePSF_samples
-            self.fit_shape = int(self.photometry_aperture_entry.get())
+            self.fit_shape = int(self.fit_width_entry.get())
             size = 10*self.fit_shape + 1
             hsize = (size - 1)/2
             x = peaks_tbl['x_peak']  
@@ -817,7 +817,7 @@ class MyGUI:
             #make sure this is not an even number 
             if bkg_filter_size % 2 == 0:
                 bkg_filter_size += 1
-            self.fit_shape = int(self.photometry_aperture_entry.get())
+            self.fit_shape = int(self.fit_width_entry.get())
             sigma_clip = SigmaClip(sigma=3.0)
             bkg_estimator = MedianBackground()
             self.console_msg("Estimating background...")
@@ -951,7 +951,7 @@ class MyGUI:
             if bkg_filter_size % 2 == 0:
                 bkg_filter_size += 1
 
-            self.fit_shape = int(self.photometry_aperture_entry.get())
+            self.fit_shape = int(self.fit_width_entry.get())
             sigma_clip = SigmaClip(sigma=3.0)
             bkg_estimator = MedianBackground()
             self.console_msg("Estimating background...")
@@ -1101,9 +1101,8 @@ class MyGUI:
              have already been removed (ePSF_rejection_list)
              
             """
-            ## make all the circles twice the aperture entry
-            ## same size used in create_ePSF (?)
-            self.fit_shape = int(self.photometry_aperture_entry.get())
+            ## make all the circles same as fit_shape; derive hsize (halfsize or radius)
+            self.fit_shape = int(self.fit_width_entry.get())
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
 
@@ -1145,7 +1144,7 @@ class MyGUI:
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
 
             if os.path.isfile(self.image_file+".csv"):
-                self.fit_shape = int(self.photometry_aperture_entry.get())
+                self.fit_shape = int(self.fit_width_entry.get())
                 self.results_tab_df = pd.read_csv(self.image_file + ".csv")
                 if "removed_from_ensemble" not in self.results_tab_df:
                     # This prefilling is required for backwards compatibility to read .phot
@@ -1330,7 +1329,7 @@ class MyGUI:
         global FITS_maximum
         try:
             if len(image_data) > 0:
-                self.fit_shape = int(self.photometry_aperture_entry.get())
+                self.fit_shape = int(self.fit_width_entry.get())
                 x0 = int(x - (self.fit_shape - 1) / 2)
                 y0 = int(y - (self.fit_shape - 1) / 2)
                 x1 = int(x + (self.fit_shape - 1) / 2)
@@ -1371,7 +1370,7 @@ class MyGUI:
         global FITS_minimum
         global FITS_maximum
         image_crop = Image.fromarray(image_data)
-        self.fit_shape = int(self.photometry_aperture_entry.get())
+        self.fit_shape = int(self.fit_width_entry.get())
         x0 = int(x - (self.fit_shape-1)/2)
         y0 = int(y - (self.fit_shape-1)/2)
         x1 = int(x + (self.fit_shape-1)/2)
@@ -2612,12 +2611,12 @@ class MyGUI:
             separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
-            photometry_aperture_label = tk.Label(
+            fit_width_label = tk.Label(
                 self.es_top, text="Fitting Width/Height, px (odd only):")
-            photometry_aperture_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.photometry_aperture_entry = tk.Entry(
+            fit_width_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.fit_width_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
-            self.photometry_aperture_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            self.fit_width_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             max_ensemble_magnitude_label = tk.Label(
@@ -3139,7 +3138,7 @@ class MyGUI:
     
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
-                f.write("#SOFTWARE=Self-developed using photutils.psf; IRAFStarFinder\n") 
+                f.write("#SOFTWARE=Self-developed; " + self.program_full_name + "\n") 
                 f.write("#DELIM=,\n")
                 f.write("#DATE=JD\n")
                 f.write("#OBSTYPE=CCD\n")
@@ -3415,7 +3414,7 @@ class MyGUI:
             with open(report_filename, mode='w') as f:
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
-                f.write("#SOFTWARE=Self-developed using photutils.psf; IRAFStarFinder\n") 
+                f.write("#SOFTWARE=Self-developed; " + self.program_full_name + "\n") 
                 f.write("#DELIM=,\n")
                 f.write("#DATE=JD\n")
                 f.write("#OBSTYPE=CCD\n")
@@ -3497,7 +3496,7 @@ class MyGUI:
         #Wis heisen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
-        self.program_name_note = ""
+        self.program_name_note = "; using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
         #set the logger up
@@ -3746,7 +3745,7 @@ class MyGUI:
         buttons in popup window: Settings
         """
         self.valid_parameter_list = {
-            'photometry_aperture_entry': self.photometry_aperture_entry,
+            'fit_width_entry': self.fit_width_entry,
             'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
             'fwhm_entry': self.fwhm_entry,
             'star_detection_threshold_entry': self.star_detection_threshold_entry,
