@@ -1,24 +1,28 @@
 4# -*- coding: utf-8 -*-
 """
-#     #    #    ####### ######                         
-##   ##   # #   #     # #     # #    #  ####  #####    
-# # # #  #   #  #     # #     # #    # #    #   #      
-#  #  # #     # #     # ######  ###### #    #   #      
-#     # ####### #     # #       #    # #    #   #      
-#     # #     # #     # #       #    # #    #   #      
-#     # #     # ####### #       #    #  ####    #      
-                                                       
-        #         ###         ###   
-       ##        #   #       #   #  
-      # #       #     #     #     # 
-        #       #     #     #     # 
-        #   ### #     # ### #     # 
-        #   ###  #   #  ###  #   #  
-      ##### ###   ###   ###   ###   
-                                    
+#     #    #    ####### ######                      
+##   ##   # #   #     # #     # #    #  ####  ##### 
+# # # #  #   #  #     # #     # #    # #    #   #   
+#  #  # #     # #     # ######  ###### #    #   #   
+#     # ####### #     # #       #    # #    #   #   
+#     # #     # #     # #       #    # #    #   #   
+#     # #     # ####### #       #    #  ####    #   
+                                                    
+  #         #         ###   
+ ##        ##        #   #  
+# #       # #       #     # 
+  #         #       #     # 
+  #   ###   #   ### #     # 
+  #   ###   #   ###  #   #  
+##### ### ##### ###   ###   
+                            
+Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
 
+    1.1.0 Revision
+    - minor cosmetic errors (invalid escape sequence \\A) 
+    - check for blank Fitting Width
+    - Legacy LevMarLSQFitter no longer used replaced with TRFLSQFitter
 
-Welcome to MAOPhot 1.0.0, a PSF Photometry tool using Astropy and Photutils.psf
 
     1.0.0 Revision
     - get_comparison_stars enhancement; when more than one match found
@@ -189,13 +193,13 @@ objects in image field
     <maxim.usatov@bcsatellite.net> Refer to metropsf.pdf for license information.
 
     This research made use of Photutils, an Astropy package for
-    detection and photometry of astronomical sources (Bradley et al. 20XX).
+    detection and photometry of astronomical sources (Bradley et al. 2024).
 
 """
 #
 # Constants
 #
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 
@@ -204,7 +208,7 @@ from astropy.stats import SigmaClip
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.table import Table
-from astropy.modeling.fitting import LevMarLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
+from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
 from astropy.nddata import NDData
 from astropy.nddata import Cutout2D
 from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
@@ -619,6 +623,12 @@ class MyGUI:
             ##Calculate size of cutouts for EPSFBuilder
             ## make it 10 times the aperture entry
             ##same size used in display_ePSF_samples
+            _shape = self.fit_width_entry.get()
+            if not _shape:
+                self.console_msg("Fitting Width not set; Set Fitting Width and Height in Setting Window")
+                self.console_msg("ePSF: returning on error")
+                return; 
+
             self.fit_shape = int(self.fit_width_entry.get())
             size = 10*self.fit_shape + 1
             hsize = (size - 1)/2
@@ -699,12 +709,32 @@ class MyGUI:
             # bkg.background is a 2D ndarray of background image
             clean_image = image_data-self.bkg2D.background
 
+            #mean_val, median_val, std_val = sigma_clipped_stats(clean_image, sigma=2.0)
+            #clean_image -= median_val
+
             working_image = NDData(data=clean_image)
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=2, fitter=EPSFFitter(), maxiters=50)
+
+            """
+            nrows = 5
+            ncols = 5
+            fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=(20, 20),
+                                squeeze=True)
+            ax = ax.ravel()
+            for i in range(nrows * ncols):
+                norm = simple_norm(candidate_stars[i], 'log', percent=99.0)
+                ax[i].imshow(candidate_stars[i], norm=norm, origin='lower', cmap='viridis')
+
+            """
+
+
+            epsf_builder = EPSFBuilder() 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
+
+            # when calling epsf_builder, maxiters=50 causes following exception:
+            # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+            self.epsf_model, fitted_stars = epsf_builder(stars=candidate_stars)  
 
             model_length = len(self.epsf_model.data)
             x = np.arange(0, model_length, 1)
@@ -872,9 +902,11 @@ class MyGUI:
                     "Setting fitter to Simplex and Least Squares Statistic")
                 selected_fitter = SimplexLSQFitter()
 
-            else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
-                self.console_msg("Setting fitter to Levenberg-Marquardt")
-                selected_fitter = LevMarLSQFitter()
+            #default is TRF LS
+            else: 
+                self.console_msg(
+                    "Setting fitter to TRF and Least Squares Statistic")
+                selected_fitter = TRFLSQFitter()
 
             if self.epsf_model != None:
                 self.console_msg("Using derived Effective PSF Model")
@@ -1004,9 +1036,11 @@ class MyGUI:
                     "Setting fitter to Simplex and Least Squares Statistic")
                 selected_fitter = SimplexLSQFitter()
 
-            else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
-                self.console_msg("Setting fitter to Levenberg-Marquardt")
-                selected_fitter = LevMarLSQFitter(calc_uncertainties=True)
+            #default is TRF LS
+            else:
+                self.console_msg(
+                    "Setting fitter to TRF and Least Squares Statistic")
+                selected_fitter = TRFLSQFitter()
 
             if self.epsf_model != None:
                 self.console_msg("Using derived Effective PSF Model")
@@ -1036,7 +1070,6 @@ class MyGUI:
             sys.setrecursionlimit(10000)
             self.console_msg("Starting Photometry...(check console progress bar)")
             result_tab = photometry(data=working_image)
-            self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
@@ -1044,6 +1077,7 @@ class MyGUI:
                 self.console_msg("Done. PSF fitter; no message available")
 
             #get the residuals
+            """
             residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
 
             #append current time to residual filename
@@ -1051,6 +1085,7 @@ class MyGUI:
             residual_file_name = file_base_name_parts[0] + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fits"
             fits.writeto(residual_file_name, residual_image, header, overwrite=True)
             self.console_msg("Residuals saved to: " + residual_file_name)
+            """
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
@@ -1471,7 +1506,6 @@ class MyGUI:
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
-
             Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'
 
             These comments illustrate the case when input_color is B-V
@@ -1490,7 +1524,7 @@ class MyGUI:
 
 
             Build 2 tables, "check" and "var", with the following columns (see 
-            E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 6 4 V1117 Her/
+            E:\\Astronomy\\AAVSO\\Reports\\AAVSO Reports\\MAO\\2022 6 4 V1117 Her/
             TwoColor V1117_Her 2022 6 4.xlsx)
             
             type                     "check" or "var"
@@ -2233,7 +2267,7 @@ class MyGUI:
                 mag_column_name = self.filter + "mag"
     
                 comparison_stars = Vizier(
-                    catalog=catalog, row_limit=-1).query_region(frame_center, frame_radius)[0]
+                    catalog=catalog, row_limit=-1).query_region(frame_center, radius=frame_radius)[0]
 
 
                 # print(comparison_stars)
@@ -2354,12 +2388,14 @@ class MyGUI:
 
             self.console_msg(
                 "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
-            vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
-            # print(vsx_result)
 
-            """
-            Look for any and all VSX stars
-            """
+
+            # B/vsx : AAVSO International Variable Star Index VSX 
+            # B/vsx/vsx : Variable Star indeX,
+            vsx_result = Vizier(
+                catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, radius=frame_radius)
+
+            #Look for any and all VSX stars
             if len(vsx_result) > 0:
                 vsx_stars = vsx_result[0]
                 self.console_msg(
@@ -2676,7 +2712,7 @@ class MyGUI:
             fitter_label = tk.Label(self.es_top, text="PSF Fitter:")
             fitter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
-                                                "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
+                                                "TRF LS", "Sequential LS Programming", "Simplex LS")
             fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
@@ -3703,7 +3739,7 @@ class MyGUI:
         self.catalog_stringvar = tk.StringVar()
         self.catalog_stringvar.set("AAVSO")
         self.fitter_stringvar = tk.StringVar()
-        self.fitter_stringvar.set("Levenberg-Marquardt")
+        self.fitter_stringvar.set("TRF LS")
         self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
 
         row = 0
