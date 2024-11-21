@@ -536,6 +536,7 @@ class MyGUI:
                 self.display_image()
                 self.clear_psf_label()
                 self.clear_epsf_plot()
+                self.clear_selstars_plot()
                 
             except Exception as e:
                 self.error_raised = True
@@ -716,18 +717,12 @@ class MyGUI:
 
             candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
 
-            """
-            nrows = 5
-            ncols = 5
-            fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=(20, 20),
-                                squeeze=True)
-            ax = ax.ravel()
-            for i in range(nrows * ncols):
+            
+            for i in range(min(len(candidate_stars),(self.nrows*self.ncols))):
                 norm = simple_norm(candidate_stars[i], 'log', percent=99.0)
-                ax[i].imshow(candidate_stars[i], norm=norm, origin='lower', cmap='viridis')
+                self.selstars_plot[i].imshow(candidate_stars[i], norm=norm, origin='lower', cmap='viridis')
 
-            """
-
+            self.selstars_plot_canvas.draw()
 
             epsf_builder = EPSFBuilder() 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
@@ -775,9 +770,14 @@ class MyGUI:
         self.stars_tbl = Table()
         self.clear_psf_label()
         self.clear_epsf_plot()
+        self.clear_selstars()
         self.ePSF_samples_plotted = False
         self.display_image()
         self.console_msg("Ready")
+        return
+
+    def clear_selstars(self):
+        self.clear_selstars_plot()
         return
 
     def load_ePSF_rejection_list(self):
@@ -1393,6 +1393,21 @@ class MyGUI:
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.ePSF_canvas.grid(row=3, column=0)   #was row0
+
+    def clear_selstars_plot(self):
+        self.fig_selstars.clear()
+        self.selstars_plot_canvas.draw()
+        self.nrows = 5
+        self.ncols = 5
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
+                                                              figsize=(10, 10), squeeze=False)
+        self.selstars_plot = self.selstars_plot.ravel()
+        self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        self.selstars_plot_canvas.draw()
+        self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
+        self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.selstars_canvas.grid(row=5, column=0)   #was row0
 
     def clear_psf_label(self):
         #clear plot label
@@ -3696,20 +3711,41 @@ class MyGUI:
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.psf_canvas.grid(row=1, column=0)   #was row0
         
+        #
         #make another canvas for 2D plot of effectivePSF
+        #
         self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
         self.ePSF_plotname_label.grid(row=2, column=0)  # Place label
 
 
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
-        #self.ePSF_plot = self.fig_ePSF.add_subplot(111)
         #
         self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
         self.ePSF_plot_canvas.draw()
         self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.ePSF_canvas.grid(row=3, column=0)   #was row0
+        self.ePSF_canvas.grid(row=3, column=0)
+
+        #
+        #make another canvas for selected stars
+        #
+        self.selstars_plotname_label = tk.Label(self.right_frame, text="Selected Stars:")
+        self.selstars_plotname_label.grid(row=4, column=0)  # Place label
+
+        self.nrows = 5
+        self.ncols = 5
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
+                                                              figsize=(10, 10), squeeze=False)
+        
+        self.selstars_plot = self.selstars_plot.ravel()
+        #
+        self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        self.selstars_plot_canvas.draw()
+        self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
+        self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.selstars_canvas.grid(row=5, column=0)
 
         #
         # Left Frame
