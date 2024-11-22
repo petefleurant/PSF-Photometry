@@ -20,8 +20,10 @@ Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
 
     1.1.0 Revision
     - minor cosmetic errors (invalid escape sequence \\A) 
+    - Updates required for Photutils 2.0
     - check for blank Fitting Width
     - Legacy LevMarLSQFitter no longer used replaced with TRFLSQFitter
+    - 
 
 
     1.0.0 Revision
@@ -342,7 +344,7 @@ class MyGUI:
     results_tab_df = pd.DataFrame()
     image_bkg_value = 0
     bkg2D = None #if fetched, the Background2D object
-    fit_shape = 21
+    fit_shape = 5
     error_raised = False
     histogram_slider_low = 0
     histogram_slider_high = 5
@@ -507,8 +509,7 @@ class MyGUI:
                     self.date_obs_entry.insert(0, str(self.jd))
 
                 self.image_bkg_value = np.median(image_data)
-                self.console_msg("Median background level, ADU: " 
-                    + str(self.image_bkg_value))
+                self.console_msg("Median background level, ADU: " + str(round(self.image_bkg_value, 2)))
                 self.console_msg("Ready")
 
                 
@@ -592,38 +593,28 @@ class MyGUI:
             return
 
         try:
-            # Find local peaks in an image that are above a specified 
-            # threshold value. Threshold determined 
-            # 
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
+            """
+            Determine the background using simple statistics
+            ------------------------------------------------
+            """
+            # just for reference, lets looks at these stats first
+            mean, image_data_median, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(image_data_median,2)))
+            self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
+            self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            self.console_msg("Median Background2D level: " 
-                + str(self.bkg2D.background_median))
+            # now ready to find peaks
 
-            peaks_tbl = find_peaks(image_data, threshold=self.bkg2D.background_median * 3)
+            peaks_tbl = find_peaks(image_data, threshold=image_data_median * 3)
 
             peaks_tbl_len = len(peaks_tbl)
             self.console_msg("ePSF: found " + str(peaks_tbl_len) + " peaks.")
 
             #mask out peaks near the boundary; use twice the aperature entry
             #
-            ##Calculate size of cutouts for EPSFBuilder
-            ## make it 10 times the aperture entry
-            ##same size used in display_ePSF_samples
+            ## Calculate size of cutouts for EPSFBuilder
+            ## make it 2 times the aperture entry
+            ## 
             _shape = self.fit_width_entry.get()
             if not _shape:
                 self.console_msg("Fitting Width not set; Set Fitting Width and Height in Setting Window")
@@ -631,7 +622,7 @@ class MyGUI:
                 return; 
 
             self.fit_shape = int(self.fit_width_entry.get())
-            size = 10*self.fit_shape + 1
+            size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
             x = peaks_tbl['x_peak']  
             y = peaks_tbl['y_peak']  
@@ -706,12 +697,9 @@ class MyGUI:
             self.console_msg("ePSF: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
             self.console_msg("ePSF: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
 
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
-
-            #mean_val, median_val, std_val = sigma_clipped_stats(clean_image, sigma=2.0)
-            #clean_image -= median_val
+            # subtract background
+            mean_val, median_val, std_val = sigma_clipped_stats(image_data, sigma=2.0)
+            clean_image = image_data - median_val
 
             working_image = NDData(data=clean_image)
 
@@ -724,12 +712,12 @@ class MyGUI:
 
             self.selstars_plot_canvas.draw()
 
-            epsf_builder = EPSFBuilder() 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True) 
 
             # when calling epsf_builder, maxiters=50 causes following exception:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
-            self.epsf_model, fitted_stars = epsf_builder(stars=candidate_stars)  
+            self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
 
             model_length = len(self.epsf_model.data)
             x = np.arange(0, model_length, 1)
@@ -856,11 +844,10 @@ class MyGUI:
                                 image_data, 
                                 box_size=(self.fit_shape * 10, self.fit_shape * 10),
                                 filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
                                 sigma_clip=sigma_clip,
                                 bkg_estimator=bkg_estimator)
 
-            self.console_msg("Median Background2D level: "
+            self.console_msg("Median Background2D level: " 
                              + str(self.bkg2D.background_median))
 
             # Subtract background from image_data
@@ -977,44 +964,32 @@ class MyGUI:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
             return
         try:
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
+            """
+            Determine the background using simple statistics
+            ------------------------------------------------
+            """
+            # just for reference, lets looks at these stats first
+            mean, image_data_median, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(image_data_median,2)))
+            self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
+            self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            self.fit_shape = int(self.fit_width_entry.get())
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            #Backgound2D used because background may vary over FOV
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
 
-            self.console_msg("Median Background2D level: "
-                             + str(self.bkg2D.background_median))
-
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
+            # subtract background
+            mean_val, median_val, std_val = sigma_clipped_stats(image_data, sigma=2.0)
+            clean_image = image_data - median_val
 
             working_image = NDData(data=clean_image)
 
             fwhm = float(self.fwhm_entry.get())
-            star_detection_threshold = float(
-                self.star_detection_threshold_entry.get())
+            star_detection_threshold = float(self.star_detection_threshold_entry.get())
 
             iterations = int(self.photometry_iterations_entry.get()) if self.photometry_iterations_entry.get().isnumeric() else None
 
             sharplo = float(self.sharplo_entry.get())
 
             #bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            star_find = IRAFStarFinder(threshold = star_detection_threshold,
+            star_find = IRAFStarFinder(threshold = 5*std, #star_detection_threshold,
                                         fwhm = fwhm,
                                         minsep_fwhm = 1,
                                         exclude_border = True,
@@ -1023,6 +998,11 @@ class MyGUI:
                                         sharplo = sharplo,
                                         sharphi = 2.0
                                         )
+            
+            # How many stars will it find?
+            iraf_result = star_find.find_stars(clean_image)
+            self.console_msg("IRAFStarFinder number of stars found : "  + str(len(iraf_result)))
+
            
             local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
 
@@ -1057,13 +1037,13 @@ class MyGUI:
                                                 psf_model = psf_model,
                                                 fit_shape = self.fit_shape,
                                                 finder = star_find,
-                                                grouper = None, #SourceGrouper(min_separation=50),
+                                                grouper = None, #mode = 'new'; or SourceGrouper(min_separation=50),
                                                 fitter = selected_fitter,
                                                 fitter_maxiters = 10,
                                                 maxiters = iterations,
                                                 localbkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
-                                                sub_shape=None, #defaults to fit_shape
+                                                sub_shape=None, #defaults to model bounding box
                                                 progress_bar=True
                                                 )
 
@@ -1078,6 +1058,12 @@ class MyGUI:
 
             #get the residuals
             """
+            # Needs to be changed: psf_shape is now an optional keyword 
+            # in the make_model_image and make_residual_image methods 
+            # of PSFPhotometry and IterativePSFPhotometry. 
+            # The value defaults to using the model bounding box to 
+            # define the shape and is required only if the PSF model 
+            # does not have a bounding box attribute.
             residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
 
             #append current time to residual filename
