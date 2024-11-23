@@ -26,6 +26,7 @@ Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
     - Removed execute_noniterative_psf_photometry 
         (just set Photometry Iteration to 1 instead)
     - IRAFStarFinder Threshold factor (*std) 
+    - added select stars 'Back' and 'Forward' buttons
 
 
     1.0.0 Revision
@@ -653,7 +654,7 @@ class MyGUI:
                     i_y = prelim_stars_tbl[i]['y']
                     ii_x = prelim_stars_tbl[ii]['x']
                     ii_y = prelim_stars_tbl[ii]['y']
-                    if math.dist([i_x, i_y], [ii_x, ii_y]) <= (10*hsize):  # <--being conservative
+                    if math.dist([i_x, i_y], [ii_x, ii_y]) <= hsize:
                         #reject this because it is too close to that companion
                         prelim_stars_tbl[i]['rejected'] = True
                         prelim_stars_tbl[ii]['rejected'] = True
@@ -705,12 +706,16 @@ class MyGUI:
 
             working_image = NDData(data=clean_image)
 
-            candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-
+            self.candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
+            self.candidate_stars_index = 0
             
-            for i in range(min(len(candidate_stars),(self.nrows*self.ncols))):
-                norm = simple_norm(candidate_stars[i], 'log', percent=99.0)
-                self.selstars_plot[i].imshow(candidate_stars[i], norm=norm, origin='lower', cmap='viridis')
+            for self.candidate_stars_index in range(min(len(self.candidate_stars),(self.nrows*self.ncols))):
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[self.candidate_stars_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                     norm=norm, origin='lower', cmap='viridis')
+
+            self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+            
 
             self.selstars_plot_canvas.draw()
 
@@ -719,7 +724,7 @@ class MyGUI:
 
             # when calling epsf_builder, maxiters=50 causes following exception:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
-            self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
+            self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
 
             model_length = len(self.epsf_model.data)
             x = np.arange(0, model_length, 1)
@@ -2854,6 +2859,87 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
 
+####################
+#
+# forward/back selstars button callbacks
+#
+#
+
+    def forward_selstars_list(self):
+        if self.candidate_stars_index < len(self.candidate_stars) - 1:
+            self.clear_selstars()
+            # you can look forward to more
+            self.candidate_stars_index += 1
+            i = 0
+            selstars_plot_index = 0
+            resolve_index = False 
+            for self.candidate_stars_index in range(self.candidate_stars_index, len(self.candidate_stars)):
+                if i == (self.ncols*self.nrows):
+                    resolve_index = True
+                    break
+                i += 1
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                        norm=norm, origin='lower', cmap='viridis')
+                selstars_plot_index += 1
+            self.selstars_plot_canvas.draw()
+            # need to resolve index so that when we forward agin we dont skip current index
+            # unfortunately index never reaches the stop value in the last frame so 
+            if resolve_index:
+                self.candidate_stars_index -= 1
+        else:
+            # nothing past this
+            self.console_msg("There are no more selected stars to show.");
+        
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+        return
+
+    def back_selstars_list(self):
+        if self.candidate_stars_index >= (self.ncols*self.nrows): 
+            # not displaying the first set
+            self.clear_selstars()
+            # you can look back to more
+            # We want the index to point to beginning of the last frame (frame being
+            # a set of (self.ncols*self.nrows) subplots),
+            # so we have to account for it now pointing to somewhere in the middle.
+            # This would be true if (len(self.candidate_stars) % self.ncols*self.nrows) != 0
+            # so if index+ 1 is not a multiple of self.ncols*self.nrows, then we are at the last frame.
+            # If at the last frame, then index must be subtracted accordingly
+            self.candidate_stars_index += 1
+            candidate_stars_remainder = self.candidate_stars_index % (self.ncols*self.nrows)
+            if candidate_stars_remainder != 0:
+                self.candidate_stars_index -= (self.ncols*self.nrows + candidate_stars_remainder)
+            else:
+                self.candidate_stars_index -= 2*self.ncols*self.nrows  #backup
+
+            i = 0
+            selstars_plot_index = 0
+            for self.candidate_stars_index in range(self.candidate_stars_index, len(self.candidate_stars)):
+                if i == (self.ncols*self.nrows):
+                    break
+                i += 1
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                        norm=norm, origin='lower', cmap='viridis')
+                selstars_plot_index += 1
+            self.selstars_plot_canvas.draw()
+            # need to resolve index so that when we forward agin we dont skip current index
+            self.candidate_stars_index -= 1
+        else:
+            # nothing past this
+            self.console_msg("There are no more selected stars to show.")
+        
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+        return
+
+
+
+####################
+#
+#  aavso_get_comparison_stars
+#
+#
+
     def aavso_get_comparison_stars(self, frame_center, filter_band='V', field_of_view=18.5, maglimit=20):
         try:
             #Some telescopes use 'I' instead of 'Ic', but AAVSO charts use Ic
@@ -3426,8 +3512,12 @@ class MyGUI:
         self.our_fh.setFormatter(self.our_formatter)
         self.our_logger.addHandler(self.our_fh)
         
-        
-        #set up GUI
+        #
+        #
+        #
+        #               Set up GUI
+        #
+        #
 
         self.window = tk.Tk()
         self.screen_width = self.window.winfo_screenwidth()
@@ -3443,6 +3533,13 @@ class MyGUI:
         self.window.geometry('{}x{}+0+0'.format(*m))
 
         self.window.title(self.program_full_name)
+
+        #
+        #
+        #
+        #               Menu
+        #
+        #
 
         self.menubar = tk.Menu(self.window)
         self.filemenu = tk.Menu(self.menubar, tearoff=0)
@@ -3506,8 +3603,15 @@ class MyGUI:
 
         self.window.config(menu=self.menubar)
 
-        self.left_half = tk.Frame(self.window)  # Left half of the window
-        self.left_half.grid(row=0, column=0, sticky=tk.NSEW)
+        #
+        #
+        #
+        #               Left Side Frame
+        #
+        #
+
+        self.left_side = tk.Frame(self.window)  # Left half of the window
+        self.left_side.grid(row=0, column=0, sticky=tk.NSEW)
         self.center = tk.Frame(self.window)  # Center of the window
         self.center.grid(row=0, column=1, sticky=tk.NSEW)
         self.right_half = tk.Frame(self.window)  # Right half of the window
@@ -3558,6 +3662,13 @@ class MyGUI:
         self.console_msg("Ready")
 
 
+        #
+        #
+        #
+        #               Right [Side] Frame
+        #
+        #
+
         # We will lay out interface things into the new right_frame grid
         self.right_frame = tk.Frame(self.right_half)
         # Place right_frame into the top of the main canvas row, right next to it
@@ -3573,7 +3684,7 @@ class MyGUI:
         self.psf_canvas = self.psf_plot_canvas.get_tk_widget()
         self.psf_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.psf_canvas.grid(row=1, column=0)   #was row0
+        self.psf_canvas.grid(row=1, column=0)
         
         #
         #make another canvas for 2D plot of effectivePSF
@@ -3611,12 +3722,29 @@ class MyGUI:
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)
 
+
+        self.right_subframe = tk.Frame(self.right_frame)
+
+        self.back_selstars_button_label = tk.Label(self.right_subframe, text="<-----:")
+        self.back_selstars_button_label.grid(row=0, column=0, sticky=tk.E)  # Place label
+
+        back_selstars_button = tk.Button(self.right_subframe, text="Back", command=self.back_selstars_list)
+        back_selstars_button.grid(row=0, column=1, padx=20, sticky=tk.E)
+
+        save_settings_button = tk.Button(self.right_subframe, text="Forward", command=self.forward_selstars_list)
+        save_settings_button.grid(row=0, column=2, padx=20, sticky=tk.W)
+
+        self.forward_selstars_button_label = tk.Label(self.right_subframe, text=":----->")
+        self.forward_selstars_button_label.grid(row=0, column=3, sticky=tk.W)  # Place label
+
+        self.right_subframe.grid(row=6, column=0)
+
         #
         # Left Frame
         #
 
         # We will lay out interface things into the new left_frame grid
-        self.left_frame = tk.Frame(self.left_half)
+        self.left_frame = tk.Frame(self.left_side)
         # Place right_frame into the top of the main canvas row, right next to it
         self.left_frame.grid(row=1, column=0, sticky=tk.NSEW)
         
@@ -3653,8 +3781,7 @@ class MyGUI:
             self.settings_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
         self.stretching_dropdown.grid(row=row, column=1, sticky=tk.EW)
         row += 1
-        self.stretching_stringvar.trace(
-            "w", lambda name, index, mode, sv=self.stretching_stringvar: self.update_display())
+        self.stretching_stringvar.trace_add("write", self.update_display())
 
         # Histogram stretch sliders
         tk.Grid.columnconfigure(self.settings_frame, 1, weight=0)
