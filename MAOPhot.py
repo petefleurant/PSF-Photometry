@@ -23,7 +23,9 @@ Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
     - Updates required for Photutils 2.0
     - check for blank Fitting Width
     - Legacy LevMarLSQFitter no longer used replaced with TRFLSQFitter
-    - 
+    - Removed execute_noniterative_psf_photometry 
+        (just set Photometry Iteration to 1 instead)
+    - IRAFStarFinder Threshold factor (*std) 
 
 
     1.0.0 Revision
@@ -363,7 +365,7 @@ class MyGUI:
     fit_width_entry = None
     max_ensemble_magnitude_entry = None
     fwhm_entry = None
-    star_detection_threshold_entry = None
+    star_detection_threshold_factor_entry = None
     photometry_iterations_entry = None
     sharplo_entry = None
     bkg_filter_size_entry = None
@@ -598,17 +600,17 @@ class MyGUI:
             ------------------------------------------------
             """
             # just for reference, lets looks at these stats first
-            mean, image_data_median, std = sigma_clipped_stats(image_data, sigma=2.0)
-            self.console_msg("Median sigma clipped level: " + str(round(image_data_median,2)))
+            mean, median, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(median,2)))
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
             # now ready to find peaks
 
-            peaks_tbl = find_peaks(image_data, threshold=image_data_median * 3)
+            peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
 
             peaks_tbl_len = len(peaks_tbl)
-            self.console_msg("ePSF: found " + str(peaks_tbl_len) + " peaks.")
+            self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
 
             #mask out peaks near the boundary; use twice the aperature entry
             #
@@ -621,9 +623,9 @@ class MyGUI:
                 self.console_msg("ePSF: returning on error")
                 return; 
 
-            self.fit_shape = int(self.fit_width_entry.get())
-            size = 2*self.fit_shape + 1
-            hsize = (size - 1)/2
+            self.fit_shape = int(self.fit_width_entry.get()) # Eg., 5
+            size = 2*self.fit_shape + 1 # Eg., 11
+            hsize = (size - 1)/2 # Eg., 5
             x = peaks_tbl['x_peak']  
             y = peaks_tbl['y_peak']  
             _image = Image.fromarray(image_data)
@@ -651,7 +653,7 @@ class MyGUI:
                     i_y = prelim_stars_tbl[i]['y']
                     ii_x = prelim_stars_tbl[ii]['x']
                     ii_y = prelim_stars_tbl[ii]['y']
-                    if math.dist([i_x, i_y], [ii_x, ii_y]) <= hsize:
+                    if math.dist([i_x, i_y], [ii_x, ii_y]) <= (10*hsize):  # <--being conservative
                         #reject this because it is too close to that companion
                         prelim_stars_tbl[i]['rejected'] = True
                         prelim_stars_tbl[ii]['rejected'] = True
@@ -713,7 +715,7 @@ class MyGUI:
             self.selstars_plot_canvas.draw()
 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True) 
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=True) 
 
             # when calling epsf_builder, maxiters=50 causes following exception:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
@@ -822,140 +824,6 @@ class MyGUI:
 
         return
 
-    def execute_noniterative_psf_photometry(self):
-        global header
-        self.console_msg(
-            "Initiating Non-iterative PSF photometry...")
-        if len(image_data) == 0:
-            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
-            return
-        try:
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
-            self.fit_shape = int(self.fit_width_entry.get())
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            #Backgound2D used because background may vary over FOV
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
-
-            self.console_msg("Median Background2D level: " 
-                             + str(self.bkg2D.background_median))
-
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
-
-            working_image = NDData(data=clean_image)
-
-            fwhm = float(self.fwhm_entry.get())
-            star_detection_threshold = float(
-                self.star_detection_threshold_entry.get())
-
-            sharplo = float(self.sharplo_entry.get())
-
-            star_find = IRAFStarFinder(threshold = star_detection_threshold,
-                                        fwhm = fwhm,
-                                        #minsep_fwhm = 1,
-                                        exclude_border = True,
-                                        roundhi = 3.0,
-                                        roundlo = -5.0,
-                                        sharplo = sharplo,
-                                        sharphi = 2.0
-                                        )
-
-           
-            # the 2.5 in the following is from 
-            # https://photutils.readthedocs.io/en/stable/grouping.html#getting-started
-            #grouper = SourceGrouper(2.5 * fwhm)
-
-            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
-
-            if self.fitter_stringvar.get() == "Sequential LS Programming":
-                self.console_msg(
-                    "Setting fitter to Sequential Least Squares Programming")
-                selected_fitter = SLSQPLSQFitter()
-
-            elif self.fitter_stringvar.get() == "Simplex LS":
-                self.console_msg(
-                    "Setting fitter to Simplex and Least Squares Statistic")
-                selected_fitter = SimplexLSQFitter()
-
-            #default is TRF LS
-            else: 
-                self.console_msg(
-                    "Setting fitter to TRF and Least Squares Statistic")
-                selected_fitter = TRFLSQFitter()
-
-            if self.epsf_model != None:
-                self.console_msg("Using derived Effective PSF Model")
-                psf_model = self.epsf_model
-            else:
-                #Use Gausian
-                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
-                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
-                                 "; fwhm = "+format(fwhm, '.1f')+\
-                                 "; fitting width/height = "+str(self.fit_shape))
-                psf_model = IntegratedGaussianPRF(sigma)
-
-
-            photometry = PSFPhotometry(
-                                        psf_model = psf_model,
-                                        fit_shape = self.fit_shape,
-                                        finder = star_find,
-                                        grouper = None,
-                                        fitter = selected_fitter,
-                                        fitter_maxiters = 100,
-                                        localbkg_estimator = local_bkg,
-                                        aperture_radius=1.5*fwhm,
-                                        progress_bar=True
-                                        )
-            
-
-
-            self.console_msg("Starting Photometry...(check console progress bar)")
-            result_tab = photometry(data=working_image)
-
-            if 'message' in selected_fitter.fit_info:
-                self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
-            else:
-                self.console_msg("Done. PSF fitter; no message available")
-
-            self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
-            self.results_tab_df["removed_from_ensemble"] = False
-            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            if len(self.airmass_entry.get()) > 0:
-                self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
-            else:
-                self.results_tab_df["AMASS"] = "na"
-                
-
-
-            # Calculate instrumental magnitudes
-            # Following added for "True" inst mag used in AAVSO report
-            image_exposure_time = float(self.exposure_entry.get())
-            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / image_exposure_time)
-
-            #record for later 
-            self.results_tab_df["exposure"] = image_exposure_time
-
-            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-            self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
-            self.plot_photometry()
-
-        except Exception as e:
-            self.error_raised = True
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
-
     def execute_iterative_psf_photometry(self):
         global header
         self.console_msg(
@@ -969,27 +837,40 @@ class MyGUI:
             ------------------------------------------------
             """
             # just for reference, lets looks at these stats first
-            mean, image_data_median, std = sigma_clipped_stats(image_data, sigma=2.0)
-            self.console_msg("Median sigma clipped level: " + str(round(image_data_median,2)))
+            mean, median_val, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(median_val,2)))
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
 
             # subtract background
-            mean_val, median_val, std_val = sigma_clipped_stats(image_data, sigma=2.0)
             clean_image = image_data - median_val
 
             working_image = NDData(data=clean_image)
 
-            fwhm = float(self.fwhm_entry.get())
-            star_detection_threshold = float(self.star_detection_threshold_entry.get())
+            if self.fwhm_entry.get().isnumeric():
+                fwhm = int(self.fwhm_entry.get())
+            else:
+                self.console_msg("FWHM not numeric, using 3")
+                fwhm = 3.0
 
-            iterations = int(self.photometry_iterations_entry.get()) if self.photometry_iterations_entry.get().isnumeric() else None
+            if self.star_detection_threshold_factor_entry.get().isnumeric():
+                star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
+            else:
+                self.console_msg("IRAFStarFinder threshold factor not numeric, using 10")
+                star_detection_threshold_factor = 10
+
+            if self.photometry_iterations_entry.get().isnumeric():
+                iterations = int(self.photometry_iterations_entry.get())
+            else:
+                self.console_msg("Photometry Iteration not numeric, using 3")
+                iterations = 3
+
 
             sharplo = float(self.sharplo_entry.get())
 
             #bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            star_find = IRAFStarFinder(threshold = 5*std, #star_detection_threshold,
+            star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
                                         fwhm = fwhm,
                                         minsep_fwhm = 1,
                                         exclude_border = True,
@@ -1383,10 +1264,9 @@ class MyGUI:
     def clear_selstars_plot(self):
         self.fig_selstars.clear()
         self.selstars_plot_canvas.draw()
-        self.nrows = 5
-        self.ncols = 5
         self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
                                                               figsize=(10, 10), squeeze=False)
+        #self.fig_selstars.suptitle("Selected Stars")
         self.selstars_plot = self.selstars_plot.ravel()
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
         self.selstars_plot_canvas.draw()
@@ -2670,12 +2550,12 @@ class MyGUI:
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            star_detection_threshold_label = tk.Label(
-                self.es_top, text="IRAFStarFinder Threshold:")
-            star_detection_threshold_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.star_detection_threshold_entry = tk.Entry(
+            star_detection_threshold_factor_label = tk.Label(
+                self.es_top, text="IRAFStarFinder Threshold Factor (*std):")
+            star_detection_threshold_factor_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.star_detection_threshold_factor_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
-            self.star_detection_threshold_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            self.star_detection_threshold_factor_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             photometry_iterations_label = tk.Label(
@@ -3594,8 +3474,6 @@ class MyGUI:
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
-            label="Non-iterative PSF Photometry", command=self.execute_noniterative_psf_photometry)
-        self.photometrymenu.add_command(
             label="Iterative PSF Photometry", command=self.execute_iterative_psf_photometry)
         self.photometrymenu.add_separator()
 
@@ -3806,7 +3684,7 @@ class MyGUI:
             'fit_width_entry': self.fit_width_entry,
             'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
             'fwhm_entry': self.fwhm_entry,
-            'star_detection_threshold_entry': self.star_detection_threshold_entry,
+            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
             'photometry_iterations_entry': self.photometry_iterations_entry,
             'sharplo_entry': self.sharplo_entry,
             'bkg_filter_size_entry': self.bkg_filter_size_entry,
