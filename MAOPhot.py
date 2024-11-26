@@ -359,6 +359,7 @@ class MyGUI:
     photometry_circles = {}
     valid_parameter_list = {}
     ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
+    ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[]})
     epsf_model = None
     stars_tbl = Table()
 
@@ -782,6 +783,7 @@ class MyGUI:
         global header
         self.console_msg("Clearing ePSF model, Rejection List, plot...")
         #drop all the rows but keep the 'x' and 'y' column
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
         self.epsf_model = None #reset
         self.stars_tbl = Table()
@@ -1173,17 +1175,17 @@ class MyGUI:
     #
     #  callback when button press down in selstar caavas
     #  
-    #  Place big X in Ax to indicate that this star to be rejected. 
+    #  Place "Reject" title on Ax to indicate that this star to be rejected
+    #  It can get added to the ePSF_rejection_list by the Submit button
     #
+    #  "Reject" markers persist when going forward or backward
+    #  by reading the ePSF_pending_rejection_list
+    #
+    #  If Ax already has a "Reject" then remove it
     #
     #
    
     def mouse_selstars_canvas_click(self,event):
-        x = int(self.selstars_canvas.canvasx(event.x))
-        y = int(self.selstars_canvas.canvasy(event.y))
-        self.last_clicked_x = x
-        self.last_clicked_y = y
-        self.console_msg("Position X: "+str(x)+"\t Y: "+str(y))
         myax = event.inaxes
         if myax == None:
             return
@@ -1193,30 +1195,45 @@ class MyGUI:
         # Calculate index into self.candidate_stars that was just mouse clicked.
         # self.candidate_stars_index is pointing to the last displayed candidate in the displayed page.
         # Rewind the pointer to the first one in the page, then add selected_index to it.
-        # Just subtracting candidate_stars_selected_index % (self.ncols*self.nrows) 
+        # Just subtracting (candidate_stars_index % (self.ncols*self.nrows)) from candidate_stars_index
         # will get the pointer to the first one in the page.
         #
         # First one in the page:
         candidate_stars_selected_index = self.candidate_stars_index - (self.candidate_stars_index % (self.ncols*self.nrows))
         # selected one with mouse click:
         candidate_stars_selected_index += selected_index
-
         norm = simple_norm(self.candidate_stars[candidate_stars_selected_index], 'log', percent=99.0)
-        #### self.selstars_plot[selected_index].set_title("Selected (#" + str(selected_index + 1) + ")")
         self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
                      norm=norm, origin='lower', cmap='viridis')
-        self.selstars_plot[selected_index].text(x=0,y=5, s="Reject")
-        
+        #Check if "Reject" is already there. If it is then remove it from Ax and removed from ePSF_pending_rejection_list
+        (cand_x, cand_y) = self.candidate_stars[candidate_stars_selected_index].origin
+        if not ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+            # No reject, 
+            # Add it in 
+            self.selstars_plot[selected_index].text(x=0,y=5, s="Reject")
+            #update ePSF_pending_rejection_list
+            self.ePSF_pending_rejection_list.loc[len(self.ePSF_pending_rejection_list.index)] = [cand_x, cand_y]
+        else:
+            # "Reject" all ready in; erase it
+            self.selstars_plot[selected_index].clear()
+            # remove from ePSF_pending_rejection_list (using mask)
+            self.ePSF_pending_rejection_list = \
+                self.ePSF_pending_rejection_list[~((self.ePSF_pending_rejection_list['x'] == cand_x) &
+                                                     (self.ePSF_pending_rejection_list['y'] == cand_y))]
+
+        self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
+                     norm=norm, origin='lower', cmap='viridis')
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
-
-        #update ePSF_rejection_list and main canvas 
-        (x, y) = self.candidate_stars[candidate_stars_selected_index].origin
-        self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y, True]
-        #indicate the rejected ones
-        # self.display_image()
-
         return
+
+    ###############################################################
+    #
+    #
+    #  mouse_main_canvas_click
+    #
+    # 
+    #
 
     def mouse_main_canvas_click(self, event):
         global image_data
@@ -2937,7 +2954,7 @@ class MyGUI:
 
 ####################
 #
-# forward/back selstars button callbacks
+# forward selstars button callback
 #
 #
 
@@ -2957,6 +2974,10 @@ class MyGUI:
                 norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
+                # check if this has already been rejected
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+                    self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
                 selstars_plot_index += 1
             plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
@@ -2971,6 +2992,12 @@ class MyGUI:
         self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
+
+####################
+#
+# back selstars button callback
+#
+#
 
     def back_selstars_list(self):
         if self.candidate_stars_index >= (self.ncols*self.nrows): 
@@ -2999,6 +3026,10 @@ class MyGUI:
                 norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
+                # check if this has already been rejected
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+                    self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
                 selstars_plot_index += 1
             plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
@@ -3012,6 +3043,31 @@ class MyGUI:
         self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
 
+####################
+#
+# submit rejects selstars button callback
+#
+#
+    def submit_rejects_selstars_list(self):
+        #update ePSF_rejection_list 
+        #
+        #
+        #
+        # ... use:
+        ##(x, y) = self.candidate_stars[candidate_stars_selected_index].origin
+        #self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y, True]
+
+        return
+
+
+####################
+#
+# clear rejects selstars button callback
+#
+#
+
+    def clear_rejects_selstars_list(self):
+        return
 
 
 ####################
@@ -3807,21 +3863,40 @@ class MyGUI:
         self.selstars_canvas.grid(row=5, column=0)
         
 
-        self.right_subframe = tk.Frame(self.right_frame)
+        separator_reject_buttons = ttk.Separator(self.right_frame, orient='horizontal')
+        separator_reject_buttons.grid(row=6, pady=5, sticky=tk.EW)
 
-        self.back_selstars_button_label = tk.Label(self.right_subframe, text="<-----:")
+
+        self.right_subframe = tk.Frame(self.right_frame)
+        self.right_subframe_sub0 = tk.Frame(self.right_subframe)
+        self.right_subframe_sub1 = tk.Frame(self.right_subframe)
+        self.right_subframe_sub2 = tk.Frame(self.right_subframe)
+
+        self.right_subframe.columnconfigure(0, minsize=175)
+        self.right_subframe.columnconfigure(2, minsize=175)
+
+        submit_rejects_selstars_button = tk.Button(self.right_subframe_sub0, text="Submit", command=self.submit_rejects_selstars_list)
+        submit_rejects_selstars_button.grid()
+
+        self.back_selstars_button_label = tk.Label(self.right_subframe_sub1, text="<-----:")
         self.back_selstars_button_label.grid(row=0, column=0, sticky=tk.E)  # Place label
 
-        back_selstars_button = tk.Button(self.right_subframe, text="Back", command=self.back_selstars_list)
-        back_selstars_button.grid(row=0, column=1, padx=20, sticky=tk.E)
+        back_selstars_button = tk.Button(self.right_subframe_sub1, text="Back", command=self.back_selstars_list)
+        back_selstars_button.grid(row=0, column=1, ipadx=12, padx=0, sticky=tk.E)
 
-        save_settings_button = tk.Button(self.right_subframe, text="Forward", command=self.forward_selstars_list)
-        save_settings_button.grid(row=0, column=2, padx=20, sticky=tk.W)
+        save_settings_button = tk.Button(self.right_subframe_sub1, text="Forward", command=self.forward_selstars_list)
+        save_settings_button.grid(row=0, column=2, padx=0, sticky=tk.W)
 
-        self.forward_selstars_button_label = tk.Label(self.right_subframe, text=":----->")
+        self.forward_selstars_button_label = tk.Label(self.right_subframe_sub1, text=":----->")
         self.forward_selstars_button_label.grid(row=0, column=3, sticky=tk.W)  # Place label
 
-        self.right_subframe.grid(row=6, column=0)
+        clear_rejects_selstars_button = tk.Button(self.right_subframe_sub2, text="Clear", command=self.clear_rejects_selstars_list)
+        clear_rejects_selstars_button.grid()
+
+        self.right_subframe_sub0.grid(row=0, column=0, sticky=tk.W)
+        self.right_subframe_sub1.grid(row=0, column=1)
+        self.right_subframe_sub2.grid(row=0, column=2, sticky=tk.E)
+        self.right_subframe.grid(row=7, column=0)
 
         #
         # Left Frame
@@ -3839,11 +3914,6 @@ class MyGUI:
 
         # Expand settings_frame column that holds labels
         tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
-
-        settings_entry_width = 6
-        settings_entry_pad = 0
-        extended_settings_entry_width = 30
-        extended_settings_entry_pad = 0
 
         #
         # Some parameter settings need initial values
