@@ -424,7 +424,7 @@ class MyGUI:
             self.image = ImageTk.PhotoImage(generated_image)
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
-            self.canvas.bind("<Button-1>", self.mouse_click)
+            self.canvas.bind("<Button-1>", self.mouse_main_canvas_click)
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
             self.plot_photometry()
@@ -623,6 +623,20 @@ class MyGUI:
                 self.console_msg("Fitting Width not set; Set Fitting Width and Height in Setting Window")
                 self.console_msg("ePSF: returning on error")
                 return; 
+        
+            #
+            # Important table definitions
+            #
+            # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
+            # 
+            # peaks_tbl: initial set of stars from find_peaks
+            # prelim_stars_tbl: peaks_tbl minus the ones near the edge
+            # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
+            # stars_tbl: isolated_stars_tbl minus ones rejected by user
+            #
+            # candidate_stars: extracted stars from isolated_stars_tbl
+            #
+
 
             self.fit_shape = int(self.fit_width_entry.get()) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
@@ -700,11 +714,18 @@ class MyGUI:
             self.console_msg("ePSF: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
             self.console_msg("ePSF: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
 
+            self.clear_selstars()
+
             # subtract background
             mean_val, median_val, std_val = sigma_clipped_stats(image_data, sigma=2.0)
             clean_image = image_data - median_val
 
             working_image = NDData(data=clean_image)
+
+            #
+            # 1 set of extracted stars is needed:  
+            #  1) candidate_stars that only include non-rejected stars for the EPSFBuiler
+            #
 
             self.candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
             self.candidate_stars_index = 0
@@ -715,9 +736,10 @@ class MyGUI:
                      norm=norm, origin='lower', cmap='viridis')
 
             self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
-            
 
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
+            self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
             epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=True) 
@@ -1143,8 +1165,60 @@ class MyGUI:
                    )
         else:
             return(0, 0, 0, 0, 0, 0) #, 0, 0, 0)
+        
+    ###############################################################
+    #
+    #
+    #  mouse_selstars_canvas_click
+    #
+    #  callback when button press down in selstar caavas
+    #  
+    #  Place big X in Ax to indicate that this star to be rejected. 
+    #
+    #
+    #
+   
+    def mouse_selstars_canvas_click(self,event):
+        x = int(self.selstars_canvas.canvasx(event.x))
+        y = int(self.selstars_canvas.canvasy(event.y))
+        self.last_clicked_x = x
+        self.last_clicked_y = y
+        self.console_msg("Position X: "+str(x)+"\t Y: "+str(y))
+        myax = event.inaxes
+        if myax == None:
+            return
+        selected_index = myax.figure.axes.index(myax)
+        self.console_msg("Ax number: " + str(selected_index))
 
-    def mouse_click(self, event):
+        # Calculate index into self.candidate_stars that was just mouse clicked.
+        # self.candidate_stars_index is pointing to the last displayed candidate in the displayed page.
+        # Rewind the pointer to the first one in the page, then add selected_index to it.
+        # Just subtracting candidate_stars_selected_index % (self.ncols*self.nrows) 
+        # will get the pointer to the first one in the page.
+        #
+        # First one in the page:
+        candidate_stars_selected_index = self.candidate_stars_index - (self.candidate_stars_index % (self.ncols*self.nrows))
+        # selected one with mouse click:
+        candidate_stars_selected_index += selected_index
+
+        norm = simple_norm(self.candidate_stars[candidate_stars_selected_index], 'log', percent=99.0)
+        #### self.selstars_plot[selected_index].set_title("Selected (#" + str(selected_index + 1) + ")")
+        self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
+                     norm=norm, origin='lower', cmap='viridis')
+        self.selstars_plot[selected_index].text(x=0,y=5, s="Reject")
+        
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        self.selstars_plot_canvas.draw()
+
+        #update ePSF_rejection_list and main canvas 
+        (x, y) = self.candidate_stars[candidate_stars_selected_index].origin
+        self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y, True]
+        #indicate the rejected ones
+        # self.display_image()
+
+        return
+
+    def mouse_main_canvas_click(self, event):
         global image_data
         x = int(self.canvas.canvasx(event.x) / self.zoom_level)
         y = int(self.canvas.canvasy(event.y) / self.zoom_level)
@@ -1268,12 +1342,14 @@ class MyGUI:
 
     def clear_selstars_plot(self):
         self.fig_selstars.clear()
-        self.selstars_plot_canvas.draw()
+        #plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        #self.selstars_plot_canvas.draw()
         self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
                                                               figsize=(10, 10), squeeze=False)
         #self.fig_selstars.suptitle("Selected Stars")
         self.selstars_plot = self.selstars_plot.ravel()
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
         self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
@@ -2882,15 +2958,17 @@ class MyGUI:
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
                 selstars_plot_index += 1
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
-            # need to resolve index so that when we forward agin we dont skip current index
-            # unfortunately index never reaches the stop value in the last frame so 
+            # need to resolve index so that when we forward again we dont skip current index
+            # (un)fortunately index never reaches the stop value in the last frame so 
             if resolve_index:
                 self.candidate_stars_index -= 1
         else:
             # nothing past this
             self.console_msg("There are no more selected stars to show.");
         
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
 
@@ -2922,6 +3000,7 @@ class MyGUI:
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
                 selstars_plot_index += 1
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
             # need to resolve index so that when we forward agin we dont skip current index
             self.candidate_stars_index -= 1
@@ -2929,6 +3008,7 @@ class MyGUI:
             # nothing past this
             self.console_msg("There are no more selected stars to show.")
         
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
 
@@ -3710,18 +3790,22 @@ class MyGUI:
 
         self.nrows = 5
         self.ncols = 5
+        self.selstars_hspace = .55
+        self.selstars_wspace = .55
         self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
                                                               figsize=(10, 10), squeeze=False)
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         
         self.selstars_plot = self.selstars_plot.ravel()
         #
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
         self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)
-
+        
 
         self.right_subframe = tk.Frame(self.right_frame)
 
