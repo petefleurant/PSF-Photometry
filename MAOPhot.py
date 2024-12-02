@@ -362,7 +362,7 @@ class MyGUI:
     ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[], "stale":[]})
     epsf_model = None
     stars_tbl = None
-    peaks_tbl = None
+    isolated_stars_tbl = None
 
     # Parameter declaration  and init 
     fit_width_entry = None
@@ -550,7 +550,6 @@ class MyGUI:
                 self.clear_psf_label()
                 self.clear_epsf_plot()
                 self.clear_selstars_plot()
-                self.console_msg("Ready")
                 
             except Exception as e:
                 self.error_raised = True
@@ -643,9 +642,9 @@ class MyGUI:
 
             # now ready to find peaks
 
-            self.peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
+            peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
 
-            peaks_tbl_len = len(self.peaks_tbl)
+            peaks_tbl_len = len(peaks_tbl)
             self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
 
             #mask out peaks near the boundary; use twice the aperature entry
@@ -676,8 +675,8 @@ class MyGUI:
             self.fit_shape = int(self.fit_width_entry.get()) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 # Eg., 5
-            x = self.peaks_tbl['x_peak']  
-            y = self.peaks_tbl['y_peak']  
+            x = peaks_tbl['x_peak']  
+            y = peaks_tbl['y_peak']  
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
@@ -714,12 +713,12 @@ class MyGUI:
 
             mask = reject_this == False  # only keep ones we don't reject
 
-            isolated_stars_tbl = Table()
-            isolated_stars_tbl['x'] = x[mask]  
-            isolated_stars_tbl['y'] = y[mask]  
-            isolated_stars_tbl['rejected'] = False #init
+            self.isolated_stars_tbl = Table()
+            self.isolated_stars_tbl['x'] = x[mask]  
+            self.isolated_stars_tbl['y'] = y[mask]  
+            self.isolated_stars_tbl['rejected'] = False #init
 
-            isolated_stars_tbl_len = len(isolated_stars_tbl)
+            isolated_stars_tbl_len = len(self.isolated_stars_tbl)
             self.console_msg("ePSF: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
             self.console_msg("ePSF: " + str(isolated_stars_tbl_len) + " peaks remain.")
 
@@ -727,8 +726,8 @@ class MyGUI:
             # coordinate in ePSF_rejection_list
             # The 'x' and 'y' columns each do not necessariy contain unique values.
             # But the combination of multiple columns results in unique rows.
-            isolated_stars_tbl.add_index(['x', 'y'])
-            for isolated_index, isolated_row in enumerate(isolated_stars_tbl):
+            self.isolated_stars_tbl.add_index(['x', 'y'])
+            for isolated_index, isolated_row in enumerate(self.isolated_stars_tbl):
                 psf_x = isolated_row['x']
                 psf_y = isolated_row['y']
                 for index, row in self.ePSF_rejection_list.iterrows():
@@ -736,12 +735,12 @@ class MyGUI:
                     reject_y = row['y']
                     if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
                         #user does not want this one
-                        isolated_stars_tbl[isolated_index]['rejected'] = True
+                        self.isolated_stars_tbl[isolated_index]['rejected'] = True
                         break
     
-            x = isolated_stars_tbl['x']  
-            y = isolated_stars_tbl['y']  
-            reject_this = isolated_stars_tbl['rejected']
+            x = self.isolated_stars_tbl['x']  
+            y = self.isolated_stars_tbl['y']  
+            reject_this = self.isolated_stars_tbl['rejected']
 
             mask = reject_this == False  # only keep ones we don't reject
 
@@ -810,7 +809,7 @@ class MyGUI:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
             return
 
-        if self.candidate_stars != None:
+        if self.candidate_stars == None:
             self.console_msg("Cannot proceed; Run Find Peaks first; use File->Photometry->Find Peaks")
             return
 
@@ -873,7 +872,7 @@ class MyGUI:
         self.candidate_stars = None
         self.epsf_model = None #reset
         self.stars_tbl = None
-        self.peaks_tbl = None
+        self.isolated_stars_tbl = None
         self.clear_psf_label()
         self.clear_epsf_plot()
         self.clear_selstars()
@@ -1113,10 +1112,10 @@ class MyGUI:
         try:
             """
              Circle color
-             white: stars that from find_peak and not rejected for ePSF Generation (peaks_tbl) (effectively stars_tbl)
-             red: stars that rejected by user and in the peaks_tbl (ePSF_rejection_list)
-             yellow: stars in a loaded rejection list file that is not in the peaks_tbl, they 
-             have already been removed (ePSF_rejection_list)..should not happen. 
+             white: stars that from find_peak and not rejected for ePSF Generation (isolated_stars_tbl)
+             red: stars that rejected by user and in the isolated_stars_tbl (ePSF_rejection_list)
+             yellow: stars in a loaded rejection list file that is not in the isolated_stars_tbl, they 
+             have already been removed (ePSF_rejection_list)
              
             """
             ## make all the circles same as fit_shape; derive hsize (halfsize or radius)
@@ -1124,11 +1123,11 @@ class MyGUI:
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
 
-            if len(self.peaks_tbl) != 0:
+            if len(self.isolated_stars_tbl) != 0:
                 self.console_msg("Displaying ePSF samples; reject list size: " + str(len(self.ePSF_rejection_list)))
 
                 #display the non-rejected stars as white, and rejected as red circles
-                for psf_x, psf_y in self.peaks_tbl.iterrows('x_peak', 'y_peak'):
+                for psf_x, psf_y in self.isolated_stars_tbl.iterrows('x', 'y'):
                     color = 'white' # it is a white circle until a reject match is found
                     for index, row in self.ePSF_rejection_list.iterrows():
                         reject_x = row['x']
@@ -2654,6 +2653,9 @@ class MyGUI:
                             getattr(self, key).set(settings[key])
                         if type(getattr(self, key)) == tk.BooleanVar:
                             getattr(self, key).set(settings[key])
+
+            self.console_msg("Ready")
+
 
         except Exception as e:
             self.error_raised = True
