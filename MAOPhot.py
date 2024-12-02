@@ -359,9 +359,10 @@ class MyGUI:
     photometry_circles = {}
     valid_parameter_list = {}
     ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
-    ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[]})
+    ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[], "stale":[]})
     epsf_model = None
-    stars_tbl = Table()
+    stars_tbl = None
+    peaks_tbl = None
 
     # Parameter declaration  and init 
     fit_width_entry = None
@@ -393,6 +394,8 @@ class MyGUI:
     object_name_entry = None
     object_notes_entry = None
     display_all_objects = None
+    candidate_stars = None
+
 
     #
     # The TopLoevel window containing the settings
@@ -413,6 +416,11 @@ class MyGUI:
         file.write(str(message) + "\n")
         file.close()
         """
+#######################################################################################
+#
+# display_image
+#
+#######################################################################################
 
     def display_image(self):
         if len(image_data) > 0:
@@ -542,6 +550,7 @@ class MyGUI:
                 self.clear_psf_label()
                 self.clear_epsf_plot()
                 self.clear_selstars_plot()
+                self.console_msg("Ready")
                 
             except Exception as e:
                 self.error_raised = True
@@ -567,6 +576,8 @@ class MyGUI:
                 fits.writeto(file_name.name, image_data,
                              header, overwrite=True)
                 self.console_msg("Saved.")
+                self.console_msg("Ready")
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -587,9 +598,32 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)   +" "+str(e), level=logging.ERROR)
             
-    def create_ePSF(self):
+##########################################################################################
+#
+# find_peaks
+#
+# Find peaks in loaded image above threshold (median + (std*10))
+#
+#
+# Important table definitions:
+#
+# peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
+# 
+# peaks_tbl: initial set of stars from find_peaks
+# prelim_stars_tbl: peaks_tbl minus the ones near the edge
+# isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
+# stars_tbl: isolated_stars_tbl minus ones rejected by user
+#
+#
+# candidate_stars: Extracted stars from stars_tbl (cutouts from image). These
+#                  are plotted in the selstars pages
+#
+#
+##########################################################################################
+
+    def find_peaks(self):
         global header
-        self.console_msg("Initiating Effective PSF building...")
+        self.console_msg("Starting find peaks...")
 
         #make sure an image is loaded
         if len(image_data) == 0:
@@ -609,9 +643,9 @@ class MyGUI:
 
             # now ready to find peaks
 
-            peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
+            self.peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
 
-            peaks_tbl_len = len(peaks_tbl)
+            peaks_tbl_len = len(self.peaks_tbl)
             self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
 
             #mask out peaks near the boundary; use twice the aperature entry
@@ -635,15 +669,15 @@ class MyGUI:
             # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
             # stars_tbl: isolated_stars_tbl minus ones rejected by user
             #
-            # candidate_stars: extracted stars from isolated_stars_tbl
+            # candidate_stars: extracted stars from stars_tbl
             #
 
 
             self.fit_shape = int(self.fit_width_entry.get()) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 # Eg., 5
-            x = peaks_tbl['x_peak']  
-            y = peaks_tbl['y_peak']  
+            x = self.peaks_tbl['x_peak']  
+            y = self.peaks_tbl['y_peak']  
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
@@ -691,14 +725,18 @@ class MyGUI:
 
             # now set 'rejected' to True for any stars that are proximate to a 
             # coordinate in ePSF_rejection_list
-            for psf_x, psf_y, psf_reject in isolated_stars_tbl:
-                isolated_stars_tbl.add_index('x')
+            # The 'x' and 'y' columns each do not necessariy contain unique values.
+            # But the combination of multiple columns results in unique rows.
+            isolated_stars_tbl.add_index(['x', 'y'])
+            for isolated_index, isolated_row in enumerate(isolated_stars_tbl):
+                psf_x = isolated_row['x']
+                psf_y = isolated_row['y']
                 for index, row in self.ePSF_rejection_list.iterrows():
                     reject_x = row['x']
                     reject_y = row['y']
                     if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
                         #user does not want this one
-                        isolated_stars_tbl.loc[psf_x]['rejected'] = True
+                        isolated_stars_tbl[isolated_index]['rejected'] = True
                         break
     
             x = isolated_stars_tbl['x']  
@@ -742,6 +780,41 @@ class MyGUI:
             self.selstars_plot_canvas.draw()
             self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
 
+            # display the rejected ones if any (with red circle) on main canvas
+            self.ePSF_samples_plotted = True
+            self.display_image()
+
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+
+##########################################################################################
+#
+# create_ePSF
+#
+# Create and Effective PSF (Point Spread Function from peaks)
+#
+#
+##########################################################################################
+
+    def create_ePSF(self):
+        global header
+        self.console_msg("Starting Effective PSF building...")
+
+        #make sure an image is loaded
+        if len(image_data) == 0:
+            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            return
+
+        if self.candidate_stars != None:
+            self.console_msg("Cannot proceed; Run Find Peaks first; use File->Photometry->Find Peaks")
+            return
+
+        try:
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
             epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=True) 
 
@@ -779,14 +852,28 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
 
+
+
+
+##########################################################################################
+#
+# clear_ePSF
+#
+# Clear ePSF Plot and selstars
+#
+#
+##########################################################################################
+
     def clear_ePSF(self):
         global header
         self.console_msg("Clearing ePSF model, Rejection List, plot...")
         #drop all the rows but keep the 'x' and 'y' column
         self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
+        self.candidate_stars = None
         self.epsf_model = None #reset
-        self.stars_tbl = Table()
+        self.stars_tbl = None
+        self.peaks_tbl = None
         self.clear_psf_label()
         self.clear_epsf_plot()
         self.clear_selstars()
@@ -856,7 +943,7 @@ class MyGUI:
     def execute_iterative_psf_photometry(self):
         global header
         self.console_msg(
-            "Initiating iterative PSF photometry...")
+            "Starting iterative PSF photometry...")
         if len(image_data) == 0:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
             return
@@ -1026,10 +1113,10 @@ class MyGUI:
         try:
             """
              Circle color
-             white: stars that will be used in the ePSF Generation (stars_tbl)
-             red: stars that rejected by user and in the stars_tbl (ePSF_rejection_list)
-             yellow: stars in a loaded rejection list file that is not presently in the stars_tbl, they 
-             have already been removed (ePSF_rejection_list)
+             white: stars that from find_peak and not rejected for ePSF Generation (peaks_tbl) (effectively stars_tbl)
+             red: stars that rejected by user and in the peaks_tbl (ePSF_rejection_list)
+             yellow: stars in a loaded rejection list file that is not in the peaks_tbl, they 
+             have already been removed (ePSF_rejection_list)..should not happen. 
              
             """
             ## make all the circles same as fit_shape; derive hsize (halfsize or radius)
@@ -1037,11 +1124,11 @@ class MyGUI:
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
 
-            if len(self.stars_tbl) != 0:
+            if len(self.peaks_tbl) != 0:
                 self.console_msg("Displaying ePSF samples; reject list size: " + str(len(self.ePSF_rejection_list)))
 
                 #display the non-rejected stars as white, and rejected as red circles
-                for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
+                for psf_x, psf_y in self.peaks_tbl.iterrows('x_peak', 'y_peak'):
                     color = 'white' # it is a white circle until a reject match is found
                     for index, row in self.ePSF_rejection_list.iterrows():
                         reject_x = row['x']
@@ -1212,7 +1299,7 @@ class MyGUI:
             # Add it in 
             self.selstars_plot[selected_index].text(x=0,y=5, s="Reject")
             #update ePSF_pending_rejection_list
-            self.ePSF_pending_rejection_list.loc[len(self.ePSF_pending_rejection_list.index)] = [cand_x, cand_y]
+            self.ePSF_pending_rejection_list.loc[len(self.ePSF_pending_rejection_list.index)] = [cand_x, cand_y, True]
         else:
             # "Reject" all ready in; erase it
             self.selstars_plot[selected_index].clear()
@@ -3049,14 +3136,16 @@ class MyGUI:
 #
 #
     def submit_rejects_selstars_list(self):
-        #update ePSF_rejection_list 
-        #
-        #
-        #
-        # ... use:
-        ##(x, y) = self.candidate_stars[candidate_stars_selected_index].origin
-        #self.ePSF_rejection_list.loc[len(self.ePSF_rejection_list.index)] = [x, y, True]
-
+        #update ePSF_rejection_list with ePSF_pending_rejection_list
+        # then update main canvas 
+        self.ePSF_rejection_list = pd.concat([self.ePSF_rejection_list, self.ePSF_pending_rejection_list], ignore_index=True)
+        #reset pending
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
+        # display the rejected ones (red circle) on main canvas
+        self.ePSF_samples_plotted = True
+        self.display_image()
+        # display an updated selstars area
+        self.find_peaks()
         return
 
 
@@ -3699,6 +3788,7 @@ class MyGUI:
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
+        self.photometrymenu.add_command(label="Find Peaks", command=self.find_peaks)
         self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
         self.photometrymenu.add_separator()
         self.photometrymenu.add_command(label="Load Rejection List...", command=self.load_ePSF_rejection_list)
