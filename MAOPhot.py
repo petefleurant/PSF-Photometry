@@ -1246,13 +1246,15 @@ class MyGUI:
         y_criterion = self.results_tab_df['y_fit'] > (y - r)
         matched_objects = matched_objects[y_criterion]
         if len(matched_objects) > 0:
-            return(matched_objects.iloc[0]["x_fit"],
+            return(True,  #indicate match
+                   matched_objects.iloc[0]["x_fit"],
                    matched_objects.iloc[0]["y_fit"],
                    matched_objects.iloc[0]["flux_fit"],
                    matched_objects.iloc[0]["inst_mag"]
                    )
         else:
-            return(0, 0, 0, 0, 0, 0) #, 0, 0, 0)
+            return (False, # indicate no match
+                     0, 0, 0, 0)
         
     ###############################################################
     #
@@ -1355,82 +1357,63 @@ class MyGUI:
             self.display_image()
             self.console_msg("")
 
-            x_fit, y_fit, flux_fit, inst_mag = self.match_photometry_table(x, y)
-            sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
-            sky_coordinate_string = ""
-            if hasattr(sky, 'ra'):
-                c = SkyCoord(ra=sky.ra, dec=sky.dec)
-                sky_coordinate_string = " α δ: " + c.to_string("hmsdms")
-            if x_fit != 0 and y_fit != 0:
-                psf_canvas_x = x_fit
-                psf_canvas_y = y_fit
-            if str(x_fit)+str(y_fit) in self.photometry_circles:
-                self.canvas.delete(self.photometry_circles[str(x_fit)+str(y_fit)])
+            fit_matched, x_fit, y_fit, flux_fit, inst_mag = self.match_photometry_table(x, y)
+            if fit_matched:
+                sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
+                sky_coordinate_string = ""
+                if hasattr(sky, 'ra'):
+                    c = SkyCoord(ra=sky.ra, dec=sky.dec)
+                    sky_coordinate_string = " α δ: " + c.to_string("hmsdms")
+                if x_fit != 0 and y_fit != 0:
+                    psf_canvas_x = x_fit
+                    psf_canvas_y = y_fit
+                if str(x_fit)+str(y_fit) in self.photometry_circles:
+                    self.canvas.delete(self.photometry_circles[str(x_fit)+str(y_fit)])
 
-            self.canvas.create_line(x_fit*self.zoom_level, y_fit*self.zoom_level - 35*self.zoom_level, x_fit *
-                                    self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
-            self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
-                                    x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
-            self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
-                round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
+                self.canvas.create_line(x_fit*self.zoom_level, y_fit*self.zoom_level - 35*self.zoom_level, x_fit *
+                                        self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
+                self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
+                                        x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
+                self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
+                    round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
 
 
-            #  For now, not using mouse click to change settings
-            # Reset object name field in the setting to avoid user mistakes
-            # self.set_entry_text(self.object_name_entry, "")
-            if "match_id" in self.results_tab_df:
-                matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
-                    self.results_tab_df["y_fit"] == y_fit)
-                if len(self.results_tab_df[matching_star_criterion]) > 0:
-                    matching_star = self.results_tab_df[matching_star_criterion].iloc[0]
-                    if type(matching_star["match_id"]) in (str, int, np.float64):
-                        self.console_msg(
-                            "Matching catalog source ID: " + str(matching_star["match_id"]) + 
-                                "; label: " + str(matching_star["label"]) +
-                                " magnitude: " + str(matching_star["match_mag"]))
-                        #self.set_entry_text(self.object_name_entry, str(matching_star["match_id"]))
-                        
-                        #%%%update plot label
-                        #%%%self.plotname_label['text'] = "Plot: " + str(matching_star["match_id"]) + \
-                        #%%%    "; " + str(int(matching_star["label"]))
-                        
-                    if vsx_ids_in_photometry_table:
-                        if len(str(matching_star["vsx_id"])) > 1:
+                if "match_id" in self.results_tab_df:
+                    matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
+                        self.results_tab_df["y_fit"] == y_fit)
+                    if len(self.results_tab_df[matching_star_criterion]) > 0:
+                        matching_star = self.results_tab_df[matching_star_criterion].iloc[0]
+                        if vsx_ids_in_photometry_table and len(str(matching_star["vsx_id"])) > 1:
+                            self.console_msg("Matching VSX Source: " + str(matching_star["vsx_id"]))
+                                
+                        elif type(matching_star["match_id"]) in (str, int, np.float64):
                             self.console_msg(
-                                "Matching VSX Source: " + str(matching_star["vsx_id"]))
-                            #self.set_entry_text(
-                            #    self.object_name_entry, str(matching_star["vsx_id"]))
-                            #%%%update plot label
-                            #%%%#self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
+                                "Matching catalog source ID: " + str(matching_star["match_id"]) + 
+                                    "; label: " + str(matching_star["label"]) +
+                                    " magnitude: " + str(matching_star["match_mag"]))
+                        else:
+                            #ask if user wants to name this object
+                            self.console_msg("Would you like to name this object; (default: user_obj-n)")
 
-            #%%%#self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
+                                
+            else:
+                # These lines are "red" because object not in table
+                self.canvas.create_line(x*self.zoom_level, y*self.zoom_level - 35*self.zoom_level,
+                                        x*self.zoom_level, y*self.zoom_level - 10*self.zoom_level, fill="red")  # Draw "target" lines
+                self.canvas.create_line(x*self.zoom_level+35*self.zoom_level, y*self.zoom_level,
+                                        x*self.zoom_level + 10*self.zoom_level, y*self.zoom_level, fill="red")
 
 
+            self.console_msg("Ready")
 
-    def update_PSF_canvas(self, x, y):
-        global image_data
-        global FITS_minimum
-        global FITS_maximum
-        try:
-            if len(image_data) > 0:
-                self.fit_shape = int(self.fit_width_entry.get())
-                x0 = int(x - (self.fit_shape - 1) / 2)
-                y0 = int(y - (self.fit_shape - 1) / 2)
-                x1 = int(x + (self.fit_shape - 1) / 2)
-                y1 = int(y + (self.fit_shape - 1) / 2)
-                position = (x, y)
-                size = (self.fit_shape - 1, self.fit_shape - 1)
-                data = Cutout2D(image_data, position, size).data
-                x = np.arange(x0, x1, 1)
-                y = np.arange(y0, y1, 1)
-                x, y = np.meshgrid(x, y)
-                self.psf_plot.clear()
-                self.psf_plot.plot_surface(x, y, data, cmap=cm.jet)
-                self.psf_plot_canvas.draw()
-        except Exception as e:
-            self.error_raised = True
-            pass
 
+    ###############################################################
+    #
+    #
+    #  clear_epsf_plot
+    #
+    # 
+    #
     def clear_epsf_plot(self):
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
@@ -2562,10 +2545,6 @@ class MyGUI:
         entry.delete(0, tk.END)
         entry.insert(0, text)
 
-    def update_display(self):
-        self.display_image()
-        #%%%#self.update_PSF_canvas(self.last_clicked_x, self.last_clicked_y)
-
     def safe_float_convert(self, x):
         try:
             z = float(x)
@@ -2579,11 +2558,11 @@ class MyGUI:
 
     def update_histogram_low(self, value):
         self.histogram_slider_low = int(value)
-        self.update_display()
+        self.display_image()
 
     def update_histogram_high(self, value):
         self.histogram_slider_high = int(value)
-        self.update_display()
+        self.display_image()
 
 
     def save_settings_as(self):
@@ -4027,7 +4006,7 @@ class MyGUI:
             self.settings_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
         self.stretching_dropdown.grid(row=row, column=1, sticky=tk.EW)
         row += 1
-        self.stretching_stringvar.trace_add("write", self.update_display())
+        self.stretching_stringvar.trace_add("write", self.display_image())
 
         # Histogram stretch sliders
         tk.Grid.columnconfigure(self.settings_frame, 1, weight=0)
