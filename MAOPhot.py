@@ -235,6 +235,7 @@ from photutils.psf import EPSFBuilder,EPSFFitter
 from tkinter import filedialog as fd
 from tkinter import ttk
 import tkinter as tk
+from tkinter import simpledialog
 from mpl_toolkits.mplot3d import Axes3D
 import math
 from matplotlib import cm
@@ -1393,8 +1394,17 @@ class MyGUI:
                                     " magnitude: " + str(matching_star["match_mag"]))
                         else:
                             #ask if user wants to name this object
-                            self.console_msg("Would you like to name this object; (default: user_obj-n)")
-
+                            result = simpledialog.askstring("Object Name", "Replace Object Name (and assign vsx status) with: ", 
+                                                            initialvalue="my-user-obj")
+   
+                            if result:
+                                user_name = result.strip()
+                                self.console_msg("Object Name is now: " + user_name)
+                                self.set_entry_text(self.object_name_entry, user_name)
+                                self.results_tab_df.loc[self.results_tab_df[matching_star_criterion]["id"], "vsx_id"] = user_name
+                                self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+                                self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
+                                self.plot_photometry()
                                 
             else:
                 # These lines are "red" because object not in table
