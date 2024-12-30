@@ -228,7 +228,7 @@ from photutils.background import MADStdBackgroundRMS
 from photutils.background import LocalBackground
 from photutils.detection import find_peaks
 from photutils.psf import IterativePSFPhotometry, PSFPhotometry
-from photutils.psf import IntegratedGaussianPRF, SourceGrouper
+from photutils.psf import CircularGaussianPRF, SourceGrouper
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
 from photutils.psf import EPSFBuilder,EPSFFitter
@@ -236,6 +236,7 @@ from tkinter import filedialog as fd
 from tkinter import ttk
 import tkinter as tk
 from tkinter import simpledialog
+from tkinter.messagebox import askokcancel
 from mpl_toolkits.mplot3d import Axes3D
 import math
 from matplotlib import cm
@@ -794,6 +795,50 @@ class MyGUI:
 
 ##########################################################################################
 #
+# plot_psf_model
+#
+# Plot model 
+#
+#
+##########################################################################################
+
+    def plot_psf_model(self, data, plotting_gaussian=False):
+
+        model_length = len(data)
+        x = np.arange(0, model_length, 1)
+        y = np.arange(0, model_length, 1)
+        x, y = np.meshgrid(x, y)
+
+        #plot the psf model
+        self.psf_plot.clear()
+        self.psf_plot.plot_surface(x, y, data, cmap=cm.jet)
+        self.psf_plot_canvas.draw()
+
+        #plot ePSF samples
+        self.clear_epsf_plot()
+        if not plotting_gaussian:
+            self.display_ePSF_samples()
+
+        norm = simple_norm(data, 'log', percent=99.)
+        im = self.ePSF_plot.imshow(data, norm=norm, origin='lower', cmap='viridis')
+        if plotting_gaussian:
+            self.ePSF_plot.set_title("Circular Gaussian")
+        else:
+            self.ePSF_plot.set_title("Effective PSF")
+
+        self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
+
+        self.ePSF_plot_canvas.draw()
+
+        self.ePSF_samples_plotted = True
+
+        return
+
+        
+
+
+##########################################################################################
+#
 # create_ePSF
 #
 # Create and Effective PSF (Point Spread Function from peaks)
@@ -822,28 +867,9 @@ class MyGUI:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
             self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
 
-            model_length = len(self.epsf_model.data)
-            x = np.arange(0, model_length, 1)
-            y = np.arange(0, model_length, 1)
-            x, y = np.meshgrid(x, y)
+            self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
 
-            #plot the psf model
-            self.psf_plot.clear()
-            self.psf_plot.plot_surface(x, y, self.epsf_model.data, cmap=cm.jet)
-            self.psf_plot_canvas.draw()
-
-            #plot ePSF samples
-            self.clear_epsf_plot()
-            self.display_ePSF_samples()
-
-            norm = simple_norm(self.epsf_model.data, 'log', percent=99.)
-            im = self.ePSF_plot.imshow(self.epsf_model.data, norm=norm, origin='lower', cmap='viridis')
-            self.ePSF_plot.set_title("Effective PSF")
-            self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
-
-            self.ePSF_plot_canvas.draw()
-
-            self.ePSF_samples_plotted = True
+            self.plot_psf_model(self.epsf_model.data)
 
             self.console_msg("Ready")
 
@@ -965,7 +991,7 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             if self.fwhm_entry.get().isnumeric():
-                fwhm = int(self.fwhm_entry.get())
+                fwhm = float(self.fwhm_entry.get())
             else:
                 self.console_msg("FWHM not numeric, using 3")
                 fwhm = 3.0
@@ -1023,12 +1049,25 @@ class MyGUI:
                 self.console_msg("Using derived Effective PSF Model")
                 psf_model = self.epsf_model
             else:
-                #Use Gausian
-                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
-                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
-                                 "; fwhm = "+format(fwhm, '.1f')+\
-                                 "; fitting width/height = "+str(self.fit_shape))
-                psf_model = IntegratedGaussianPRF(sigma)
+                #Ask if using Gausian OK
+                result = askokcancel(title="Use Circular Gaussian?", message="Is it OK to use Circular Gaussian for model?")
+
+                if result==False:
+                    self.console_msg("User canceling iterative PSF photometry")
+                    return
+
+                """
+                    Create a PSF image model from a Circular Gaussian PSF.
+                    In this case, we use the CircularGaussianPRF model 
+                    directly as a PSF model
+                """
+
+                self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
+                psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
+                yy, xx = np.mgrid[:45, :45]
+                psf_data = psf_model(xx, yy)
+                self.plot_psf_model(psf_data, plotting_gaussian=True)
+
  
             photometry = IterativePSFPhotometry(
                                                 psf_model = psf_model,
@@ -1148,6 +1187,10 @@ class MyGUI:
                 if row["stale"] == True:
                     self.create_circle(x=reject_x * self.zoom_level, y=reject_y * self.zoom_level,
                                         r=hsize * self.zoom_level, canvas_name=self.canvas, outline='yellow')
+
+            #Enable submit button in lower right side panel
+            self.submit_rejects_selstars_button.config(state=tk.NORMAL)
+
 
         except Exception as e:
             self.error_raised = True
@@ -1451,6 +1494,9 @@ class MyGUI:
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)   #was row0
+        #Disable submit button in lower right side panel
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
+
 
     def clear_psf_label(self):
         #clear plot label
@@ -3956,8 +4002,9 @@ class MyGUI:
         self.right_subframe.columnconfigure(0, minsize=175)
         self.right_subframe.columnconfigure(2, minsize=175)
 
-        submit_rejects_selstars_button = tk.Button(self.right_subframe_sub0, text="Submit", command=self.submit_rejects_selstars_list)
-        submit_rejects_selstars_button.grid()
+        self.submit_rejects_selstars_button = tk.Button(self.right_subframe_sub0, text="Submit", command=self.submit_rejects_selstars_list)
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
+        self.submit_rejects_selstars_button.grid()
 
         self.back_selstars_button_label = tk.Label(self.right_subframe_sub1, text="<-----:")
         self.back_selstars_button_label.grid(row=0, column=0, sticky=tk.E)  # Place label
