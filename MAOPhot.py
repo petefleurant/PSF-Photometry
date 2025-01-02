@@ -403,6 +403,12 @@ class MyGUI:
     # The TopLoevel window containing the settings
     es_top = None
 
+#######################################################################################
+#
+# console_msg
+#
+#######################################################################################
+
     def console_msg(self, MAOPhot_message, level=logging.INFO):
         # add a time stamp
         message = datetime.datetime.now().strftime("%d %b %Y %H:%M:%S")
@@ -410,14 +416,8 @@ class MyGUI:
         self.console.insert(tk.END, message+"\n")
         self.console.see(tk.END)
         self.window.update_idletasks()
-        
         self.our_logger.log(level=level, msg=MAOPhot_message)
         
-        """
-        file = open("MAOPhotpsf.log", "a+", encoding="utf-8")
-        file.write(str(message) + "\n")
-        file.close()
-        """
 #######################################################################################
 #
 # display_image
@@ -439,6 +439,12 @@ class MyGUI:
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
             self.plot_photometry()
+
+#######################################################################################
+#
+# load_FITS
+#
+#######################################################################################
 
     def load_FITS(self, image_file):
         global image_figure
@@ -830,8 +836,6 @@ class MyGUI:
 
         self.ePSF_plot_canvas.draw()
 
-        self.ePSF_samples_plotted = True
-
         return
 
         
@@ -870,6 +874,8 @@ class MyGUI:
             self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
 
             self.plot_psf_model(self.epsf_model.data)
+    
+            self.ePSF_samples_plotted = True
 
             self.console_msg("Ready")
 
@@ -1365,7 +1371,7 @@ class MyGUI:
     #  mouse_main_canvas_click
     #
     # 
-    #
+    ###############################################################
 
     def mouse_main_canvas_click(self, event):
         global image_data
@@ -1377,9 +1383,6 @@ class MyGUI:
         sky = self.wcs_header.pixel_to_world(x, y)
         sky_coordinate_string = ""
 
-
-        #clear plot label
-        #%%%self.plotname_label['text'] = "Plot: "
 
         if hasattr(sky, 'ra'):
             c = SkyCoord(ra=sky.ra, dec=sky.dec)
@@ -1442,12 +1445,17 @@ class MyGUI:
    
                             if result:
                                 user_name = result.strip()
+                                """
+                                Remove any pre-existing user_name(s) in results_tab_df first.
+                                If not, user could populate df with multiple user_names.
+                                """
+                                self.results_tab_df = self.results_tab_df.loc[self.results_tab_df['vsx_id'] != user_name]
                                 self.console_msg("Object Name is now: " + user_name)
                                 self.set_entry_text(self.object_name_entry, user_name)
-                                self.results_tab_df.loc[self.results_tab_df[matching_star_criterion]["id"], "vsx_id"] = user_name
+                                self.results_tab_df.loc[matching_star.name, "vsx_id"] = user_name
                                 self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
                                 self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
-                                self.plot_photometry()
+                                self.display_image()
                                 
             else:
                 # These lines are "red" because object not in table
@@ -3766,7 +3774,7 @@ class MyGUI:
 
         #set the logger up
         self.our_logger = logging.getLogger(self.program_name + self.program_version + ".log")
-        self.our_fh = logging.FileHandler(self.program_name + self.program_version + ".log")
+        self.our_fh = logging.FileHandler(self.program_name + self.program_version + ".log", encoding='utf-8')
         self.our_logger.setLevel(logging.INFO)
 
         # create formatter and add it to the handlers
