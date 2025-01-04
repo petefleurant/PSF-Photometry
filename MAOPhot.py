@@ -2764,16 +2764,20 @@ class MyGUI:
     def show_settings(self):
         self.es_top.deiconify()
 
+    ############################################################################################
     #
-    # edit_setting; command for "File->Edit Settings..." menu item which creates popup window
+    # launch_settings  
     #
+    # command for "File->Edit Settings..." menu item which creates popup window
+    #
+    ############################################################################################
+
     def launch_settings(self):
         try:
             height_factor_ = .7
 
             es_ = tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
 
-            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*height_factor_)))
             es_.title("Settings")
             self.es_top = es_
 
@@ -3127,6 +3131,13 @@ class MyGUI:
             close_settings_button = tk.Button(self.es_top, text="  OK  ", command=self.es_top.withdraw) #hide
             close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
             row += 1
+
+            # Update layout to calculate dimensions
+            self.es_top.update_idletasks()
+
+            # Automatically adjust window size to fit contents
+            self.es_top.geometry(f"{self.es_top.winfo_reqwidth()}x{self.es_top.winfo_reqheight()}")
+
 
         except Exception as e:
             self.error_raised = True
@@ -3840,10 +3851,47 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
 
+    ##########################################################################
+    # 
+    # 
+    #  exit_app
+    # 
+    # 
+    # Ask for confirmation before exiting
+    #
+    ##########################################################################        
+    
     def exit_app(self):
-        os._exit(0)
+        if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
+            os._exit(0)
 
+    ##########################################################################
+    # 
+    # 
+    #  exit_fullscreen
+    # 
+    # 
+    # Add a way to exit fullscreen (E.g., press 'Esc')
+    #
+    ##########################################################################        
+    
+    def exit_fullscreen(self, event):
+        self.window.wm_attributes('-fullscreen', False)
 
+    ##########################################################################
+    # 
+    # 
+    #  on_close
+    # 
+    # 
+    # Ask for confirmation before exiting
+    #
+    ##########################################################################        
+    
+    def on_close(self):
+        if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
+            self.window.destroy()  # Close the window and exit the program
+            os._exit(0)
 
     ##########################################################################
     # 
@@ -3886,9 +3934,10 @@ class MyGUI:
         matplotlib.rc('xtick', labelsize=7)
         matplotlib.rc('ytick', labelsize=7)
 
-        # Maximize that works everywhere
-        m = self.window.maxsize()
-        self.window.geometry('{}x{}+0+0'.format(*m))
+        self.window.bind('<Escape>', self.exit_fullscreen)
+        
+        # Bind the "X" button to the custom close function
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.window.title(self.program_full_name)
 
@@ -4182,6 +4231,15 @@ class MyGUI:
             self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
         self.stretch_high.set(5)
         self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+
+        # Update layout to calculate dimensions
+        self.window.update_idletasks()
+
+        # Maximize
+        self.window.state('zoomed')
+
+        # Automatically adjust window size to fit contents
+        #self.window.geometry(f"{self.window.winfo_reqwidth()}x{self.window.winfo_reqheight()}")
 
         #
         # laumch_settings; pops up settings window and initializes all settings
