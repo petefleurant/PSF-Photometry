@@ -557,7 +557,7 @@ class MyGUI:
                 self.display_image()
                 self.clear_psf_label()
                 self.clear_epsf_plot()
-                self.clear_selstars_plot()
+                self.clear_selstars()
                 
             except Exception as e:
                 self.error_raised = True
@@ -791,12 +791,41 @@ class MyGUI:
             self.ePSF_samples_plotted = True
             self.display_image()
 
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            self.update_selstars_page_label(page_num=1)
+
             self.console_msg("Ready")
 
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+
+##########################################################################################
+#
+# update_selstars_page_label
+#
+#
+##########################################################################################
+
+    def update_selstars_page_label(self, page_num):
+        total_number_pages = math.ceil(len(self.candidate_stars)/(self.nrows*self.ncols))
+        self.selstars_page_num_label['text'] = "Page: " + str(page_num) + " of " + str(total_number_pages)
+        #Enable Forward and Back buttons accordingly
+        # if on the first page, diable back
+        if page_num == 1:
+            self.back_selstars_button.config(state=tk.DISABLED)
+        else:
+            self.back_selstars_button.config(state=tk.NORMAL)
+
+        # if on the last page disable Forward
+        if page_num == total_number_pages:
+            self.forward_selstars_button.config(state=tk.DISABLED)
+        else:
+            self.forward_selstars_button.config(state=tk.NORMAL)
+
+        return
 
 
 ##########################################################################################
@@ -914,8 +943,18 @@ class MyGUI:
         self.console_msg("Ready")
         return
 
+##########################################################################################
+#
+# clear_selstars
+#
+# Clear selstars and reset label
+#
+#
+##########################################################################################
+
     def clear_selstars(self):
         self.clear_selstars_plot()
+        self.selstars_page_num_label['text'] = "Page:"
         return
 
     def load_ePSF_rejection_list(self):
@@ -1194,10 +1233,6 @@ class MyGUI:
                     self.create_circle(x=reject_x * self.zoom_level, y=reject_y * self.zoom_level,
                                         r=hsize * self.zoom_level, canvas_name=self.canvas, outline='yellow')
 
-            #Enable submit button in lower right side panel
-            self.submit_rejects_selstars_button.config(state=tk.NORMAL)
-
-
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -1322,6 +1357,7 @@ class MyGUI:
     #  If Ax already has a "Reject" then remove it
     #
     #
+    ###############################################################
    
     def mouse_selstars_canvas_click(self,event):
         myax = event.inaxes
@@ -1352,7 +1388,7 @@ class MyGUI:
             #update ePSF_pending_rejection_list
             self.ePSF_pending_rejection_list.loc[len(self.ePSF_pending_rejection_list.index)] = [cand_x, cand_y, True]
         else:
-            # "Reject" all ready in; erase it
+            # "Reject" already in; erase it
             self.selstars_plot[selected_index].clear()
             # remove from ePSF_pending_rejection_list (using mask)
             self.ePSF_pending_rejection_list = \
@@ -1363,6 +1399,15 @@ class MyGUI:
                      norm=norm, origin='lower', cmap='viridis')
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
+
+        # Submit button is enabled only when there is something to submit
+        if len(self.ePSF_pending_rejection_list) > 0:
+            submit_button_state = tk.NORMAL
+        else:
+            submit_button_state = tk.DISABLED
+
+        self.submit_rejects_selstars_button.config(state=submit_button_state)
+
         return
 
     ###############################################################
@@ -1472,9 +1517,9 @@ class MyGUI:
     #
     #
     #  clear_epsf_plot
-    #
     # 
     #
+    ###############################################################
     def clear_epsf_plot(self):
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
@@ -1487,13 +1532,19 @@ class MyGUI:
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.ePSF_canvas.grid(row=3, column=0)   #was row0
 
+    ###############################################################
+    #
+    #
+    #  clear_selstars_plot
+    # 
+    #
+    ###############################################################
     def clear_selstars_plot(self):
         self.fig_selstars.clear()
         #plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         #self.selstars_plot_canvas.draw()
         self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
                                                               figsize=(10, 10), squeeze=False)
-        #self.fig_selstars.suptitle("Selected Stars")
         self.selstars_plot = self.selstars_plot.ravel()
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
@@ -1502,8 +1553,6 @@ class MyGUI:
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)   #was row0
-        #Disable submit button in lower right side panel
-        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
 
 
     def clear_psf_label(self):
@@ -3084,16 +3133,20 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
 
-####################
+##############################################################################
 #
-# forward selstars button callback
+# forward_selstars_list
 #
-#
+# Callback for "Forward" button. This invokes display of next page of 
+# candidate stars.
+# 
+# 
+##############################################################################
 
     def forward_selstars_list(self):
         if self.candidate_stars_index < len(self.candidate_stars) - 1:
-            self.clear_selstars()
-            # you can look forward to more
+            self.clear_selstars_plot()
+            # look forward
             self.candidate_stars_index += 1
             i = 0
             selstars_plot_index = 0
@@ -3117,25 +3170,33 @@ class MyGUI:
             # (un)fortunately index never reaches the stop value in the last frame so 
             if resolve_index:
                 self.candidate_stars_index -= 1
+
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            new_page_number = math.ceil(self.candidate_stars_index/(self.nrows*self.ncols))
+            self.update_selstars_page_label(page_num=new_page_number)
         else:
             # nothing past this
             self.console_msg("There are no more selected stars to show.");
         
         self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
-        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+        #self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
 
-####################
+##############################################################################
 #
-# back selstars button callback
+# back_selstars_list
 #
-#
+# Callback for "Back" button. This invokes display of previous page of 
+# candidate stars.
+# 
+# 
+##############################################################################
 
     def back_selstars_list(self):
         if self.candidate_stars_index >= (self.ncols*self.nrows): 
             # not displaying the first set
-            self.clear_selstars()
-            # you can look back to more
+            self.clear_selstars_plot()
+            # 
             # We want the index to point to beginning of the last frame (frame being
             # a set of (self.ncols*self.nrows) subplots),
             # so we have to account for it now pointing to somewhere in the middle.
@@ -3167,6 +3228,9 @@ class MyGUI:
             self.selstars_plot_canvas.draw()
             # need to resolve index so that when we forward agin we dont skip current index
             self.candidate_stars_index -= 1
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            new_page_number = math.ceil(self.candidate_stars_index/(self.nrows*self.ncols))
+            self.update_selstars_page_label(page_num=new_page_number)
         else:
             # nothing past this
             self.console_msg("There are no more selected stars to show.")
@@ -3175,11 +3239,11 @@ class MyGUI:
         self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
         return
 
-####################
+############################################################
 #
-# submit rejects selstars button callback
+# submit_rejects_selstars_list
 #
-#
+############################################################
     def submit_rejects_selstars_list(self):
         #update ePSF_rejection_list with ePSF_pending_rejection_list
         # then update main canvas 
@@ -3191,24 +3255,38 @@ class MyGUI:
         self.display_image()
         # display an updated selstars area
         self.find_peaks()
+        # Now nothing to submit so...
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
         return
 
 
-####################
+############################################################
 #
-# clear rejects selstars button callback
+# clear_rejects_selstars_list
 #
+# Clears the rejected stars in the selstars list and 
+# re-displays them
 #
+############################################################
 
     def clear_rejects_selstars_list(self):
+        #reset pending
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
+        # display the rejected ones (red circle) on main canvas
+        self.ePSF_samples_plotted = True
+        self.display_image()
+        # display an updated selstars area
+        self.find_peaks()
+        # Now nothing to submit so...
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
         return
 
 
-####################
+############################################################
 #
 #  aavso_get_comparison_stars
 #
-#
+############################################################
 
     def aavso_get_comparison_stars(self, frame_center, filter_band='V', field_of_view=18.5, maglimit=20):
         try:
@@ -3765,8 +3843,18 @@ class MyGUI:
     def exit_app(self):
         os._exit(0)
 
+
+
+    ##########################################################################
+    # 
+    # 
+    #  __init__
+    # 
+    # 
+    ##########################################################################        
+
     def __init__(self):
-        #Wis heisen Sie?
+        #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
         self.program_name_note = "; using Photutils"
@@ -3976,8 +4064,8 @@ class MyGUI:
         #
         #make another canvas for selected stars
         #
-        self.selstars_plotname_label = tk.Label(self.right_frame, text="Selected Stars:")
-        self.selstars_plotname_label.grid(row=4, column=0)  # Place label
+        self.selstars_title_label = tk.Label(self.right_frame, text="Selected Stars")
+        self.selstars_title_label.grid(row=4, column=0)  # Place label
 
         self.nrows = 5
         self.ncols = 5
@@ -3996,10 +4084,15 @@ class MyGUI:
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)
-        
+
+        #
+        #make another canvas for selected stars
+        #
+        self.selstars_page_num_label = tk.Label(self.right_frame, text="Page:")
+        self.selstars_page_num_label.grid(row=6, column=0)  # Place label
 
         separator_reject_buttons = ttk.Separator(self.right_frame, orient='horizontal')
-        separator_reject_buttons.grid(row=6, pady=5, sticky=tk.EW)
+        separator_reject_buttons.grid(row=7, pady=5, sticky=tk.EW)
 
 
         self.right_subframe = tk.Frame(self.right_frame)
@@ -4017,11 +4110,13 @@ class MyGUI:
         self.back_selstars_button_label = tk.Label(self.right_subframe_sub1, text="<-----:")
         self.back_selstars_button_label.grid(row=0, column=0, sticky=tk.E)  # Place label
 
-        back_selstars_button = tk.Button(self.right_subframe_sub1, text="Back", command=self.back_selstars_list)
-        back_selstars_button.grid(row=0, column=1, ipadx=12, padx=0, sticky=tk.E)
+        self.back_selstars_button = tk.Button(self.right_subframe_sub1, text="Back", command=self.back_selstars_list)
+        self.back_selstars_button.config(state=tk.DISABLED)
+        self.back_selstars_button.grid(row=0, column=1, ipadx=12, padx=0, sticky=tk.E)
 
-        save_settings_button = tk.Button(self.right_subframe_sub1, text="Forward", command=self.forward_selstars_list)
-        save_settings_button.grid(row=0, column=2, padx=0, sticky=tk.W)
+        self.forward_selstars_button = tk.Button(self.right_subframe_sub1, text="Forward", command=self.forward_selstars_list)
+        self.forward_selstars_button.config(state=tk.DISABLED)
+        self.forward_selstars_button.grid(row=0, column=2, padx=0, sticky=tk.W)
 
         self.forward_selstars_button_label = tk.Label(self.right_subframe_sub1, text=":----->")
         self.forward_selstars_button_label.grid(row=0, column=3, sticky=tk.W)  # Place label
@@ -4032,7 +4127,7 @@ class MyGUI:
         self.right_subframe_sub0.grid(row=0, column=0, sticky=tk.W)
         self.right_subframe_sub1.grid(row=0, column=1)
         self.right_subframe_sub2.grid(row=0, column=2, sticky=tk.E)
-        self.right_subframe.grid(row=7, column=0)
+        self.right_subframe.grid(row=8, column=0)
 
         #
         # Left Frame
