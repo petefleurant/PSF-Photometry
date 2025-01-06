@@ -2,24 +2,9 @@
 *.jpg
 *.fits
 *.log
-2022 6 5 W Her/W Her B_CROP_60.fit.csv
-2022 6 5 W Her/W Her V_CROP_60.fit.csv
-2022 6 5 W Her/W Her-Master-Report.csv
-2022 6 5 W Her/aavso_reports/AAVSO W Her V_CROP_60 W Her.txt
-2022 8 1 V1117 Her/V1117 Her-Master-Report.csv
-2022 8 1 V1117 Her/V1117_Her_B.fit.csv
-2022 8 1 V1117 Her/V1117_Her_V.fit.csv
-2022 9 16 Y And/Y And_30pct-B.fit.csv
-2022 9 16 Y And/Y And_30pct-V.fit.csv
-2022 9 16 Y And/Y And-Master-Report.csv
-2022 9 16 Y And/aavso_reports/AAVSO Y And_30pct-V Y And.txt
-2022 6 5 W Her/W Her B_CROP_60.xlsx
-2022 6 5 W Her/aavso_reports/AAVSO W Her B_CROP_60 W Her_single.txt
-2022 6 5 W Her/VPhotResults/AAVSOReport_SingleColor MAOPhot Test from VPhot.txt
-2022 8 1 V1117 Her/aavso_reports/AAVSO V1117_Her_B V1117 Her_single.txt
+*.csv
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
-2022 8 1 V1117 Her/aavso_reports/AAVSO V1117_Her_V V1117 Her_single.txt
 popupWindowExample.py
 *.pyc
 grid_example.py
@@ -32,6 +17,7 @@ popupMessage.py
 .maophot1*
 .vscode/launch.json
 2022 8 1 V1117 Her (Example)/V1117 Her 25pct_60.00s_FILTER-B.fit.csv
+2022 8 1 V1117 Her (Example)/V1117 Her 25pct_60.00s_FILTER-V.fit.csv
 build/MAOPhot/Analysis-00.toc
 build/MAOPhot/base_library.zip
 build/MAOPhot/EXE-00.toc
@@ -43,4 +29,3 @@ build/MAOPhot/warn-MAOPhot.txt
 build/MAOPhot/xref-MAOPhot.html
 dist/MAOPhot.exe
 Output/MAOPhot_SETUP.exe
-2022 8 1 V1117 Her (Example)/V1117 Her 25pct_60.00s_FILTER-B.fit.csv
