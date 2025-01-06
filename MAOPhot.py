@@ -201,6 +201,9 @@ objects in image field
     detection and photometry of astronomical sources (Bradley et al. 2024).
 
 """
+#Tell user it's coming
+print("MAOPhot is loading...please wait for GUI")
+
 #
 # Constants
 #
@@ -262,7 +265,6 @@ from time import gmtime, strftime
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
-
 
 # Photometry
 
@@ -3910,11 +3912,8 @@ class MyGUI:
         self.program_name_note = " using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
-        #Tell user it's coming
-        print(self.program_full_name + " is loading...please wait for GUI")
-
         # Check if therre is a ./log dir
-        self.logging_dir = ".//log//"
+        self.logging_dir = ".//logs//"
 
         # Check if directory exists
         if not os.path.exists(self.logging_dir):
