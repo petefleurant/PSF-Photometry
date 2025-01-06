@@ -210,6 +210,7 @@ print("MAOPhot is loading...please wait for GUI")
 __version__ = "1.1.0"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
+__our_padding__ = 10
 
 from ast import Assert
 from astropy.stats import SigmaClip
@@ -4024,56 +4025,106 @@ class MyGUI:
         self.window.config(menu=self.menubar)
 
         #
+        # Layout left, center, and right frames
+        #
+
+
         #
         #
-        #               Left Side Frame
+        #
+        #               Left [Side] Frame
         #
         #
 
-        self.left_side = tk.Frame(self.window)  # Left half of the window
-        self.left_side.grid(row=0, column=0, sticky=tk.NSEW)
-        self.center = tk.Frame(self.window)  # Center of the window
-        self.center.grid(row=0, column=1, sticky=tk.NSEW)
-        self.right_half = tk.Frame(self.window)  # Right half of the window
-        self.right_half.grid(row=0, column=2, sticky=tk.NSEW)
+        # We will lay image stretching sliders into the left_frame
+        self.left_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Left half of the window
+        self.left_frame.grid(row=0, column=0, sticky=tk.NSEW)
+
+        # Expand left_frame column that holds labels
+        tk.Grid.columnconfigure(self.left_frame, 0, weight=1)
+
+        row = 0
+
+        self.stretching_label = tk.Label(
+            self.left_frame, text="Image Stretching:")
+        self.stretching_label.grid(row=row, column=0, sticky=tk.NSEW)
+
+        row += 1
+        self.stretching_stringvar = tk.StringVar()
+        self.stretching_stringvar.set("Asinh")
+        self.stretching_dropdown = tk.OptionMenu(
+            self.left_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
+        self.stretching_dropdown.grid(row=row, column=0, sticky=tk.NW)
+
+
+        row += 1
+        self.stretching_stringvar.trace_add("write", self.display_image())
+        # Histogram stretch sliders
+        self.stretch_label = tk.Label(
+            self.left_frame, text="Histogram Stretch Low/High:")
+        self.stretch_label.grid(row=row, column=0, sticky=tk.NW)
+        row += 1
+        self.stretch_low = tk.Scale(
+            self.left_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_low)
+        self.stretch_low.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+        row += 1
+        self.stretch_high = tk.Scale(
+            self.left_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
+        self.stretch_high.set(5)
+        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+
+
+        #
+        #
+        #
+        #               Center [middle] Frame
+        #
+        #
+
+        self.center_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Center of the window
+        self.center_frame.grid(row=0, column=1, sticky=tk.NSEW)
         # Expand center horizontally
         tk.Grid.columnconfigure(self.window, 1, weight=1)
         # Expand everything vertically
         tk.Grid.rowconfigure(self.window, 0, weight=1)
 
-        self.filename_label = tk.Label(self.center, text="FITS:" + image_file)
-        self.filename_label.grid(row=0, column=0)  # Place label
 
-        self.canvas = tk.Canvas(self.center, bg='black')  # Main canvas
+        row = 0
+        self.filename_label = tk.Label(self.center_frame, text="FITS:" + image_file)
+        self.filename_label.grid(row=row, column=0)  # Place label
+
+        row += 1
+        self.canvas = tk.Canvas(self.center_frame, bg='black')  # Main canvas
         # Place main canvas, sticky to occupy entire
-        self.canvas.grid(row=1, column=0, sticky=tk.N+tk.S+tk.E+tk.W)
+        self.canvas.grid(row=row, column=0, sticky=tk.NSEW)
         # cell dimensions
         # Expand main canvas column to fit whole window
-        tk.Grid.columnconfigure(self.center, 0, weight=1)
-        # Expand main canvas row to fit whole window
-        tk.Grid.rowconfigure(self.center, 1, weight=1)
+        tk.Grid.columnconfigure(self.center_frame, 0, weight=1)
+        # Give the console the most weight
+        tk.Grid.rowconfigure(self.center_frame, 1, weight=1)
+
         self.canvas_scrollbar_V = tk.Scrollbar(
-            self.center, orient=tk.VERTICAL)  # Main canvas scrollbars
-        self.canvas_scrollbar_V.grid(row=1, column=1)
-        self.canvas_scrollbar_V.grid(
-            sticky=tk.N+tk.S+tk.E+tk.W, column=1, row=1)
+            self.center_frame, orient=tk.VERTICAL)  # Main canvas scrollbars
+        self.canvas_scrollbar_V.grid(sticky=tk.NSEW, row=row, column=1)
+
+        row += 1
         self.canvas_scrollbar_H = tk.Scrollbar(
-            self.center, orient=tk.HORIZONTAL)
-        self.canvas_scrollbar_H.grid(row=2, column=0)
-        self.canvas_scrollbar_H.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=0, row=2)
+            self.center_frame, orient=tk.HORIZONTAL)
+        self.canvas_scrollbar_H.grid(row=row, column=0)
+        self.canvas_scrollbar_H.grid(sticky=tk.NSEW, row=row, column=0)
         self.canvas_scrollbar_H.config(command=self.canvas.xview)
         self.canvas_scrollbar_V.config(command=self.canvas.yview)
         self.canvas.config(xscrollcommand=self.canvas_scrollbar_H.set)
         self.canvas.config(yscrollcommand=self.canvas_scrollbar_V.set)
 
+        row += 1
         # Console below
-        self.console = tk.Text(self.center, #height=40,
+        self.console = tk.Text(self.center_frame, #height=40,
                                bg='black', fg='white', width=200)
-        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
-        self.console_scrollbar = tk.Scrollbar(self.center)
-        self.console_scrollbar.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
+        self.console.grid(sticky=tk.NSEW, row=row, column=0)
+        self.console_scrollbar = tk.Scrollbar(self.center_frame)
+
+        self.console_scrollbar.grid(sticky=tk.NSEW, row=row, column=1)
 
         self.console.config(yscrollcommand=self.console_scrollbar.set)
         self.console_scrollbar.config(command=self.console.yview)
@@ -4089,13 +4140,16 @@ class MyGUI:
         #
         #
 
-        # We will lay out interface things into the new right_frame grid
-        self.right_frame = tk.Frame(self.right_half)
-        # Place right_frame into the top of the main canvas row, right next to it
-        self.right_frame.grid(row=1, column=2, sticky=tk.N)
-        
+        # Place right_frame 
+        self.right_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Right half of the window
+        self.right_frame.grid(row=0, column=2, sticky=tk.NSEW)
+
+        # Place label
+        row = 0
         self.plotname_label = tk.Label(self.right_frame, text="Plot:")
-        self.plotname_label.grid(row=0, column=0)  # Place label
+        self.plotname_label.grid(row=row, column=0)  
+
+        row += 1
         self.fig_psf = Figure()
         self.psf_plot = self.fig_psf.add_subplot(111, projection='3d')
         # PSF 3D plot canvas - Matplotlib wrapper for Tk
@@ -4104,29 +4158,31 @@ class MyGUI:
         self.psf_canvas = self.psf_plot_canvas.get_tk_widget()
         self.psf_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.psf_canvas.grid(row=1, column=0)
+        self.psf_canvas.grid(row=row, column=0)
         
         #
         #make another canvas for 2D plot of effectivePSF
         #
+        row += 1
         self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
-        self.ePSF_plotname_label.grid(row=2, column=0)  # Place label
+        self.ePSF_plotname_label.grid(row=row, column=0)  # Place label
 
 
+        row += 1
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
-        #
         self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
         self.ePSF_plot_canvas.draw()
         self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.ePSF_canvas.grid(row=3, column=0)
+        self.ePSF_canvas.grid(row=row, column=0)
 
         #
         #make another canvas for selected stars
         #
+        row += 1
         self.selstars_title_label = tk.Label(self.right_frame, text="Selected Stars")
-        self.selstars_title_label.grid(row=4, column=0)  # Place label
+        self.selstars_title_label.grid(row=row, column=0)  # Place label
 
         self.nrows = 5
         self.ncols = 5
@@ -4138,24 +4194,28 @@ class MyGUI:
         
         self.selstars_plot = self.selstars_plot.ravel()
         #
+
+        row += 1
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
         self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
         self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.selstars_canvas.grid(row=5, column=0)
+        self.selstars_canvas.grid(row=row, column=0)
 
         #
         #make another canvas for selected stars
         #
+        row += 1
         self.selstars_page_num_label = tk.Label(self.right_frame, text="Page:")
-        self.selstars_page_num_label.grid(row=6, column=0)  # Place label
+        self.selstars_page_num_label.grid(row=row, column=0)  # Place label
 
+        row += 1
         separator_reject_buttons = ttk.Separator(self.right_frame, orient='horizontal')
-        separator_reject_buttons.grid(row=7, pady=5, sticky=tk.EW)
+        separator_reject_buttons.grid(row=row, pady=5, sticky=tk.EW)
 
-
+        row += 1 #only for right_subframe
         self.right_subframe = tk.Frame(self.right_frame)
         self.right_subframe_sub0 = tk.Frame(self.right_subframe)
         self.right_subframe_sub1 = tk.Frame(self.right_subframe)
@@ -4188,61 +4248,9 @@ class MyGUI:
         self.right_subframe_sub0.grid(row=0, column=0, sticky=tk.W)
         self.right_subframe_sub1.grid(row=0, column=1)
         self.right_subframe_sub2.grid(row=0, column=2, sticky=tk.E)
-        self.right_subframe.grid(row=8, column=0)
 
-        #
-        # Left Frame
-        #
+        self.right_subframe.grid(row=row, column=0)
 
-        # We will lay out interface things into the new left_frame grid
-        self.left_frame = tk.Frame(self.left_side)
-        # Place right_frame into the top of the main canvas row, right next to it
-        self.left_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        
-
-        # Frame to hold "SOME" settings in grid pattern
-        self.settings_frame = tk.Frame(self.left_frame)
-        self.settings_frame.pack()
-
-        # Expand settings_frame column that holds labels
-        tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
-
-        #
-        # Some parameter settings need initial values
-        #
-        self.catalog_stringvar = tk.StringVar()
-        self.catalog_stringvar.set("AAVSO")
-        self.fitter_stringvar = tk.StringVar()
-        self.fitter_stringvar.set("TRF LS")
-        self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
-
-        row = 0
-
-        self.stretching_label = tk.Label(
-            self.settings_frame, text="Image Stretching:")
-        self.stretching_label.grid(row=row, column=0, sticky=tk.E)
-        self.stretching_stringvar = tk.StringVar()
-        self.stretching_stringvar.set("Asinh")
-        self.stretching_dropdown = tk.OptionMenu(
-            self.settings_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
-        self.stretching_dropdown.grid(row=row, column=1, sticky=tk.EW)
-        row += 1
-        self.stretching_stringvar.trace_add("write", self.display_image())
-
-        # Histogram stretch sliders
-        tk.Grid.columnconfigure(self.settings_frame, 1, weight=0)
-        self.stretch_label = tk.Label(
-            self.settings_frame, text="Histogram Stretch Low/High:")
-        self.stretch_label.grid(row=row, column=0, sticky=tk.W)
-        row += 1
-        self.stretch_low = tk.Scale(
-            self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_low)
-        self.stretch_low.grid(row=row, column=0, columnspan=2, sticky=tk.EW)
-        row += 1
-        self.stretch_high = tk.Scale(
-            self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
-        self.stretch_high.set(5)
-        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
 
         # Update layout to calculate dimensions
         self.window.update_idletasks()
@@ -4256,6 +4264,15 @@ class MyGUI:
         #
         # laumch_settings; pops up settings window and initializes all settings
         #
+        #
+        # But some parameter settings need initial values first
+        #
+        self.catalog_stringvar = tk.StringVar()
+        self.catalog_stringvar.set("AAVSO")
+        self.fitter_stringvar = tk.StringVar()
+        self.fitter_stringvar.set("TRF LS")
+        self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
+
         self.launch_settings()
 
         """
