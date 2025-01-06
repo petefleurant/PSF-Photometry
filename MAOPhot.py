@@ -781,7 +781,7 @@ class MyGUI:
                 self.selstars_plot[self.candidate_stars_index].imshow(self.candidate_stars[self.candidate_stars_index],
                      norm=norm, origin='lower', cmap='viridis')
 
-            self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+            self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
 
             plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
@@ -3190,7 +3190,7 @@ class MyGUI:
             self.console_msg("There are no more selected stars to show.");
         
         self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
-        #self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
         return
 
 ##############################################################################
@@ -3247,7 +3247,7 @@ class MyGUI:
             self.console_msg("There are no more selected stars to show.")
         
         self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
-        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index))
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
         return
 
 ############################################################
@@ -3902,15 +3902,28 @@ class MyGUI:
     ##########################################################################        
 
     def __init__(self):
+
+ 
         #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
-        self.program_name_note = "; using Photutils"
+        self.program_name_note = " using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
+
+        #Tell user it's coming
+        print(self.program_full_name + " is loading...please wait for GUI")
+
+        # Check if therre is a ./log dir
+        self.logging_dir = ".//log//"
+
+        # Check if directory exists
+        if not os.path.exists(self.logging_dir):
+            # Create the directory
+            os.makedirs(self.logging_dir)
 
         #set the logger up
         self.our_logger = logging.getLogger(self.program_name + self.program_version + ".log")
-        self.our_fh = logging.FileHandler(self.program_name + self.program_version + ".log", encoding='utf-8')
+        self.our_fh = logging.FileHandler(self.logging_dir + self.program_name + self.program_version + ".log", encoding='utf-8')
         self.our_logger.setLevel(logging.INFO)
 
         # create formatter and add it to the handlers
