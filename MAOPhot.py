@@ -4040,9 +4040,6 @@ class MyGUI:
         self.left_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Left half of the window
         self.left_frame.grid(row=0, column=0, sticky=tk.NSEW)
 
-        # Expand left_frame column that holds labels
-        tk.Grid.columnconfigure(self.left_frame, 0, weight=1)
-
         row = 0
 
         self.stretching_label = tk.Label(
@@ -4083,11 +4080,6 @@ class MyGUI:
 
         self.center_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Center of the window
         self.center_frame.grid(row=0, column=1, sticky=tk.NSEW)
-        # Expand center horizontally
-        tk.Grid.columnconfigure(self.window, 1, weight=1)
-        # Expand everything vertically
-        tk.Grid.rowconfigure(self.window, 0, weight=1)
-
 
         row = 0
         self.filename_label = tk.Label(self.center_frame, text="FITS:" + image_file)
@@ -4095,12 +4087,14 @@ class MyGUI:
 
         row += 1
         self.canvas = tk.Canvas(self.center_frame, bg='black')  # Main canvas
-        # Place main canvas, sticky to occupy entire
+
+        # Place main canvas, sticky to occupy entire cell
         self.canvas.grid(row=row, column=0, sticky=tk.NSEW)
-        # cell dimensions
-        # Expand main canvas column to fit whole window
+
+        # Expand main canvas column to fit whole  cell
         tk.Grid.columnconfigure(self.center_frame, 0, weight=1)
-        # Give the console the most weight
+
+        # Give the canvas the most weight, it will do all the stretching
         tk.Grid.rowconfigure(self.center_frame, 1, weight=1)
 
         self.canvas_scrollbar_V = tk.Scrollbar(
@@ -4264,7 +4258,25 @@ class MyGUI:
 
         self.right_subframe.grid(row=row, column=0, sticky=tk.N)#row=8
 
-        tk.Grid.rowconfigure(self.right_frame, row, weight=1)
+        # when shrinking, don't let rows with "Page" label, seperator, and buttons 
+        # get cut off
+        tk.Grid.rowconfigure(self.right_frame, 0, weight=1) 
+        tk.Grid.rowconfigure(self.right_frame, 1, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 2, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 3, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 4, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 5, weight=1)
+
+        #
+        # end of right (side) frame layout
+        #
+        #
+
+        # Assign weights so that only column 1 shrinks
+        tk.Grid.columnconfigure(self.window, 1, weight=1)
+
+        # Row 1 (console) expands the most
+        tk.Grid.rowconfigure(self.window, 0, weight=1)
 
         # Update layout to calculate dimensions
         self.window.update_idletasks()
