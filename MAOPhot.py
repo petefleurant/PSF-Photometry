@@ -1553,7 +1553,7 @@ class MyGUI:
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
         self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
-        self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
+        self.selstars_canvas.config(width=int(self.screen_width/5), height=int(self.screen_width/5))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.selstars_canvas.grid(row=5, column=0)   #was row0
 
@@ -4120,18 +4120,26 @@ class MyGUI:
         row += 1
         # Console below
         self.console = tk.Text(self.center_frame, #height=40,
-                               bg='black', fg='white', width=200)
+                               bg='black', fg='white', wrap='none')
         self.console.grid(sticky=tk.NSEW, row=row, column=0)
-        self.console_scrollbar = tk.Scrollbar(self.center_frame)
 
-        self.console_scrollbar.grid(sticky=tk.NSEW, row=row, column=1)
 
-        self.console.config(yscrollcommand=self.console_scrollbar.set)
-        self.console_scrollbar.config(command=self.console.yview)
+        self.console_scrollbar_V = tk.Scrollbar(
+            self.center_frame, orient=tk.VERTICAL)  # Main canvas scrollbars
+        self.console_scrollbar_V.grid(sticky=tk.NSEW, row=row, column=1)
+
+        row += 1
+        self.console_scrollbar_H = tk.Scrollbar(
+            self.center_frame, orient=tk.HORIZONTAL)
+        self.console_scrollbar_H.grid(row=row, column=0)
+        self.console_scrollbar_H.grid(sticky=tk.NSEW, row=row, column=0)
+        self.console_scrollbar_H.config(command=self.console.xview)
+        self.console_scrollbar_V.config(command=self.console.yview)
+        self.console.config(xscrollcommand=self.console_scrollbar_H.set)
+        self.console.config(yscrollcommand=self.console_scrollbar_V.set)
 
         self.console_msg(self.program_full_name)
         self.console_msg("Ready")
-
 
         #
         #
@@ -4147,7 +4155,7 @@ class MyGUI:
         # Place label
         row = 0
         self.plotname_label = tk.Label(self.right_frame, text="Plot:")
-        self.plotname_label.grid(row=row, column=0)  
+        self.plotname_label.grid(row=row, column=0)  #row=0
 
         row += 1
         self.fig_psf = Figure()
@@ -4158,15 +4166,15 @@ class MyGUI:
         self.psf_canvas = self.psf_plot_canvas.get_tk_widget()
         self.psf_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.psf_canvas.grid(row=row, column=0)
+        self.psf_canvas.grid(row=row, column=0) #row=1
         
         #
         #make another canvas for 2D plot of effectivePSF
         #
+        # Place label
         row += 1
         self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
-        self.ePSF_plotname_label.grid(row=row, column=0)  # Place label
-
+        self.ePSF_plotname_label.grid(row=row, column=0)  #row=2
 
         row += 1
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
@@ -4175,14 +4183,15 @@ class MyGUI:
         self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.ePSF_canvas.grid(row=row, column=0)
+        self.ePSF_canvas.grid(row=row, column=0) #row=3
 
         #
         #make another canvas for selected stars
         #
+        # Place label
         row += 1
         self.selstars_title_label = tk.Label(self.right_frame, text="Selected Stars")
-        self.selstars_title_label.grid(row=row, column=0)  # Place label
+        self.selstars_title_label.grid(row=row, column=0) #row=4
 
         self.nrows = 5
         self.ncols = 5
@@ -4200,20 +4209,24 @@ class MyGUI:
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         self.selstars_plot_canvas.draw()
         self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
-        self.selstars_canvas.config(width=int(self.screen_width/4), height=int(self.screen_width/4))
+
+        self.selstars_canvas.config(width=int(self.screen_width/5), height=int(self.screen_width/5))
+        self.selstars_canvas.config
+        
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.selstars_canvas.grid(row=row, column=0)
+        self.selstars_canvas.grid(row=row, column=0)#row=5
 
         #
         #make another canvas for selected stars
         #
+        # Place label
         row += 1
         self.selstars_page_num_label = tk.Label(self.right_frame, text="Page:")
-        self.selstars_page_num_label.grid(row=row, column=0)  # Place label
+        self.selstars_page_num_label.grid(row=row, column=0)  #row=6
 
         row += 1
         separator_reject_buttons = ttk.Separator(self.right_frame, orient='horizontal')
-        separator_reject_buttons.grid(row=row, pady=5, sticky=tk.EW)
+        separator_reject_buttons.grid(row=row, pady=5, sticky=tk.EW) #row=7
 
         row += 1 #only for right_subframe
         self.right_subframe = tk.Frame(self.right_frame)
@@ -4249,8 +4262,9 @@ class MyGUI:
         self.right_subframe_sub1.grid(row=0, column=1)
         self.right_subframe_sub2.grid(row=0, column=2, sticky=tk.E)
 
-        self.right_subframe.grid(row=row, column=0)
+        self.right_subframe.grid(row=row, column=0, sticky=tk.N)#row=8
 
+        tk.Grid.rowconfigure(self.right_frame, row, weight=1)
 
         # Update layout to calculate dimensions
         self.window.update_idletasks()
@@ -4258,9 +4272,7 @@ class MyGUI:
         # Maximize
         self.window.state('zoomed')
 
-        # Automatically adjust window size to fit contents
-        #self.window.geometry(f"{self.window.winfo_reqwidth()}x{self.window.winfo_reqheight()}")
-
+        
         #
         # laumch_settings; pops up settings window and initializes all settings
         #
