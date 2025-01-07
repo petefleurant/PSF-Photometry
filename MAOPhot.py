@@ -1038,7 +1038,7 @@ class MyGUI:
 
             working_image = NDData(data=clean_image)
 
-            if self.fwhm_entry.get().isnumeric():
+            if self.fwhm_entry.get().strip().isnumeric():
                 fwhm = float(self.fwhm_entry.get())
             else:
                 self.console_msg("FWHM not numeric, using 3")
@@ -1057,7 +1057,11 @@ class MyGUI:
                 iterations = 3
 
 
-            sharplo = float(self.sharplo_entry.get())
+            if self.sharplo_entry.get().strip().isnumeric():
+                sharplo = float(self.sharplo_entry.get())
+            else:
+                self.console_msg("Lower Bound for Sharpness not numeric, using 0")
+                sharplo = 0
 
             #bkg_filter_size = int(self.bkg_filter_size_entry.get())
             star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
@@ -1249,6 +1253,14 @@ class MyGUI:
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
 
             if os.path.isfile(self.image_file+".csv"):
+                fit_shape = self.fit_width_entry.get().strip()
+                if not fit_shape.isnumeric():
+                    self.console_msg("Cannot Plot Photometry with existing... ")
+                    self.console_msg("...\"" + self.image_file + ".csv\"")
+                    self.console_msg("...because fitting width is not recognized")
+                    self.console_msg("Ready")
+                    return
+
                 self.fit_shape = int(self.fit_width_entry.get())
                 self.results_tab_df = pd.read_csv(self.image_file + ".csv")
                 if "removed_from_ensemble" not in self.results_tab_df:
@@ -1721,6 +1733,7 @@ class MyGUI:
             if len(variable_star) == 0:
                 self.console_msg(
                     "Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'")
+                self.console_msg("Ready")
                 return
             
             # Ask for the B and V CSV files
@@ -2440,9 +2453,10 @@ class MyGUI:
                         "Catalog " + self.catalog_stringvar.get() + " does not list " + self.filter + " magnitudes.")
                     return
 
-            if len(comparison_stars) == 0:
+            if comparison_stars == None or len(comparison_stars) == 0:
                 self.console_msg(
                     "NO Comparison stars found in the field; make sure filter and chart Id is correct.")
+                self.console_msg("Ready")
                 return
             else:                
                 self.console_msg(
@@ -3412,6 +3426,7 @@ class MyGUI:
         if len(var_star_name) == 0:
             self.console_msg(
                 "'Object Name' must be specified; eg. 'W Her'")
+            self.console_msg("Ready")
             return
 
         check_star_name = self.object_kref_entry.get().strip()
@@ -3641,7 +3656,8 @@ class MyGUI:
         var_star_name = self.object_name_entry.get().strip()
         if len(var_star_name) == 0:
             self.console_msg(
-                "Object Name must be specified; eg. 'V1117 Her'")
+                "'Object Name' must be specified; eg. 'V1117 Her'")
+            self.console_msg("Ready")
             return
 
         """
