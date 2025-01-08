@@ -389,6 +389,7 @@ class MyGUI:
     tvi_entry = None
     tv_vi_entry = None
     ti_vi_entry = None
+    linearity_limit_entry = None
     catalog_stringvar = None
     vizier_catalog_entry = None
     fitter_stringvar = None
@@ -620,7 +621,8 @@ class MyGUI:
 # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
 # 
 # peaks_tbl: initial set of stars from find_peaks
-# prelim_stars_tbl: peaks_tbl minus the ones near the edge
+# non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
+# prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
 # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
 # stars_tbl: isolated_stars_tbl minus ones rejected by user
 #
@@ -656,17 +658,17 @@ class MyGUI:
             peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
 
             peaks_tbl_len = len(peaks_tbl)
-            self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
+            if peaks_tbl == None or len(peaks_tbl) == 0:
+                self.console_msg("No peaks found!!!")
+                self.console_msg("Ready")
+                return; 
 
-            #mask out peaks near the boundary; use twice the aperature entry
-            #
-            ## Calculate size of cutouts for EPSFBuilder
-            ## make it 2 times the aperture entry
-            ## 
-            _shape = self.fit_width_entry.get()
-            if not _shape:
-                self.console_msg("Fitting Width not set; Set Fitting Width and Height in Setting Window")
-                self.console_msg("ePSF: returning on error")
+            self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
+            
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
                 return; 
         
             #
@@ -675,32 +677,61 @@ class MyGUI:
             # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
             # 
             # peaks_tbl: initial set of stars from find_peaks
-            # prelim_stars_tbl: peaks_tbl minus the ones near the edge
+            # non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
+            # prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
             # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
             # stars_tbl: isolated_stars_tbl minus ones rejected by user
-            #
             # candidate_stars: extracted stars from stars_tbl
             #
 
+            # mask out peaks with peak_value > linearity_limit_entry
+            # test linearity_limit_entry 
+            linearity_limit = self.linearity_limit_entry.get().strip()
+            if not linearity_limit or not linearity_limit.isnumeric():
+                self.console_msg("linearity limit is not valid....setting to 60000")
+                linearity_limit = 60000
 
-            self.fit_shape = int(self.fit_width_entry.get()) # Eg., 5
+            x = peaks_tbl['x_peak']
+            y = peaks_tbl['y_peak']
+            peak = peaks_tbl['peak_value']
+            mask = peak < int(linearity_limit)
+            # prelim_stars_tbl are inbound stars (not to close to the edge)
+            non_saturated_stars_tbl = Table()
+            non_saturated_stars_tbl['x_peak'] = x[mask]  
+            non_saturated_stars_tbl['y_peak'] = y[mask]  
+            non_saturated_stars_tbl['peak_value'] = peak[mask]  
+
+            non_saturated_stars_tbl_len = len(non_saturated_stars_tbl)
+            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - non_saturated_stars_tbl_len) + " peaks over linearity limit.")
+            self.console_msg("ePSF: " + str(non_saturated_stars_tbl_len) + " peaks remain.")
+
+            # mask out peaks near the boundary; use twice the aperature entry
+            #
+            # test fit_width
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
+                return; 
+        
+            self.fit_shape = int(_shape) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 # Eg., 5
-            x = peaks_tbl['x_peak']  
-            y = peaks_tbl['y_peak']  
+            x = non_saturated_stars_tbl['x_peak']  
+            y = non_saturated_stars_tbl['y_peak']  
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
                     (y > hsize) & (y < (height -1 - hsize)))  
 
-            #prelim_stars_tbl are inbound stars (not to close to the edge)
+            # prelim_stars_tbl are inbound stars (not to close to the edge)
             prelim_stars_tbl = Table()
             prelim_stars_tbl['x'] = x[mask]  
             prelim_stars_tbl['y'] = y[mask]  
             prelim_stars_tbl['rejected'] = False #init
 
             prelim_stars_tbl_len = len(prelim_stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
+            self.console_msg("ePSF: found and removed " + str(non_saturated_stars_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
             self.console_msg("ePSF: " + str(prelim_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to 
@@ -1020,8 +1051,37 @@ class MyGUI:
             "Starting iterative PSF photometry...")
         if len(image_data) == 0:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            self.console_msg("Ready")
             return
         try:
+            # test fwhm
+            if self.fwhm_entry.get().strip().isnumeric():
+                fwhm = float(self.fwhm_entry.get())
+            else:
+                self.console_msg("FWHM not numeric, using 3")
+                fwhm = 3.0
+
+            # test star_detection_threshold_factor
+            if self.star_detection_threshold_factor_entry.get().isnumeric():
+                star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
+            else:
+                self.console_msg("IRAFStarFinder threshold factor not numeric, using 10")
+                star_detection_threshold_factor = 10
+
+            # test iterations
+            if self.photometry_iterations_entry.get().isnumeric():
+                iterations = int(self.photometry_iterations_entry.get())
+            else:
+                self.console_msg("Photometry Iteration not numeric, using 3")
+                iterations = 3
+
+            # test sharplo
+            if self.sharplo_entry.get().strip().isnumeric():
+                sharplo = float(self.sharplo_entry.get())
+            else:
+                self.console_msg("Lower Bound for Sharpness not numeric, using 0")
+                sharplo = 0
+
             """
             Determine the background using simple statistics
             ------------------------------------------------
@@ -1031,37 +1091,6 @@ class MyGUI:
             self.console_msg("Median sigma clipped level: " + str(round(median_val,2)))
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
-
-
-            # subtract background
-            clean_image = image_data - median_val
-
-            working_image = NDData(data=clean_image)
-
-            if self.fwhm_entry.get().strip().isnumeric():
-                fwhm = float(self.fwhm_entry.get())
-            else:
-                self.console_msg("FWHM not numeric, using 3")
-                fwhm = 3.0
-
-            if self.star_detection_threshold_factor_entry.get().isnumeric():
-                star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
-            else:
-                self.console_msg("IRAFStarFinder threshold factor not numeric, using 10")
-                star_detection_threshold_factor = 10
-
-            if self.photometry_iterations_entry.get().isnumeric():
-                iterations = int(self.photometry_iterations_entry.get())
-            else:
-                self.console_msg("Photometry Iteration not numeric, using 3")
-                iterations = 3
-
-
-            if self.sharplo_entry.get().strip().isnumeric():
-                sharplo = float(self.sharplo_entry.get())
-            else:
-                self.console_msg("Lower Bound for Sharpness not numeric, using 0")
-                sharplo = 0
 
             #bkg_filter_size = int(self.bkg_filter_size_entry.get())
             star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
@@ -1074,8 +1103,18 @@ class MyGUI:
                                         sharphi = 2.0
                                         )
             
+            # subtract background
+            clean_image = image_data - median_val
+
+            working_image = NDData(data=clean_image)
+
             # How many stars will it find?
             iraf_result = star_find.find_stars(clean_image)
+            if iraf_result == None or len(iraf_result) == 0:
+                self.console_msg("IRAFStarFinder did not find any stars, adjust lower bound of sharpness")
+                self.console_msg("Ready")
+                return
+
             self.console_msg("IRAFStarFinder number of stars found : "  + str(len(iraf_result)))
 
            
@@ -2453,7 +2492,7 @@ class MyGUI:
                         "Catalog " + self.catalog_stringvar.get() + " does not list " + self.filter + " magnitudes.")
                     return
 
-            if comparison_stars == None or len(comparison_stars) == 0:
+            if len(comparison_stars) == 0:
                 self.console_msg(
                     "NO Comparison stars found in the field; make sure filter and chart Id is correct.")
                 self.console_msg("Ready")
@@ -2991,6 +3030,13 @@ class MyGUI:
             self.ti_vi_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.ti_vi_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            linearity_limit_label = tk.Label(self.es_top, text="Linearity Limit (ADU):")
+            linearity_limit_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.linearity_limit_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.linearity_limit_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             separator_telescope_ = ttk.Separator(self.es_top, orient='horizontal')
@@ -3955,6 +4001,10 @@ class MyGUI:
         #
 
         self.window = tk.Tk()
+        
+        # Maximize
+        self.window.state('zoomed')
+
         self.screen_width = self.window.winfo_screenwidth()
         self.screen_height = self.window.winfo_screenheight()
 
@@ -4297,10 +4347,6 @@ class MyGUI:
         # Update layout to calculate dimensions
         self.window.update_idletasks()
 
-        # Maximize
-        self.window.state('zoomed')
-
-        
         #
         # laumch_settings; pops up settings window and initializes all settings
         #
@@ -4339,6 +4385,7 @@ class MyGUI:
             'tvi_entry': self.tvi_entry,
             'tv_vi_entry': self.tv_vi_entry,
             'ti_vi_entry': self.ti_vi_entry,
+            'linearity_limit_entry': self.linearity_limit_entry,
             'catalog_stringvar': self.catalog_stringvar,
             'vizier_catalog_entry': self.vizier_catalog_entry,
             'fitter_stringvar': self.fitter_stringvar,
