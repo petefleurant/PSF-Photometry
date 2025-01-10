@@ -376,7 +376,6 @@ class MyGUI:
     star_detection_threshold_factor_entry = None
     photometry_iterations_entry = None
     sharplo_entry = None
-    bkg_filter_size_entry = None
     matching_radius_entry = None
     aavso_obscode_entry = None
     telescope_entry = None
@@ -1092,7 +1091,6 @@ class MyGUI:
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            #bkg_filter_size = int(self.bkg_filter_size_entry.get())
             star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
                                         fwhm = fwhm,
                                         minsep_fwhm = 1,
@@ -1815,22 +1813,23 @@ class MyGUI:
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
-
-            if input_color == 'B-V':
-                tbv_coefficient = float(self.tbv_entry.get())
-                tb_bv_coefficient = float(self.tb_bv_entry.get())
-                tv_bv_coefficient = float(self.tv_bv_entry.get())
-            elif input_color == 'V-R':
-                tbv_coefficient = float(self.tvr_entry.get())
-                tb_bv_coefficient = float(self.tv_vr_entry.get())
-                tv_bv_coefficient = float(self.tr_vr_entry.get())
-            elif input_color == 'V-I':
-                tbv_coefficient = float(self.tvi_entry.get())
-                tb_bv_coefficient = float(self.tv_vi_entry.get())
-                tv_bv_coefficient = float(self.ti_vi_entry.get())
-            else:
-                raise Exception("two_color_photometry: unknown imput_color entered")
-
+            try:
+                if input_color == 'B-V':
+                    tbv_coefficient = float(self.tbv_entry.get())
+                    tb_bv_coefficient = float(self.tb_bv_entry.get())
+                    tv_bv_coefficient = float(self.tv_bv_entry.get())
+                elif input_color == 'V-R':
+                    tbv_coefficient = float(self.tvr_entry.get())
+                    tb_bv_coefficient = float(self.tv_vr_entry.get())
+                    tv_bv_coefficient = float(self.tr_vr_entry.get())
+                elif input_color == 'V-I':
+                    tbv_coefficient = float(self.tvi_entry.get())
+                    tb_bv_coefficient = float(self.tv_vi_entry.get())
+                    tv_bv_coefficient = float(self.ti_vi_entry.get())
+                else:
+                    raise Exception("two_color_photometry: unknown imput_color entered")
+            except:  
+                    raise Exception("Two Color Photometry: Missing or non-numeric transform coefficient(s)")
          
             """
                CHECK STAR Calculations
@@ -2911,14 +2910,6 @@ class MyGUI:
             self.sharplo_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
             self.sharplo_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-            row += 1
-
-            bkg_filter_size_label = tk.Label(
-                self.es_top, text="Background Median Filter, px:")
-            bkg_filter_size_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.bkg_filter_size_entry = tk.Entry(
-                self.es_top, width=settings_entry_width)
-            self.bkg_filter_size_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             matching_radius_label = tk.Label(
@@ -4372,7 +4363,6 @@ class MyGUI:
             'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
             'photometry_iterations_entry': self.photometry_iterations_entry,
             'sharplo_entry': self.sharplo_entry,
-            'bkg_filter_size_entry': self.bkg_filter_size_entry,
             'matching_radius_entry': self.matching_radius_entry,
             'aavso_obscode_entry': self.aavso_obscode_entry,
             'telescope_entry': self.telescope_entry,
