@@ -1,24 +1,33 @@
 4# -*- coding: utf-8 -*-
 """
-#     #    #    ####### ######                         
-##   ##   # #   #     # #     # #    #  ####  #####    
-# # # #  #   #  #     # #     # #    # #    #   #      
-#  #  # #     # #     # ######  ###### #    #   #      
-#     # ####### #     # #       #    # #    #   #      
-#     # #     # #     # #       #    # #    #   #      
-#     # #     # ####### #       #    #  ####    #      
-                                                       
-        #         ###         ###   
-       ##        #   #       #   #  
-      # #       #     #     #     # 
-        #       #     #     #     # 
-        #   ### #     # ### #     # 
-        #   ###  #   #  ###  #   #  
-      ##### ###   ###   ###   ###   
-                                    
+#     #    #    ####### ######                      
+##   ##   # #   #     # #     # #    #  ####  ##### 
+# # # #  #   #  #     # #     # #    # #    #   #   
+#  #  # #     # #     # ######  ###### #    #   #   
+#     # ####### #     # #       #    # #    #   #   
+#     # #     # #     # #       #    # #    #   #   
+#     # #     # ####### #       #    #  ####    #   
+                                                    
+  #         #         ###   
+ ##        ##        #   #  
+# #       # #       #     # 
+  #         #       #     # 
+  #   ###   #   ### #     # 
+  #   ###   #   ###  #   #  
+##### ### ##### ###   ###   
+                            
+Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
 
+    1.1.0 Revision
+    - minor cosmetic errors (invalid escape sequence \\A) 
+    - Updates required for Photutils 2.0
+    - check for blank Fitting Width
+    - Legacy LevMarLSQFitter no longer used replaced with TRFLSQFitter
+    - Removed execute_noniterative_psf_photometry 
+        (just set Photometry Iteration to 1 instead)
+    - IRAFStarFinder Threshold factor (*std) 
+    - added select stars 'Back' and 'Forward' buttons
 
-Welcome to MAOPhot 1.0.0, a PSF Photometry tool using Astropy and Photutils.psf
 
     1.0.0 Revision
     - get_comparison_stars enhancement; when more than one match found
@@ -189,22 +198,26 @@ objects in image field
     <maxim.usatov@bcsatellite.net> Refer to metropsf.pdf for license information.
 
     This research made use of Photutils, an Astropy package for
-    detection and photometry of astronomical sources (Bradley et al. 20XX).
+    detection and photometry of astronomical sources (Bradley et al. 2024).
 
 """
+#Tell user it's coming
+print("MAOPhot is loading...please wait for GUI")
+
 #
 # Constants
 #
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
+__our_padding__ = 10
 
 from ast import Assert
 from astropy.stats import SigmaClip
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.table import Table
-from astropy.modeling.fitting import LevMarLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
+from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
 from astropy.nddata import NDData
 from astropy.nddata import Cutout2D
 from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
@@ -219,13 +232,15 @@ from photutils.background import MADStdBackgroundRMS
 from photutils.background import LocalBackground
 from photutils.detection import find_peaks
 from photutils.psf import IterativePSFPhotometry, PSFPhotometry
-from photutils.psf import IntegratedGaussianPRF, SourceGrouper
+from photutils.psf import CircularGaussianPRF, SourceGrouper
 from photutils.detection import IRAFStarFinder
 from photutils.psf import extract_stars
 from photutils.psf import EPSFBuilder,EPSFFitter
 from tkinter import filedialog as fd
 from tkinter import ttk
 import tkinter as tk
+from tkinter import simpledialog
+from tkinter.messagebox import askokcancel
 from mpl_toolkits.mplot3d import Axes3D
 import math
 from matplotlib import cm
@@ -251,7 +266,6 @@ from time import gmtime, strftime
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
-
 
 # Photometry
 
@@ -338,7 +352,7 @@ class MyGUI:
     results_tab_df = pd.DataFrame()
     image_bkg_value = 0
     bkg2D = None #if fetched, the Background2D object
-    fit_shape = 21
+    fit_shape = 5
     error_raised = False
     histogram_slider_low = 0
     histogram_slider_high = 5
@@ -350,17 +364,18 @@ class MyGUI:
     photometry_circles = {}
     valid_parameter_list = {}
     ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
+    ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[], "stale":[]})
     epsf_model = None
-    stars_tbl = Table()
+    stars_tbl = None
+    isolated_stars_tbl = None
 
     # Parameter declaration  and init 
     fit_width_entry = None
     max_ensemble_magnitude_entry = None
     fwhm_entry = None
-    star_detection_threshold_entry = None
+    star_detection_threshold_factor_entry = None
     photometry_iterations_entry = None
     sharplo_entry = None
-    bkg_filter_size_entry = None
     matching_radius_entry = None
     aavso_obscode_entry = None
     telescope_entry = None
@@ -373,6 +388,7 @@ class MyGUI:
     tvi_entry = None
     tv_vi_entry = None
     ti_vi_entry = None
+    linearity_limit_entry = None
     catalog_stringvar = None
     vizier_catalog_entry = None
     fitter_stringvar = None
@@ -383,10 +399,18 @@ class MyGUI:
     object_name_entry = None
     object_notes_entry = None
     display_all_objects = None
+    candidate_stars = None
+
 
     #
     # The TopLoevel window containing the settings
     es_top = None
+
+#######################################################################################
+#
+# console_msg
+#
+#######################################################################################
 
     def console_msg(self, MAOPhot_message, level=logging.INFO):
         # add a time stamp
@@ -395,14 +419,13 @@ class MyGUI:
         self.console.insert(tk.END, message+"\n")
         self.console.see(tk.END)
         self.window.update_idletasks()
-        
         self.our_logger.log(level=level, msg=MAOPhot_message)
         
-        """
-        file = open("MAOPhotpsf.log", "a+", encoding="utf-8")
-        file.write(str(message) + "\n")
-        file.close()
-        """
+#######################################################################################
+#
+# display_image
+#
+#######################################################################################
 
     def display_image(self):
         if len(image_data) > 0:
@@ -415,10 +438,16 @@ class MyGUI:
             self.image = ImageTk.PhotoImage(generated_image)
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
-            self.canvas.bind("<Button-1>", self.mouse_click)
+            self.canvas.bind("<Button-1>", self.mouse_main_canvas_click)
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
             self.plot_photometry()
+
+#######################################################################################
+#
+# load_FITS
+#
+#######################################################################################
 
     def load_FITS(self, image_file):
         global image_figure
@@ -503,8 +532,7 @@ class MyGUI:
                     self.date_obs_entry.insert(0, str(self.jd))
 
                 self.image_bkg_value = np.median(image_data)
-                self.console_msg("Median background level, ADU: " 
-                    + str(self.image_bkg_value))
+                self.console_msg("Median background level, ADU: " + str(round(self.image_bkg_value, 2)))
                 self.console_msg("Ready")
 
                 
@@ -532,6 +560,7 @@ class MyGUI:
                 self.display_image()
                 self.clear_psf_label()
                 self.clear_epsf_plot()
+                self.clear_selstars()
                 
             except Exception as e:
                 self.error_raised = True
@@ -557,6 +586,8 @@ class MyGUI:
                 fits.writeto(file_name.name, image_data,
                              header, overwrite=True)
                 self.console_msg("Saved.")
+                self.console_msg("Ready")
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -577,9 +608,33 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)   +" "+str(e), level=logging.ERROR)
             
-    def create_ePSF(self):
+##########################################################################################
+#
+# find_peaks
+#
+# Find peaks in loaded image above threshold (median + (std*10))
+#
+#
+# Important table definitions:
+#
+# peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
+# 
+# peaks_tbl: initial set of stars from find_peaks
+# non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
+# prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
+# isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
+# stars_tbl: isolated_stars_tbl minus ones rejected by user
+#
+#
+# candidate_stars: Extracted stars from stars_tbl (cutouts from image). These
+#                  are plotted in the selstars pages
+#
+#
+##########################################################################################
+
+    def find_peaks(self):
         global header
-        self.console_msg("Initiating Effective PSF building...")
+        self.console_msg("Starting find peaks...")
 
         #make sure an image is loaded
         if len(image_data) == 0:
@@ -587,56 +642,95 @@ class MyGUI:
             return
 
         try:
-            # Find local peaks in an image that are above a specified 
-            # threshold value. Threshold determined 
-            # 
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
+            """
+            Determine the background using simple statistics
+            ------------------------------------------------
+            """
+            # just for reference, lets looks at these stats first
+            mean, median, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(median,2)))
+            self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
+            self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            self.console_msg("Median Background2D level: " 
-                + str(self.bkg2D.background_median))
+            # now ready to find peaks
 
-            peaks_tbl = find_peaks(image_data, threshold=self.bkg2D.background_median * 3)
+            peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
 
             peaks_tbl_len = len(peaks_tbl)
-            self.console_msg("ePSF: found " + str(peaks_tbl_len) + " peaks.")
+            if peaks_tbl == None or len(peaks_tbl) == 0:
+                self.console_msg("No peaks found!!!")
+                self.console_msg("Ready")
+                return; 
 
-            #mask out peaks near the boundary; use twice the aperature entry
+            self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
+            
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
+                return; 
+        
             #
-            ##Calculate size of cutouts for EPSFBuilder
-            ## make it 10 times the aperture entry
-            ##same size used in display_ePSF_samples
-            self.fit_shape = int(self.fit_width_entry.get())
-            size = 10*self.fit_shape + 1
-            hsize = (size - 1)/2
-            x = peaks_tbl['x_peak']  
-            y = peaks_tbl['y_peak']  
+            # Important table definitions
+            #
+            # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
+            # 
+            # peaks_tbl: initial set of stars from find_peaks
+            # non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
+            # prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
+            # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
+            # stars_tbl: isolated_stars_tbl minus ones rejected by user
+            # candidate_stars: extracted stars from stars_tbl
+            #
+
+            # mask out peaks with peak_value > linearity_limit_entry
+            # test linearity_limit_entry 
+            linearity_limit = self.linearity_limit_entry.get().strip()
+            if not linearity_limit or not linearity_limit.isnumeric():
+                self.console_msg("linearity limit is not valid....setting to 60000")
+                linearity_limit = 60000
+
+            x = peaks_tbl['x_peak']
+            y = peaks_tbl['y_peak']
+            peak = peaks_tbl['peak_value']
+            mask = peak < int(linearity_limit)
+            # prelim_stars_tbl are inbound stars (not to close to the edge)
+            non_saturated_stars_tbl = Table()
+            non_saturated_stars_tbl['x_peak'] = x[mask]  
+            non_saturated_stars_tbl['y_peak'] = y[mask]  
+            non_saturated_stars_tbl['peak_value'] = peak[mask]  
+
+            non_saturated_stars_tbl_len = len(non_saturated_stars_tbl)
+            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - non_saturated_stars_tbl_len) + " peaks over linearity limit.")
+            self.console_msg("ePSF: " + str(non_saturated_stars_tbl_len) + " peaks remain.")
+
+            # mask out peaks near the boundary; use twice the aperature entry
+            #
+            # test fit_width
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
+                return; 
+        
+            self.fit_shape = int(_shape) # Eg., 5
+            size = 2*self.fit_shape + 1 # Eg., 11
+            hsize = (size - 1)/2 # Eg., 5
+            x = non_saturated_stars_tbl['x_peak']  
+            y = non_saturated_stars_tbl['y_peak']  
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
                     (y > hsize) & (y < (height -1 - hsize)))  
 
-            #prelim_stars_tbl are inbound stars (not to close to the edge)
+            # prelim_stars_tbl are inbound stars (not to close to the edge)
             prelim_stars_tbl = Table()
             prelim_stars_tbl['x'] = x[mask]  
             prelim_stars_tbl['y'] = y[mask]  
             prelim_stars_tbl['rejected'] = False #init
 
             prelim_stars_tbl_len = len(prelim_stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
+            self.console_msg("ePSF: found and removed " + str(non_saturated_stars_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
             self.console_msg("ePSF: " + str(prelim_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to 
@@ -660,30 +754,34 @@ class MyGUI:
 
             mask = reject_this == False  # only keep ones we don't reject
 
-            isolated_stars_tbl = Table()
-            isolated_stars_tbl['x'] = x[mask]  
-            isolated_stars_tbl['y'] = y[mask]  
-            isolated_stars_tbl['rejected'] = False #init
+            self.isolated_stars_tbl = Table()
+            self.isolated_stars_tbl['x'] = x[mask]  
+            self.isolated_stars_tbl['y'] = y[mask]  
+            self.isolated_stars_tbl['rejected'] = False #init
 
-            isolated_stars_tbl_len = len(isolated_stars_tbl)
+            isolated_stars_tbl_len = len(self.isolated_stars_tbl)
             self.console_msg("ePSF: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
             self.console_msg("ePSF: " + str(isolated_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to a 
             # coordinate in ePSF_rejection_list
-            for psf_x, psf_y, psf_reject in isolated_stars_tbl:
-                isolated_stars_tbl.add_index('x')
+            # The 'x' and 'y' columns each do not necessariy contain unique values.
+            # But the combination of multiple columns results in unique rows.
+            self.isolated_stars_tbl.add_index(['x', 'y'])
+            for isolated_index, isolated_row in enumerate(self.isolated_stars_tbl):
+                psf_x = isolated_row['x']
+                psf_y = isolated_row['y']
                 for index, row in self.ePSF_rejection_list.iterrows():
                     reject_x = row['x']
                     reject_y = row['y']
                     if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
                         #user does not want this one
-                        isolated_stars_tbl.loc[psf_x]['rejected'] = True
+                        self.isolated_stars_tbl[isolated_index]['rejected'] = True
                         break
     
-            x = isolated_stars_tbl['x']  
-            y = isolated_stars_tbl['y']  
-            reject_this = isolated_stars_tbl['rejected']
+            x = self.isolated_stars_tbl['x']  
+            y = self.isolated_stars_tbl['y']  
+            reject_this = self.isolated_stars_tbl['rejected']
 
             mask = reject_this == False  # only keep ones we don't reject
 
@@ -695,38 +793,150 @@ class MyGUI:
             self.console_msg("ePSF: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
             self.console_msg("ePSF: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
 
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
+            self.clear_selstars()
+
+            # subtract background
+            mean_val, median_val, std_val = sigma_clipped_stats(image_data, sigma=2.0)
+            clean_image = image_data - median_val
 
             working_image = NDData(data=clean_image)
 
-            candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
-            epsf_builder = EPSFBuilder(oversampling=2, fitter=EPSFFitter(), maxiters=50)
-            self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            self.epsf_model, fitted_stars = epsf_builder(candidate_stars)  
+            #
+            # 1 set of extracted stars is needed:  
+            #  1) candidate_stars that only include non-rejected stars for the EPSFBuiler
+            #
 
-            model_length = len(self.epsf_model.data)
-            x = np.arange(0, model_length, 1)
-            y = np.arange(0, model_length, 1)
-            x, y = np.meshgrid(x, y)
+            self.candidate_stars = extract_stars(working_image, self.stars_tbl, size=size)  
+            self.candidate_stars_index = 0
+            
+            for self.candidate_stars_index in range(min(len(self.candidate_stars),(self.nrows*self.ncols))):
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[self.candidate_stars_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                     norm=norm, origin='lower', cmap='viridis')
 
-            #plot the psf model
-            self.psf_plot.clear()
-            self.psf_plot.plot_surface(x, y, self.epsf_model.data, cmap=cm.jet)
-            self.psf_plot_canvas.draw()
+            self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
 
-            #plot ePSF samples
-            self.clear_epsf_plot()
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+            self.selstars_plot_canvas.draw()
+            self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
+
+            # display the rejected ones if any (with red circle) on main canvas
+            self.ePSF_samples_plotted = True
+            self.display_image()
+
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            self.update_selstars_page_label(page_num=1)
+
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+
+##########################################################################################
+#
+# update_selstars_page_label
+#
+#
+##########################################################################################
+
+    def update_selstars_page_label(self, page_num):
+        total_number_pages = math.ceil(len(self.candidate_stars)/(self.nrows*self.ncols))
+        self.selstars_page_num_label['text'] = "Page: " + str(page_num) + " of " + str(total_number_pages)
+        #Enable Forward and Back buttons accordingly
+        # if on the first page, diable back
+        if page_num == 1:
+            self.back_selstars_button.config(state=tk.DISABLED)
+        else:
+            self.back_selstars_button.config(state=tk.NORMAL)
+
+        # if on the last page disable Forward
+        if page_num == total_number_pages:
+            self.forward_selstars_button.config(state=tk.DISABLED)
+        else:
+            self.forward_selstars_button.config(state=tk.NORMAL)
+
+        return
+
+
+##########################################################################################
+#
+# plot_psf_model
+#
+# Plot model 
+#
+#
+##########################################################################################
+
+    def plot_psf_model(self, data, plotting_gaussian=False):
+
+        model_length = len(data)
+        x = np.arange(0, model_length, 1)
+        y = np.arange(0, model_length, 1)
+        x, y = np.meshgrid(x, y)
+
+        #plot the psf model
+        self.psf_plot.clear()
+        self.psf_plot.plot_surface(x, y, data, cmap=cm.jet)
+        self.psf_plot_canvas.draw()
+
+        #plot ePSF samples
+        self.clear_epsf_plot()
+        if not plotting_gaussian:
             self.display_ePSF_samples()
 
-            norm = simple_norm(self.epsf_model.data, 'log', percent=99.)
-            im = self.ePSF_plot.imshow(self.epsf_model.data, norm=norm, origin='lower', cmap='viridis')
+        norm = simple_norm(data, 'log', percent=99.)
+        im = self.ePSF_plot.imshow(data, norm=norm, origin='lower', cmap='viridis')
+        if plotting_gaussian:
+            self.ePSF_plot.set_title("Circular Gaussian")
+        else:
             self.ePSF_plot.set_title("Effective PSF")
-            self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
 
-            self.ePSF_plot_canvas.draw()
+        self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
 
+        self.ePSF_plot_canvas.draw()
+
+        return
+
+        
+
+
+##########################################################################################
+#
+# create_ePSF
+#
+# Create and Effective PSF (Point Spread Function from peaks)
+#
+#
+##########################################################################################
+
+    def create_ePSF(self):
+        global header
+        self.console_msg("Starting Effective PSF building...")
+
+        #make sure an image is loaded
+        if len(image_data) == 0:
+            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            return
+
+        if self.candidate_stars == None:
+            self.console_msg("Cannot proceed; Run Find Peaks first; use File->Photometry->Find Peaks")
+            return
+
+        try:
+            self.console_msg("Starting ePSF Builder...(check console progress bar)")
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=True) 
+
+            # when calling epsf_builder, maxiters=50 causes following exception:
+            # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+            self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
+
+            self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
+
+            self.plot_psf_model(self.epsf_model.data)
+    
             self.ePSF_samples_plotted = True
 
             self.console_msg("Ready")
@@ -736,18 +946,48 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
 
+
+
+
+##########################################################################################
+#
+# clear_ePSF
+#
+# Clear ePSF Plot and selstars
+#
+#
+##########################################################################################
+
     def clear_ePSF(self):
         global header
         self.console_msg("Clearing ePSF model, Rejection List, plot...")
         #drop all the rows but keep the 'x' and 'y' column
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
         self.ePSF_rejection_list.drop(self.ePSF_rejection_list.index, inplace=True)
+        self.candidate_stars = None
         self.epsf_model = None #reset
-        self.stars_tbl = Table()
+        self.stars_tbl = None
+        self.isolated_stars_tbl = None
         self.clear_psf_label()
         self.clear_epsf_plot()
+        self.clear_selstars()
         self.ePSF_samples_plotted = False
         self.display_image()
         self.console_msg("Ready")
+        return
+
+##########################################################################################
+#
+# clear_selstars
+#
+# Clear selstars and reset label
+#
+#
+##########################################################################################
+
+    def clear_selstars(self):
+        self.clear_selstars_plot()
+        self.selstars_page_num_label['text'] = "Page:"
         return
 
     def load_ePSF_rejection_list(self):
@@ -804,185 +1044,54 @@ class MyGUI:
 
         return
 
-    def execute_noniterative_psf_photometry(self):
-        global header
-        self.console_msg(
-            "Initiating Non-iterative PSF photometry...")
-        if len(image_data) == 0:
-            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
-            return
-        try:
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
-            self.fit_shape = int(self.fit_width_entry.get())
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            #Backgound2D used because background may vary over FOV
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
-
-            self.console_msg("Median Background2D level: "
-                             + str(self.bkg2D.background_median))
-
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
-
-            working_image = NDData(data=clean_image)
-
-            fwhm = float(self.fwhm_entry.get())
-            star_detection_threshold = float(
-                self.star_detection_threshold_entry.get())
-
-            sharplo = float(self.sharplo_entry.get())
-
-            star_find = IRAFStarFinder(threshold = star_detection_threshold,
-                                        fwhm = fwhm,
-                                        #minsep_fwhm = 1,
-                                        exclude_border = True,
-                                        roundhi = 3.0,
-                                        roundlo = -5.0,
-                                        sharplo = sharplo,
-                                        sharphi = 2.0
-                                        )
-
-           
-            # the 2.5 in the following is from 
-            # https://photutils.readthedocs.io/en/stable/grouping.html#getting-started
-            #grouper = SourceGrouper(2.5 * fwhm)
-
-            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
-
-            if self.fitter_stringvar.get() == "Sequential LS Programming":
-                self.console_msg(
-                    "Setting fitter to Sequential Least Squares Programming")
-                selected_fitter = SLSQPLSQFitter()
-
-            elif self.fitter_stringvar.get() == "Simplex LS":
-                self.console_msg(
-                    "Setting fitter to Simplex and Least Squares Statistic")
-                selected_fitter = SimplexLSQFitter()
-
-            else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
-                self.console_msg("Setting fitter to Levenberg-Marquardt")
-                selected_fitter = LevMarLSQFitter()
-
-            if self.epsf_model != None:
-                self.console_msg("Using derived Effective PSF Model")
-                psf_model = self.epsf_model
-            else:
-                #Use Gausian
-                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
-                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
-                                 "; fwhm = "+format(fwhm, '.1f')+\
-                                 "; fitting width/height = "+str(self.fit_shape))
-                psf_model = IntegratedGaussianPRF(sigma)
-
-
-            photometry = PSFPhotometry(
-                                        psf_model = psf_model,
-                                        fit_shape = self.fit_shape,
-                                        finder = star_find,
-                                        grouper = None,
-                                        fitter = selected_fitter,
-                                        fitter_maxiters = 100,
-                                        localbkg_estimator = local_bkg,
-                                        aperture_radius=1.5*fwhm,
-                                        progress_bar=True
-                                        )
-            
-
-
-            self.console_msg("Starting Photometry...(check console progress bar)")
-            result_tab = photometry(data=working_image)
-
-            if 'message' in selected_fitter.fit_info:
-                self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
-            else:
-                self.console_msg("Done. PSF fitter; no message available")
-
-            self.results_tab_df = result_tab[result_tab.colnames[0:14]].to_pandas()  # only need first 15 columns
-            self.results_tab_df["removed_from_ensemble"] = False
-            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            if len(self.airmass_entry.get()) > 0:
-                self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
-            else:
-                self.results_tab_df["AMASS"] = "na"
-                
-
-
-            # Calculate instrumental magnitudes
-            # Following added for "True" inst mag used in AAVSO report
-            image_exposure_time = float(self.exposure_entry.get())
-            self.results_tab_df["inst_mag"] = -2.5 * np.log10(self.results_tab_df["flux_fit"] / image_exposure_time)
-
-            #record for later 
-            self.results_tab_df["exposure"] = image_exposure_time
-
-            self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-            self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
-            self.plot_photometry()
-
-        except Exception as e:
-            self.error_raised = True
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
-
     def execute_iterative_psf_photometry(self):
         global header
         self.console_msg(
-            "Initiating iterative PSF photometry...")
+            "Starting iterative PSF photometry...")
         if len(image_data) == 0:
             self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            self.console_msg("Ready")
             return
         try:
-            #determine the background, it will be subtrated from image_data, later
-            bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            #make sure this is not an even number 
-            if bkg_filter_size % 2 == 0:
-                bkg_filter_size += 1
+            # test fwhm
+            if self.fwhm_entry.get().strip().isnumeric():
+                fwhm = float(self.fwhm_entry.get())
+            else:
+                self.console_msg("FWHM not numeric, using 3")
+                fwhm = 3.0
 
-            self.fit_shape = int(self.fit_width_entry.get())
-            sigma_clip = SigmaClip(sigma=3.0)
-            bkg_estimator = MedianBackground()
-            self.console_msg("Estimating background...")
-            #Backgound2D used because background may vary over FOV
-            self.bkg2D = Background2D(
-                                image_data, 
-                                box_size=(self.fit_shape * 10, self.fit_shape * 10),
-                                filter_size=(bkg_filter_size, bkg_filter_size), 
-                                edge_method='crop',
-                                sigma_clip=sigma_clip,
-                                bkg_estimator=bkg_estimator)
+            # test star_detection_threshold_factor
+            if self.star_detection_threshold_factor_entry.get().isnumeric():
+                star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
+            else:
+                self.console_msg("IRAFStarFinder threshold factor not numeric, using 10")
+                star_detection_threshold_factor = 10
 
-            self.console_msg("Median Background2D level: "
-                             + str(self.bkg2D.background_median))
+            # test iterations
+            if self.photometry_iterations_entry.get().isnumeric():
+                iterations = int(self.photometry_iterations_entry.get())
+            else:
+                self.console_msg("Photometry Iteration not numeric, using 3")
+                iterations = 3
 
-            # Subtract background from image_data
-            # bkg.background is a 2D ndarray of background image
-            clean_image = image_data-self.bkg2D.background
+            # test sharplo
+            if self.sharplo_entry.get().strip().isnumeric():
+                sharplo = float(self.sharplo_entry.get())
+            else:
+                self.console_msg("Lower Bound for Sharpness not numeric, using 0")
+                sharplo = 0
 
-            working_image = NDData(data=clean_image)
+            """
+            Determine the background using simple statistics
+            ------------------------------------------------
+            """
+            # just for reference, lets looks at these stats first
+            mean, median_val, std = sigma_clipped_stats(image_data, sigma=2.0)
+            self.console_msg("Median sigma clipped level: " + str(round(median_val,2)))
+            self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
+            self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            fwhm = float(self.fwhm_entry.get())
-            star_detection_threshold = float(
-                self.star_detection_threshold_entry.get())
-
-            iterations = int(self.photometry_iterations_entry.get()) if self.photometry_iterations_entry.get().isnumeric() else None
-
-            sharplo = float(self.sharplo_entry.get())
-
-            #bkg_filter_size = int(self.bkg_filter_size_entry.get())
-            star_find = IRAFStarFinder(threshold = star_detection_threshold,
+            star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
                                         fwhm = fwhm,
                                         minsep_fwhm = 1,
                                         exclude_border = True,
@@ -991,6 +1100,21 @@ class MyGUI:
                                         sharplo = sharplo,
                                         sharphi = 2.0
                                         )
+            
+            # subtract background
+            clean_image = image_data - median_val
+
+            working_image = NDData(data=clean_image)
+
+            # How many stars will it find?
+            iraf_result = star_find.find_stars(clean_image)
+            if iraf_result == None or len(iraf_result) == 0:
+                self.console_msg("IRAFStarFinder did not find any stars, adjust lower bound of sharpness")
+                self.console_msg("Ready")
+                return
+
+            self.console_msg("IRAFStarFinder number of stars found : "  + str(len(iraf_result)))
+
            
             local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
 
@@ -1004,39 +1128,53 @@ class MyGUI:
                     "Setting fitter to Simplex and Least Squares Statistic")
                 selected_fitter = SimplexLSQFitter()
 
-            else: # self.fitter_stringvar.get() == "Levenberg-Marquardt":
-                self.console_msg("Setting fitter to Levenberg-Marquardt")
-                selected_fitter = LevMarLSQFitter(calc_uncertainties=True)
+            #default is TRF LS
+            else:
+                self.console_msg(
+                    "Setting fitter to TRF and Least Squares Statistic")
+                selected_fitter = TRFLSQFitter()
 
             if self.epsf_model != None:
                 self.console_msg("Using derived Effective PSF Model")
                 psf_model = self.epsf_model
             else:
-                #Use Gausian
-                sigma = 2.00 * fwhm / gaussian_sigma_to_fwhm 
-                self.console_msg("Using Gaussian PRF for model; sigma = "+format(sigma, '.3f')+\
-                                 "; fwhm = "+format(fwhm, '.1f')+\
-                                 "; fitting width/height = "+str(self.fit_shape))
-                psf_model = IntegratedGaussianPRF(sigma)
+                #Ask if using Gausian OK
+                result = askokcancel(title="Use Circular Gaussian?", message="Is it OK to use Circular Gaussian for model?")
+
+                if result==False:
+                    self.console_msg("User canceling iterative PSF photometry")
+                    return
+
+                """
+                    Create a PSF image model from a Circular Gaussian PSF.
+                    In this case, we use the CircularGaussianPRF model 
+                    directly as a PSF model
+                """
+
+                self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
+                psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
+                yy, xx = np.mgrid[:45, :45]
+                psf_data = psf_model(xx, yy)
+                self.plot_psf_model(psf_data, plotting_gaussian=True)
+
  
             photometry = IterativePSFPhotometry(
                                                 psf_model = psf_model,
                                                 fit_shape = self.fit_shape,
                                                 finder = star_find,
-                                                grouper = None, #SourceGrouper(min_separation=50),
+                                                grouper = None, #mode = 'new'; or SourceGrouper(min_separation=50),
                                                 fitter = selected_fitter,
                                                 fitter_maxiters = 10,
                                                 maxiters = iterations,
                                                 localbkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
-                                                sub_shape=None, #defaults to fit_shape
+                                                sub_shape=None, #defaults to model bounding box
                                                 progress_bar=True
                                                 )
 
             sys.setrecursionlimit(10000)
             self.console_msg("Starting Photometry...(check console progress bar)")
             result_tab = photometry(data=working_image)
-            self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
 
             if 'message' in selected_fitter.fit_info:
                 self.console_msg("Done. PSF fitter message(s): " + str(selected_fitter.fit_info['message']))
@@ -1044,6 +1182,13 @@ class MyGUI:
                 self.console_msg("Done. PSF fitter; no message available")
 
             #get the residuals
+            """
+            # Needs to be changed: psf_shape is now an optional keyword 
+            # in the make_model_image and make_residual_image methods 
+            # of PSFPhotometry and IterativePSFPhotometry. 
+            # The value defaults to using the model bounding box to 
+            # define the shape and is required only if the PSF model 
+            # does not have a bounding box attribute.
             residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
 
             #append current time to residual filename
@@ -1051,6 +1196,7 @@ class MyGUI:
             residual_file_name = file_base_name_parts[0] + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fits"
             fits.writeto(residual_file_name, residual_image, header, overwrite=True)
             self.console_msg("Residuals saved to: " + residual_file_name)
+            """
 
             self.results_tab_df = result_tab.to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
@@ -1095,9 +1241,9 @@ class MyGUI:
         try:
             """
              Circle color
-             white: stars that will be used in the ePSF Generation (stars_tbl)
-             red: stars that rejected by user and in the stars_tbl (ePSF_rejection_list)
-             yellow: stars in a loaded rejection list file that is not presently in the stars_tbl, they 
+             white: stars that from find_peak and not rejected for ePSF Generation (isolated_stars_tbl)
+             red: stars that rejected by user and in the isolated_stars_tbl (ePSF_rejection_list)
+             yellow: stars in a loaded rejection list file that is not in the isolated_stars_tbl, they 
              have already been removed (ePSF_rejection_list)
              
             """
@@ -1106,11 +1252,11 @@ class MyGUI:
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
 
-            if len(self.stars_tbl) != 0:
+            if len(self.isolated_stars_tbl) != 0:
                 self.console_msg("Displaying ePSF samples; reject list size: " + str(len(self.ePSF_rejection_list)))
 
                 #display the non-rejected stars as white, and rejected as red circles
-                for psf_x, psf_y in self.stars_tbl.iterrows('x', 'y'):
+                for psf_x, psf_y in self.isolated_stars_tbl.iterrows('x', 'y'):
                     color = 'white' # it is a white circle until a reject match is found
                     for index, row in self.ePSF_rejection_list.iterrows():
                         reject_x = row['x']
@@ -1144,6 +1290,14 @@ class MyGUI:
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
 
             if os.path.isfile(self.image_file+".csv"):
+                fit_shape = self.fit_width_entry.get().strip()
+                if not fit_shape.isnumeric():
+                    self.console_msg("Cannot Plot Photometry with existing... ")
+                    self.console_msg("...\"" + self.image_file + ".csv\"")
+                    self.console_msg("...because fitting width is not recognized")
+                    self.console_msg("Ready")
+                    return
+
                 self.fit_shape = int(self.fit_width_entry.get())
                 self.results_tab_df = pd.read_csv(self.image_file + ".csv")
                 if "removed_from_ensemble" not in self.results_tab_df:
@@ -1229,15 +1383,94 @@ class MyGUI:
         y_criterion = self.results_tab_df['y_fit'] > (y - r)
         matched_objects = matched_objects[y_criterion]
         if len(matched_objects) > 0:
-            return(matched_objects.iloc[0]["x_fit"],
+            return(True,  #indicate match
+                   matched_objects.iloc[0]["x_fit"],
                    matched_objects.iloc[0]["y_fit"],
                    matched_objects.iloc[0]["flux_fit"],
                    matched_objects.iloc[0]["inst_mag"]
                    )
         else:
-            return(0, 0, 0, 0, 0, 0) #, 0, 0, 0)
+            return (False, # indicate no match
+                     0, 0, 0, 0)
+        
+    ###############################################################
+    #
+    #
+    #  mouse_selstars_canvas_click
+    #
+    #  callback when button press down in selstar caavas
+    #  
+    #  Place "Reject" title on Ax to indicate that this star to be rejected
+    #  It can get added to the ePSF_rejection_list by the Submit button
+    #
+    #  "Reject" markers persist when going forward or backward
+    #  by reading the ePSF_pending_rejection_list
+    #
+    #  If Ax already has a "Reject" then remove it
+    #
+    #
+    ###############################################################
+   
+    def mouse_selstars_canvas_click(self,event):
+        myax = event.inaxes
+        if myax == None:
+            return
+        selected_index = myax.figure.axes.index(myax)
+        self.console_msg("Ax number: " + str(selected_index))
 
-    def mouse_click(self, event):
+        # Calculate index into self.candidate_stars that was just mouse clicked.
+        # self.candidate_stars_index is pointing to the last displayed candidate in the displayed page.
+        # Rewind the pointer to the first one in the page, then add selected_index to it.
+        # Just subtracting (candidate_stars_index % (self.ncols*self.nrows)) from candidate_stars_index
+        # will get the pointer to the first one in the page.
+        #
+        # First one in the page:
+        candidate_stars_selected_index = self.candidate_stars_index - (self.candidate_stars_index % (self.ncols*self.nrows))
+        # selected one with mouse click:
+        candidate_stars_selected_index += selected_index
+        norm = simple_norm(self.candidate_stars[candidate_stars_selected_index], 'log', percent=99.0)
+        self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
+                     norm=norm, origin='lower', cmap='viridis')
+        #Check if "Reject" is already there. If it is then remove it from Ax and removed from ePSF_pending_rejection_list
+        (cand_x, cand_y) = self.candidate_stars[candidate_stars_selected_index].origin
+        if not ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+            # No reject, 
+            # Add it in 
+            self.selstars_plot[selected_index].text(x=0,y=5, s="Reject")
+            #update ePSF_pending_rejection_list
+            self.ePSF_pending_rejection_list.loc[len(self.ePSF_pending_rejection_list.index)] = [cand_x, cand_y, True]
+        else:
+            # "Reject" already in; erase it
+            self.selstars_plot[selected_index].clear()
+            # remove from ePSF_pending_rejection_list (using mask)
+            self.ePSF_pending_rejection_list = \
+                self.ePSF_pending_rejection_list[~((self.ePSF_pending_rejection_list['x'] == cand_x) &
+                                                     (self.ePSF_pending_rejection_list['y'] == cand_y))]
+
+        self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
+                     norm=norm, origin='lower', cmap='viridis')
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        self.selstars_plot_canvas.draw()
+
+        # Submit button is enabled only when there is something to submit
+        if len(self.ePSF_pending_rejection_list) > 0:
+            submit_button_state = tk.NORMAL
+        else:
+            submit_button_state = tk.DISABLED
+
+        self.submit_rejects_selstars_button.config(state=submit_button_state)
+
+        return
+
+    ###############################################################
+    #
+    #
+    #  mouse_main_canvas_click
+    #
+    # 
+    ###############################################################
+
+    def mouse_main_canvas_click(self, event):
         global image_data
         x = int(self.canvas.canvasx(event.x) / self.zoom_level)
         y = int(self.canvas.canvasy(event.y) / self.zoom_level)
@@ -1247,9 +1480,6 @@ class MyGUI:
         sky = self.wcs_header.pixel_to_world(x, y)
         sky_coordinate_string = ""
 
-
-        #clear plot label
-        #%%%self.plotname_label['text'] = "Plot: "
 
         if hasattr(sky, 'ra'):
             c = SkyCoord(ra=sky.ra, dec=sky.dec)
@@ -1271,82 +1501,77 @@ class MyGUI:
             self.display_image()
             self.console_msg("")
 
-            x_fit, y_fit, flux_fit, inst_mag = self.match_photometry_table(x, y)
-            sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
-            sky_coordinate_string = ""
-            if hasattr(sky, 'ra'):
-                c = SkyCoord(ra=sky.ra, dec=sky.dec)
-                sky_coordinate_string = " α δ: " + c.to_string("hmsdms")
-            if x_fit != 0 and y_fit != 0:
-                psf_canvas_x = x_fit
-                psf_canvas_y = y_fit
-            if str(x_fit)+str(y_fit) in self.photometry_circles:
-                self.canvas.delete(self.photometry_circles[str(x_fit)+str(y_fit)])
+            fit_matched, x_fit, y_fit, flux_fit, inst_mag = self.match_photometry_table(x, y)
+            if fit_matched:
+                sky = self.wcs_header.pixel_to_world(x_fit, y_fit)
+                sky_coordinate_string = ""
+                if hasattr(sky, 'ra'):
+                    c = SkyCoord(ra=sky.ra, dec=sky.dec)
+                    sky_coordinate_string = " α δ: " + c.to_string("hmsdms")
+                if x_fit != 0 and y_fit != 0:
+                    psf_canvas_x = x_fit
+                    psf_canvas_y = y_fit
+                if str(x_fit)+str(y_fit) in self.photometry_circles:
+                    self.canvas.delete(self.photometry_circles[str(x_fit)+str(y_fit)])
 
-            self.canvas.create_line(x_fit*self.zoom_level, y_fit*self.zoom_level - 35*self.zoom_level, x_fit *
-                                    self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
-            self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
-                                    x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
-            self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
-                round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
+                self.canvas.create_line(x_fit*self.zoom_level, y_fit*self.zoom_level - 35*self.zoom_level, x_fit *
+                                        self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
+                self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
+                                        x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
+                self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
+                    round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
 
 
-            #  For now, not using mouse click to change settings
-            # Reset object name field in the setting to avoid user mistakes
-            # self.set_entry_text(self.object_name_entry, "")
-            if "match_id" in self.results_tab_df:
-                matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
-                    self.results_tab_df["y_fit"] == y_fit)
-                if len(self.results_tab_df[matching_star_criterion]) > 0:
-                    matching_star = self.results_tab_df[matching_star_criterion].iloc[0]
-                    if type(matching_star["match_id"]) in (str, int, np.float64):
-                        self.console_msg(
-                            "Matching catalog source ID: " + str(matching_star["match_id"]) + 
-                                "; label: " + str(matching_star["label"]) +
-                                " magnitude: " + str(matching_star["match_mag"]))
-                        #self.set_entry_text(self.object_name_entry, str(matching_star["match_id"]))
-                        
-                        #%%%update plot label
-                        #%%%self.plotname_label['text'] = "Plot: " + str(matching_star["match_id"]) + \
-                        #%%%    "; " + str(int(matching_star["label"]))
-                        
-                    if vsx_ids_in_photometry_table:
-                        if len(str(matching_star["vsx_id"])) > 1:
+                if "match_id" in self.results_tab_df:
+                    matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
+                        self.results_tab_df["y_fit"] == y_fit)
+                    if len(self.results_tab_df[matching_star_criterion]) > 0:
+                        matching_star = self.results_tab_df[matching_star_criterion].iloc[0]
+                        if vsx_ids_in_photometry_table and len(str(matching_star["vsx_id"])) > 1:
+                            self.console_msg("Matching VSX Source: " + str(matching_star["vsx_id"]))
+                                
+                        elif type(matching_star["match_id"]) in (str, int, np.float64):
                             self.console_msg(
-                                "Matching VSX Source: " + str(matching_star["vsx_id"]))
-                            #self.set_entry_text(
-                            #    self.object_name_entry, str(matching_star["vsx_id"]))
-                            #%%%update plot label
-                            #%%%#self.plotname_label['text'] = "Plot: " + str(matching_star["vsx_id"])
+                                "Matching catalog source ID: " + str(matching_star["match_id"]) + 
+                                    "; label: " + str(matching_star["label"]) +
+                                    " magnitude: " + str(matching_star["match_mag"]))
+                        else:
+                            #ask if user wants to name this object
+                            result = simpledialog.askstring("Object Name", "Replace Object Name (and assign vsx status) with: ", 
+                                                            initialvalue="my-user-obj")
+   
+                            if result:
+                                user_name = result.strip()
+                                """
+                                Remove any pre-existing user_name(s) in results_tab_df first.
+                                If not, user could populate df with multiple user_names.
+                                """
+                                self.results_tab_df = self.results_tab_df.loc[self.results_tab_df['vsx_id'] != user_name]
+                                self.console_msg("Object Name is now: " + user_name)
+                                self.set_entry_text(self.object_name_entry, user_name)
+                                self.results_tab_df.loc[matching_star.name, "vsx_id"] = user_name
+                                self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
+                                self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
+                                self.display_image()
+                                
+            else:
+                # These lines are "red" because object not in table
+                self.canvas.create_line(x*self.zoom_level, y*self.zoom_level - 35*self.zoom_level,
+                                        x*self.zoom_level, y*self.zoom_level - 10*self.zoom_level, fill="red")  # Draw "target" lines
+                self.canvas.create_line(x*self.zoom_level+35*self.zoom_level, y*self.zoom_level,
+                                        x*self.zoom_level + 10*self.zoom_level, y*self.zoom_level, fill="red")
 
-            #%%%#self.update_PSF_canvas(psf_canvas_x, psf_canvas_y)
+
+            self.console_msg("Ready")
 
 
-
-    def update_PSF_canvas(self, x, y):
-        global image_data
-        global FITS_minimum
-        global FITS_maximum
-        try:
-            if len(image_data) > 0:
-                self.fit_shape = int(self.fit_width_entry.get())
-                x0 = int(x - (self.fit_shape - 1) / 2)
-                y0 = int(y - (self.fit_shape - 1) / 2)
-                x1 = int(x + (self.fit_shape - 1) / 2)
-                y1 = int(y + (self.fit_shape - 1) / 2)
-                position = (x, y)
-                size = (self.fit_shape - 1, self.fit_shape - 1)
-                data = Cutout2D(image_data, position, size).data
-                x = np.arange(x0, x1, 1)
-                y = np.arange(y0, y1, 1)
-                x, y = np.meshgrid(x, y)
-                self.psf_plot.clear()
-                self.psf_plot.plot_surface(x, y, data, cmap=cm.jet)
-                self.psf_plot_canvas.draw()
-        except Exception as e:
-            self.error_raised = True
-            pass
-
+    ###############################################################
+    #
+    #
+    #  clear_epsf_plot
+    # 
+    #
+    ###############################################################
     def clear_epsf_plot(self):
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
@@ -1358,6 +1583,29 @@ class MyGUI:
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
         self.ePSF_canvas.grid(row=3, column=0)   #was row0
+
+    ###############################################################
+    #
+    #
+    #  clear_selstars_plot
+    # 
+    #
+    ###############################################################
+    def clear_selstars_plot(self):
+        self.fig_selstars.clear()
+        #plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        #self.selstars_plot_canvas.draw()
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
+                                                              figsize=(10, 10), squeeze=False)
+        self.selstars_plot = self.selstars_plot.ravel()
+        self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        self.selstars_plot_canvas.draw()
+        self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
+        self.selstars_canvas.config(width=int(self.screen_width/5), height=int(self.screen_width/5))
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.selstars_canvas.grid(row=5, column=0)   #was row0
+
 
     def clear_psf_label(self):
         #clear plot label
@@ -1471,7 +1719,6 @@ class MyGUI:
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
-
             Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'
 
             These comments illustrate the case when input_color is B-V
@@ -1490,7 +1737,7 @@ class MyGUI:
 
 
             Build 2 tables, "check" and "var", with the following columns (see 
-            E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 6 4 V1117 Her/
+            E:\\Astronomy\\AAVSO\\Reports\\AAVSO Reports\\MAO\\2022 6 4 V1117 Her/
             TwoColor V1117_Her 2022 6 4.xlsx)
             
             type                     "check" or "var"
@@ -1523,6 +1770,7 @@ class MyGUI:
             if len(variable_star) == 0:
                 self.console_msg(
                     "Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'")
+                self.console_msg("Ready")
                 return
             
             # Ask for the B and V CSV files
@@ -1565,22 +1813,23 @@ class MyGUI:
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
-
-            if input_color == 'B-V':
-                tbv_coefficient = float(self.tbv_entry.get())
-                tb_bv_coefficient = float(self.tb_bv_entry.get())
-                tv_bv_coefficient = float(self.tv_bv_entry.get())
-            elif input_color == 'V-R':
-                tbv_coefficient = float(self.tvr_entry.get())
-                tb_bv_coefficient = float(self.tv_vr_entry.get())
-                tv_bv_coefficient = float(self.tr_vr_entry.get())
-            elif input_color == 'V-I':
-                tbv_coefficient = float(self.tvi_entry.get())
-                tb_bv_coefficient = float(self.tv_vi_entry.get())
-                tv_bv_coefficient = float(self.ti_vi_entry.get())
-            else:
-                raise Exception("two_color_photometry: unknown imput_color entered")
-
+            try:
+                if input_color == 'B-V':
+                    tbv_coefficient = float(self.tbv_entry.get())
+                    tb_bv_coefficient = float(self.tb_bv_entry.get())
+                    tv_bv_coefficient = float(self.tv_bv_entry.get())
+                elif input_color == 'V-R':
+                    tbv_coefficient = float(self.tvr_entry.get())
+                    tb_bv_coefficient = float(self.tv_vr_entry.get())
+                    tv_bv_coefficient = float(self.tr_vr_entry.get())
+                elif input_color == 'V-I':
+                    tbv_coefficient = float(self.tvi_entry.get())
+                    tb_bv_coefficient = float(self.tv_vi_entry.get())
+                    tv_bv_coefficient = float(self.ti_vi_entry.get())
+                else:
+                    raise Exception("two_color_photometry: unknown imput_color entered")
+            except:  
+                    raise Exception("Two Color Photometry: Missing or non-numeric transform coefficient(s)")
          
             """
                CHECK STAR Calculations
@@ -2233,7 +2482,7 @@ class MyGUI:
                 mag_column_name = self.filter + "mag"
     
                 comparison_stars = Vizier(
-                    catalog=catalog, row_limit=-1).query_region(frame_center, frame_radius)[0]
+                    catalog=catalog, row_limit=-1).query_region(frame_center, radius=frame_radius)[0]
 
 
                 # print(comparison_stars)
@@ -2245,6 +2494,7 @@ class MyGUI:
             if len(comparison_stars) == 0:
                 self.console_msg(
                     "NO Comparison stars found in the field; make sure filter and chart Id is correct.")
+                self.console_msg("Ready")
                 return
             else:                
                 self.console_msg(
@@ -2354,12 +2604,14 @@ class MyGUI:
 
             self.console_msg(
                 "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
-            vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, frame_radius)
-            # print(vsx_result)
 
-            """
-            Look for any and all VSX stars
-            """
+
+            # B/vsx : AAVSO International Variable Star Index VSX 
+            # B/vsx/vsx : Variable Star indeX,
+            vsx_result = Vizier(
+                catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, radius=frame_radius)
+
+            #Look for any and all VSX stars
             if len(vsx_result) > 0:
                 vsx_stars = vsx_result[0]
                 self.console_msg(
@@ -2461,10 +2713,6 @@ class MyGUI:
         entry.delete(0, tk.END)
         entry.insert(0, text)
 
-    def update_display(self):
-        self.display_image()
-        #%%%#self.update_PSF_canvas(self.last_clicked_x, self.last_clicked_y)
-
     def safe_float_convert(self, x):
         try:
             z = float(x)
@@ -2478,11 +2726,11 @@ class MyGUI:
 
     def update_histogram_low(self, value):
         self.histogram_slider_low = int(value)
-        self.update_display()
+        self.display_image()
 
     def update_histogram_high(self, value):
         self.histogram_slider_high = int(value)
-        self.update_display()
+        self.display_image()
 
 
     def save_settings_as(self):
@@ -2553,6 +2801,9 @@ class MyGUI:
                         if type(getattr(self, key)) == tk.BooleanVar:
                             getattr(self, key).set(settings[key])
 
+            self.console_msg("Ready")
+
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -2568,16 +2819,20 @@ class MyGUI:
     def show_settings(self):
         self.es_top.deiconify()
 
+    ############################################################################################
     #
-    # edit_setting; command for "File->Edit Settings..." menu item which creates popup window
+    # launch_settings  
     #
+    # command for "File->Edit Settings..." menu item which creates popup window
+    #
+    ############################################################################################
+
     def launch_settings(self):
         try:
             height_factor_ = .7
 
             es_ = tk.Toplevel(self.window, padx=15, pady=15, takefocus=True)
 
-            es_.geometry(str(int(self.screen_width*.2)) + "x" + str(int(self.screen_height*height_factor_)))
             es_.title("Settings")
             self.es_top = es_
 
@@ -2633,12 +2888,12 @@ class MyGUI:
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            star_detection_threshold_label = tk.Label(
-                self.es_top, text="IRAFStarFinder Threshold:")
-            star_detection_threshold_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.star_detection_threshold_entry = tk.Entry(
+            star_detection_threshold_factor_label = tk.Label(
+                self.es_top, text="IRAFStarFinder Threshold Factor (*std):")
+            star_detection_threshold_factor_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.star_detection_threshold_factor_entry = tk.Entry(
                 self.es_top, width=settings_entry_width)
-            self.star_detection_threshold_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            self.star_detection_threshold_factor_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             photometry_iterations_label = tk.Label(
@@ -2657,14 +2912,6 @@ class MyGUI:
             self.sharplo_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            bkg_filter_size_label = tk.Label(
-                self.es_top, text="Background Median Filter, px:")
-            bkg_filter_size_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.bkg_filter_size_entry = tk.Entry(
-                self.es_top, width=settings_entry_width)
-            self.bkg_filter_size_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-            row += 1
-
             matching_radius_label = tk.Label(
                 self.es_top, text="Matching Radius, arcsec:")
             matching_radius_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
@@ -2676,7 +2923,7 @@ class MyGUI:
             fitter_label = tk.Label(self.es_top, text="PSF Fitter:")
             fitter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             fitter_dropdown = tk.OptionMenu(self.es_top, self.fitter_stringvar,
-                                                "Levenberg-Marquardt", "Sequential LS Programming", "Simplex LS")
+                                                "TRF LS", "Sequential LS Programming", "Simplex LS")
             fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
@@ -2774,6 +3021,13 @@ class MyGUI:
             self.ti_vi_entry = tk.Entry(
                 self.es_top, width=extended_settings_entry_width, background='pink')
             self.ti_vi_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            linearity_limit_label = tk.Label(self.es_top, text="Linearity Limit (ADU):")
+            linearity_limit_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.linearity_limit_entry = tk.Entry(
+                self.es_top, width=extended_settings_entry_width, background='pink')
+            self.linearity_limit_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             separator_telescope_ = ttk.Separator(self.es_top, orient='horizontal')
@@ -2932,10 +3186,172 @@ class MyGUI:
             close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
             row += 1
 
+            # Update layout to calculate dimensions
+            self.es_top.update_idletasks()
+
+            # Automatically adjust window size to fit contents
+            self.es_top.geometry(f"{self.es_top.winfo_reqwidth()}x{self.es_top.winfo_reqheight()}")
+
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+
+##############################################################################
+#
+# forward_selstars_list
+#
+# Callback for "Forward" button. This invokes display of next page of 
+# candidate stars.
+# 
+# 
+##############################################################################
+
+    def forward_selstars_list(self):
+        if self.candidate_stars_index < len(self.candidate_stars) - 1:
+            self.clear_selstars_plot()
+            # look forward
+            self.candidate_stars_index += 1
+            i = 0
+            selstars_plot_index = 0
+            resolve_index = False 
+            for self.candidate_stars_index in range(self.candidate_stars_index, len(self.candidate_stars)):
+                if i == (self.ncols*self.nrows):
+                    resolve_index = True
+                    break
+                i += 1
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                        norm=norm, origin='lower', cmap='viridis')
+                # check if this has already been rejected
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+                    self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
+                selstars_plot_index += 1
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+            self.selstars_plot_canvas.draw()
+            # need to resolve index so that when we forward again we dont skip current index
+            # (un)fortunately index never reaches the stop value in the last frame so 
+            if resolve_index:
+                self.candidate_stars_index -= 1
+
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            new_page_number = math.ceil(self.candidate_stars_index/(self.nrows*self.ncols))
+            self.update_selstars_page_label(page_num=new_page_number)
+        else:
+            # nothing past this
+            self.console_msg("There are no more selected stars to show.");
+        
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
+        return
+
+##############################################################################
+#
+# back_selstars_list
+#
+# Callback for "Back" button. This invokes display of previous page of 
+# candidate stars.
+# 
+# 
+##############################################################################
+
+    def back_selstars_list(self):
+        if self.candidate_stars_index >= (self.ncols*self.nrows): 
+            # not displaying the first set
+            self.clear_selstars_plot()
+            # 
+            # We want the index to point to beginning of the last frame (frame being
+            # a set of (self.ncols*self.nrows) subplots),
+            # so we have to account for it now pointing to somewhere in the middle.
+            # This would be true if (len(self.candidate_stars) % self.ncols*self.nrows) != 0
+            # so if index+ 1 is not a multiple of self.ncols*self.nrows, then we are at the last frame.
+            # If at the last frame, then index must be subtracted accordingly
+            self.candidate_stars_index += 1
+            candidate_stars_remainder = self.candidate_stars_index % (self.ncols*self.nrows)
+            if candidate_stars_remainder != 0:
+                self.candidate_stars_index -= (self.ncols*self.nrows + candidate_stars_remainder)
+            else:
+                self.candidate_stars_index -= 2*self.ncols*self.nrows  #backup
+
+            i = 0
+            selstars_plot_index = 0
+            for self.candidate_stars_index in range(self.candidate_stars_index, len(self.candidate_stars)):
+                if i == (self.ncols*self.nrows):
+                    break
+                i += 1
+                norm = simple_norm(self.candidate_stars[self.candidate_stars_index], 'log', percent=99.0)
+                self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
+                        norm=norm, origin='lower', cmap='viridis')
+                # check if this has already been rejected
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
+                    self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
+                selstars_plot_index += 1
+            plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+            self.selstars_plot_canvas.draw()
+            # need to resolve index so that when we forward agin we dont skip current index
+            self.candidate_stars_index -= 1
+            # update label with page (n of x) display E.g., Page: 1 of 6
+            new_page_number = math.ceil(self.candidate_stars_index/(self.nrows*self.ncols))
+            self.update_selstars_page_label(page_num=new_page_number)
+        else:
+            # nothing past this
+            self.console_msg("There are no more selected stars to show.")
+        
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
+        self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
+        return
+
+############################################################
+#
+# submit_rejects_selstars_list
+#
+############################################################
+    def submit_rejects_selstars_list(self):
+        #update ePSF_rejection_list with ePSF_pending_rejection_list
+        # then update main canvas 
+        self.ePSF_rejection_list = pd.concat([self.ePSF_rejection_list, self.ePSF_pending_rejection_list], ignore_index=True)
+        #reset pending
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
+        # display the rejected ones (red circle) on main canvas
+        self.ePSF_samples_plotted = True
+        self.display_image()
+        # display an updated selstars area
+        self.find_peaks()
+        # Now nothing to submit so...
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
+        return
+
+
+############################################################
+#
+# clear_rejects_selstars_list
+#
+# Clears the rejected stars in the selstars list and 
+# re-displays them
+#
+############################################################
+
+    def clear_rejects_selstars_list(self):
+        #reset pending
+        self.ePSF_pending_rejection_list.drop(self.ePSF_pending_rejection_list.index, inplace=True)
+        # display the rejected ones (red circle) on main canvas
+        self.ePSF_samples_plotted = True
+        self.display_image()
+        # display an updated selstars area
+        self.find_peaks()
+        # Now nothing to submit so...
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
+        return
+
+
+############################################################
+#
+#  aavso_get_comparison_stars
+#
+############################################################
 
     def aavso_get_comparison_stars(self, frame_center, filter_band='V', field_of_view=18.5, maglimit=20):
         try:
@@ -3047,6 +3463,7 @@ class MyGUI:
         if len(var_star_name) == 0:
             self.console_msg(
                 "'Object Name' must be specified; eg. 'W Her'")
+            self.console_msg("Ready")
             return
 
         check_star_name = self.object_kref_entry.get().strip()
@@ -3276,7 +3693,8 @@ class MyGUI:
         var_star_name = self.object_name_entry.get().strip()
         if len(var_star_name) == 0:
             self.console_msg(
-                "Object Name must be specified; eg. 'V1117 Her'")
+                "'Object Name' must be specified; eg. 'V1117 Her'")
+            self.console_msg("Ready")
             return
 
         """
@@ -3489,19 +3907,76 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
 
+    ##########################################################################
+    # 
+    # 
+    #  exit_app
+    # 
+    # 
+    # Ask for confirmation before exiting
+    #
+    ##########################################################################        
+    
     def exit_app(self):
-        os._exit(0)
+        if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
+            os._exit(0)
+
+    ##########################################################################
+    # 
+    # 
+    #  exit_fullscreen
+    # 
+    # 
+    # Add a way to exit fullscreen (E.g., press 'Esc')
+    #
+    ##########################################################################        
+    
+    def exit_fullscreen(self, event):
+        self.window.wm_attributes('-fullscreen', False)
+
+    ##########################################################################
+    # 
+    # 
+    #  on_close
+    # 
+    # 
+    # Ask for confirmation before exiting
+    #
+    ##########################################################################        
+    
+    def on_close(self):
+        if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
+            self.window.destroy()  # Close the window and exit the program
+            os._exit(0)
+
+    ##########################################################################
+    # 
+    # 
+    #  __init__
+    # 
+    # 
+    ##########################################################################        
 
     def __init__(self):
-        #Wis heisen Sie?
+
+ 
+        #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
-        self.program_name_note = "; using Photutils"
+        self.program_name_note = " using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
+
+        # Check if therre is a ./log dir
+        self.logging_dir = ".//logs//"
+
+        # Check if directory exists
+        if not os.path.exists(self.logging_dir):
+            # Create the directory
+            os.makedirs(self.logging_dir)
 
         #set the logger up
         self.our_logger = logging.getLogger(self.program_name + self.program_version + ".log")
-        self.our_fh = logging.FileHandler(self.program_name + self.program_version + ".log")
+        self.our_fh = logging.FileHandler(self.logging_dir + self.program_name + self.program_version + ".log", encoding='utf-8')
         self.our_logger.setLevel(logging.INFO)
 
         # create formatter and add it to the handlers
@@ -3509,10 +3984,18 @@ class MyGUI:
         self.our_fh.setFormatter(self.our_formatter)
         self.our_logger.addHandler(self.our_fh)
         
-        
-        #set up GUI
+        #
+        #
+        #
+        #               Set up GUI
+        #
+        #
 
         self.window = tk.Tk()
+        
+        # Maximize
+        self.window.state('zoomed')
+
         self.screen_width = self.window.winfo_screenwidth()
         self.screen_height = self.window.winfo_screenheight()
 
@@ -3521,11 +4004,19 @@ class MyGUI:
         matplotlib.rc('xtick', labelsize=7)
         matplotlib.rc('ytick', labelsize=7)
 
-        # Maximize that works everywhere
-        m = self.window.maxsize()
-        self.window.geometry('{}x{}+0+0'.format(*m))
+        self.window.bind('<Escape>', self.exit_fullscreen)
+        
+        # Bind the "X" button to the custom close function
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.window.title(self.program_full_name)
+
+        #
+        #
+        #
+        #               Menu
+        #
+        #
 
         self.menubar = tk.Menu(self.window)
         self.filemenu = tk.Menu(self.menubar, tearoff=0)
@@ -3549,6 +4040,7 @@ class MyGUI:
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
+        self.photometrymenu.add_command(label="Find Peaks", command=self.find_peaks)
         self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
         self.photometrymenu.add_separator()
         self.photometrymenu.add_command(label="Load Rejection List...", command=self.load_ePSF_rejection_list)
@@ -3556,8 +4048,6 @@ class MyGUI:
         self.photometrymenu.add_command(label="Clear ePSF Data", command=self.clear_ePSF)
         self.photometrymenu.add_separator()
 
-        self.photometrymenu.add_command(
-            label="Non-iterative PSF Photometry", command=self.execute_noniterative_psf_photometry)
         self.photometrymenu.add_command(
             label="Iterative PSF Photometry", command=self.execute_iterative_psf_photometry)
         self.photometrymenu.add_separator()
@@ -3591,65 +4081,134 @@ class MyGUI:
 
         self.window.config(menu=self.menubar)
 
-        self.left_half = tk.Frame(self.window)  # Left half of the window
-        self.left_half.grid(row=0, column=0, sticky=tk.NSEW)
-        self.center = tk.Frame(self.window)  # Center of the window
-        self.center.grid(row=0, column=1, sticky=tk.NSEW)
-        self.right_half = tk.Frame(self.window)  # Right half of the window
-        self.right_half.grid(row=0, column=2, sticky=tk.NSEW)
-        # Expand center horizontally
-        tk.Grid.columnconfigure(self.window, 1, weight=1)
-        # Expand everything vertically
-        tk.Grid.rowconfigure(self.window, 0, weight=1)
+        #
+        # Layout left, center, and right frames
+        #
 
-        self.filename_label = tk.Label(self.center, text="FITS:" + image_file)
-        self.filename_label.grid(row=0, column=0)  # Place label
 
-        self.canvas = tk.Canvas(self.center, bg='black')  # Main canvas
-        # Place main canvas, sticky to occupy entire
-        self.canvas.grid(row=1, column=0, sticky=tk.N+tk.S+tk.E+tk.W)
-        # cell dimensions
-        # Expand main canvas column to fit whole window
-        tk.Grid.columnconfigure(self.center, 0, weight=1)
-        # Expand main canvas row to fit whole window
-        tk.Grid.rowconfigure(self.center, 1, weight=1)
+        #
+        #
+        #
+        #               Left [Side] Frame
+        #
+        #
+
+        # We will lay image stretching sliders into the left_frame
+        self.left_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Left half of the window
+        self.left_frame.grid(row=0, column=0, sticky=tk.NSEW)
+
+        row = 0
+
+        self.stretching_label = tk.Label(
+            self.left_frame, text="Image Stretching:")
+        self.stretching_label.grid(row=row, column=0, sticky=tk.NSEW)
+
+        row += 1
+        self.stretching_stringvar = tk.StringVar()
+        self.stretching_stringvar.set("Asinh")
+        self.stretching_dropdown = tk.OptionMenu(
+            self.left_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
+        self.stretching_dropdown.grid(row=row, column=0, sticky=tk.NW)
+
+
+        row += 1
+        self.stretching_stringvar.trace_add("write", self.display_image())
+        # Histogram stretch sliders
+        self.stretch_label = tk.Label(
+            self.left_frame, text="Histogram Stretch Low/High:")
+        self.stretch_label.grid(row=row, column=0, sticky=tk.NW)
+        row += 1
+        self.stretch_low = tk.Scale(
+            self.left_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_low)
+        self.stretch_low.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+        row += 1
+        self.stretch_high = tk.Scale(
+            self.left_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
+        self.stretch_high.set(5)
+        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+
+
+        #
+        #
+        #
+        #               Center [middle] Frame
+        #
+        #
+
+        self.center_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Center of the window
+        self.center_frame.grid(row=0, column=1, sticky=tk.NSEW)
+
+        row = 0
+        self.filename_label = tk.Label(self.center_frame, text="FITS:" + image_file)
+        self.filename_label.grid(row=row, column=0)  # Place label
+
+        row += 1
+        self.canvas = tk.Canvas(self.center_frame, bg='black')  # Main canvas
+
+        # Place main canvas, sticky to occupy entire cell
+        self.canvas.grid(row=row, column=0, sticky=tk.NSEW)
+
+        # Expand main canvas column to fit whole  cell
+        tk.Grid.columnconfigure(self.center_frame, 0, weight=1)
+
+        # Give the canvas the most weight, it will do all the stretching
+        tk.Grid.rowconfigure(self.center_frame, 1, weight=1)
+
         self.canvas_scrollbar_V = tk.Scrollbar(
-            self.center, orient=tk.VERTICAL)  # Main canvas scrollbars
-        self.canvas_scrollbar_V.grid(row=1, column=1)
-        self.canvas_scrollbar_V.grid(
-            sticky=tk.N+tk.S+tk.E+tk.W, column=1, row=1)
+            self.center_frame, orient=tk.VERTICAL)  # Main canvas scrollbars
+        self.canvas_scrollbar_V.grid(sticky=tk.NSEW, row=row, column=1)
+
+        row += 1
         self.canvas_scrollbar_H = tk.Scrollbar(
-            self.center, orient=tk.HORIZONTAL)
-        self.canvas_scrollbar_H.grid(row=2, column=0)
-        self.canvas_scrollbar_H.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=0, row=2)
+            self.center_frame, orient=tk.HORIZONTAL)
+        self.canvas_scrollbar_H.grid(row=row, column=0)
+        self.canvas_scrollbar_H.grid(sticky=tk.NSEW, row=row, column=0)
         self.canvas_scrollbar_H.config(command=self.canvas.xview)
         self.canvas_scrollbar_V.config(command=self.canvas.yview)
         self.canvas.config(xscrollcommand=self.canvas_scrollbar_H.set)
         self.canvas.config(yscrollcommand=self.canvas_scrollbar_V.set)
 
+        row += 1
         # Console below
-        self.console = tk.Text(self.center, #height=40,
-                               bg='black', fg='white', width=200)
-        self.console.grid(sticky=tk.N+tk.S+tk.E+tk.W, column=0, row=3)
-        self.console_scrollbar = tk.Scrollbar(self.center)
-        self.console_scrollbar.grid(
-            sticky=tk.N + tk.S + tk.E + tk.W, column=1, row=3)
+        self.console = tk.Text(self.center_frame, #height=40,
+                               bg='black', fg='white', wrap='none')
+        self.console.grid(sticky=tk.NSEW, row=row, column=0)
 
-        self.console.config(yscrollcommand=self.console_scrollbar.set)
-        self.console_scrollbar.config(command=self.console.yview)
+
+        self.console_scrollbar_V = tk.Scrollbar(
+            self.center_frame, orient=tk.VERTICAL)  # Main canvas scrollbars
+        self.console_scrollbar_V.grid(sticky=tk.NSEW, row=row, column=1)
+
+        row += 1
+        self.console_scrollbar_H = tk.Scrollbar(
+            self.center_frame, orient=tk.HORIZONTAL)
+        self.console_scrollbar_H.grid(row=row, column=0)
+        self.console_scrollbar_H.grid(sticky=tk.NSEW, row=row, column=0)
+        self.console_scrollbar_H.config(command=self.console.xview)
+        self.console_scrollbar_V.config(command=self.console.yview)
+        self.console.config(xscrollcommand=self.console_scrollbar_H.set)
+        self.console.config(yscrollcommand=self.console_scrollbar_V.set)
 
         self.console_msg(self.program_full_name)
         self.console_msg("Ready")
 
+        #
+        #
+        #
+        #               Right [Side] Frame
+        #
+        #
 
-        # We will lay out interface things into the new right_frame grid
-        self.right_frame = tk.Frame(self.right_half)
-        # Place right_frame into the top of the main canvas row, right next to it
-        self.right_frame.grid(row=1, column=2, sticky=tk.N)
-        
+        # Place right_frame 
+        self.right_frame = tk.Frame(self.window, padx=__our_padding__, pady=__our_padding__)  # Right half of the window
+        self.right_frame.grid(row=0, column=2, sticky=tk.NSEW)
+
+        # Place label
+        row = 0
         self.plotname_label = tk.Label(self.right_frame, text="Plot:")
-        self.plotname_label.grid(row=0, column=0)  # Place label
+        self.plotname_label.grid(row=row, column=0)  #row=0
+
+        row += 1
         self.fig_psf = Figure()
         self.psf_plot = self.fig_psf.add_subplot(111, projection='3d')
         # PSF 3D plot canvas - Matplotlib wrapper for Tk
@@ -3658,86 +4217,139 @@ class MyGUI:
         self.psf_canvas = self.psf_plot_canvas.get_tk_widget()
         self.psf_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.psf_canvas.grid(row=1, column=0)   #was row0
+        self.psf_canvas.grid(row=row, column=0) #row=1
         
-        #make another canvas for 2D plot of effectivePSF
-        self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
-        self.ePSF_plotname_label.grid(row=2, column=0)  # Place label
-
-
-        self.fig_ePSF, self.ePSF_plot = plt.subplots()
-        #self.ePSF_plot = self.fig_ePSF.add_subplot(111)
         #
+        #make another canvas for 2D plot of effectivePSF
+        #
+        # Place label
+        row += 1
+        self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
+        self.ePSF_plotname_label.grid(row=row, column=0)  #row=2
+
+        row += 1
+        self.fig_ePSF, self.ePSF_plot = plt.subplots()
         self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
         self.ePSF_plot_canvas.draw()
         self.ePSF_canvas = self.ePSF_plot_canvas.get_tk_widget()
         self.ePSF_canvas.config(width=int(self.screen_width/8.5), height=int(self.screen_width/8.5))
         # Allocate small PSF canvas to a new grid inside the right_frame
-        self.ePSF_canvas.grid(row=3, column=0)   #was row0
+        self.ePSF_canvas.grid(row=row, column=0) #row=3
 
         #
-        # Left Frame
+        #make another canvas for selected stars
         #
+        # Place label
+        row += 1
+        self.selstars_title_label = tk.Label(self.right_frame, text="Selected Stars")
+        self.selstars_title_label.grid(row=row, column=0) #row=4
 
-        # We will lay out interface things into the new left_frame grid
-        self.left_frame = tk.Frame(self.left_half)
-        # Place right_frame into the top of the main canvas row, right next to it
-        self.left_frame.grid(row=1, column=0, sticky=tk.NSEW)
+        self.nrows = 5
+        self.ncols = 5
+        self.selstars_hspace = .55
+        self.selstars_wspace = .55
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
+                                                              figsize=(10, 10), squeeze=False)
+        self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         
+        self.selstars_plot = self.selstars_plot.ravel()
+        #
 
-        # Frame to hold "SOME" settings in grid pattern
-        self.settings_frame = tk.Frame(self.left_frame)
-        self.settings_frame.pack()
+        row += 1
+        self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
+        plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
+        self.selstars_plot_canvas.draw()
+        self.selstars_canvas = self.selstars_plot_canvas.get_tk_widget()
 
-        # Expand settings_frame column that holds labels
-        tk.Grid.columnconfigure(self.settings_frame, 0, weight=1)
-
-        settings_entry_width = 6
-        settings_entry_pad = 0
-        extended_settings_entry_width = 30
-        extended_settings_entry_pad = 0
+        self.selstars_canvas.config(width=int(self.screen_width/5), height=int(self.screen_width/5))
+        self.selstars_canvas.config
+        
+        # Allocate small PSF canvas to a new grid inside the right_frame
+        self.selstars_canvas.grid(row=row, column=0)#row=5
 
         #
-        # Some parameter settings need initial values
+        #make another canvas for selected stars
         #
-        self.catalog_stringvar = tk.StringVar()
-        self.catalog_stringvar.set("AAVSO")
-        self.fitter_stringvar = tk.StringVar()
-        self.fitter_stringvar.set("Levenberg-Marquardt")
-        self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
-
-        row = 0
-
-        self.stretching_label = tk.Label(
-            self.settings_frame, text="Image Stretching:")
-        self.stretching_label.grid(row=row, column=0, sticky=tk.E)
-        self.stretching_stringvar = tk.StringVar()
-        self.stretching_stringvar.set("Asinh")
-        self.stretching_dropdown = tk.OptionMenu(
-            self.settings_frame, self.stretching_stringvar, "None", "Square Root", "Log", "Asinh")
-        self.stretching_dropdown.grid(row=row, column=1, sticky=tk.EW)
+        # Place label
         row += 1
-        self.stretching_stringvar.trace(
-            "w", lambda name, index, mode, sv=self.stretching_stringvar: self.update_display())
+        self.selstars_page_num_label = tk.Label(self.right_frame, text="Page:")
+        self.selstars_page_num_label.grid(row=row, column=0)  #row=6
 
-        # Histogram stretch sliders
-        tk.Grid.columnconfigure(self.settings_frame, 1, weight=0)
-        self.stretch_label = tk.Label(
-            self.settings_frame, text="Histogram Stretch Low/High:")
-        self.stretch_label.grid(row=row, column=0, sticky=tk.W)
         row += 1
-        self.stretch_low = tk.Scale(
-            self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_low)
-        self.stretch_low.grid(row=row, column=0, columnspan=2, sticky=tk.EW)
-        row += 1
-        self.stretch_high = tk.Scale(
-            self.settings_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.update_histogram_high)
-        self.stretch_high.set(5)
-        self.stretch_high.grid(row=row, column=0, columnspan=2, sticky=tk.NSEW)
+        separator_reject_buttons = ttk.Separator(self.right_frame, orient='horizontal')
+        separator_reject_buttons.grid(row=row, pady=5, sticky=tk.EW) #row=7
+
+        row += 1 #only for right_subframe
+        self.right_subframe = tk.Frame(self.right_frame)
+        self.right_subframe_sub0 = tk.Frame(self.right_subframe)
+        self.right_subframe_sub1 = tk.Frame(self.right_subframe)
+        self.right_subframe_sub2 = tk.Frame(self.right_subframe)
+
+        self.right_subframe.columnconfigure(0, minsize=175)
+        self.right_subframe.columnconfigure(2, minsize=175)
+
+        self.submit_rejects_selstars_button = tk.Button(self.right_subframe_sub0, text="Submit", command=self.submit_rejects_selstars_list)
+        self.submit_rejects_selstars_button.config(state=tk.DISABLED)
+        self.submit_rejects_selstars_button.grid()
+
+        self.back_selstars_button_label = tk.Label(self.right_subframe_sub1, text="<-----:")
+        self.back_selstars_button_label.grid(row=0, column=0, sticky=tk.E)  # Place label
+
+        self.back_selstars_button = tk.Button(self.right_subframe_sub1, text="Back", command=self.back_selstars_list)
+        self.back_selstars_button.config(state=tk.DISABLED)
+        self.back_selstars_button.grid(row=0, column=1, ipadx=12, padx=0, sticky=tk.E)
+
+        self.forward_selstars_button = tk.Button(self.right_subframe_sub1, text="Forward", command=self.forward_selstars_list)
+        self.forward_selstars_button.config(state=tk.DISABLED)
+        self.forward_selstars_button.grid(row=0, column=2, padx=0, sticky=tk.W)
+
+        self.forward_selstars_button_label = tk.Label(self.right_subframe_sub1, text=":----->")
+        self.forward_selstars_button_label.grid(row=0, column=3, sticky=tk.W)  # Place label
+
+        clear_rejects_selstars_button = tk.Button(self.right_subframe_sub2, text="Clear", command=self.clear_rejects_selstars_list)
+        clear_rejects_selstars_button.grid()
+
+        self.right_subframe_sub0.grid(row=0, column=0, sticky=tk.W)
+        self.right_subframe_sub1.grid(row=0, column=1)
+        self.right_subframe_sub2.grid(row=0, column=2, sticky=tk.E)
+
+        self.right_subframe.grid(row=row, column=0, sticky=tk.N)#row=8
+
+        # when shrinking, don't let rows with "Page" label, seperator, and buttons 
+        # get cut off
+        tk.Grid.rowconfigure(self.right_frame, 0, weight=1) 
+        tk.Grid.rowconfigure(self.right_frame, 1, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 2, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 3, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 4, weight=1)
+        tk.Grid.rowconfigure(self.right_frame, 5, weight=1)
+
+        #
+        # end of right (side) frame layout
+        #
+        #
+
+        # Assign weights so that only column 1 shrinks
+        tk.Grid.columnconfigure(self.window, 1, weight=1)
+
+        # Row 1 (console) expands the most
+        tk.Grid.rowconfigure(self.window, 0, weight=1)
+
+        # Update layout to calculate dimensions
+        self.window.update_idletasks()
 
         #
         # laumch_settings; pops up settings window and initializes all settings
         #
+        #
+        # But some parameter settings need initial values first
+        #
+        self.catalog_stringvar = tk.StringVar()
+        self.catalog_stringvar.set("AAVSO")
+        self.fitter_stringvar = tk.StringVar()
+        self.fitter_stringvar.set("TRF LS")
+        self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
+
         self.launch_settings()
 
         """
@@ -3748,10 +4360,9 @@ class MyGUI:
             'fit_width_entry': self.fit_width_entry,
             'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
             'fwhm_entry': self.fwhm_entry,
-            'star_detection_threshold_entry': self.star_detection_threshold_entry,
+            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
             'photometry_iterations_entry': self.photometry_iterations_entry,
             'sharplo_entry': self.sharplo_entry,
-            'bkg_filter_size_entry': self.bkg_filter_size_entry,
             'matching_radius_entry': self.matching_radius_entry,
             'aavso_obscode_entry': self.aavso_obscode_entry,
             'telescope_entry': self.telescope_entry,
@@ -3764,6 +4375,7 @@ class MyGUI:
             'tvi_entry': self.tvi_entry,
             'tv_vi_entry': self.tv_vi_entry,
             'ti_vi_entry': self.ti_vi_entry,
+            'linearity_limit_entry': self.linearity_limit_entry,
             'catalog_stringvar': self.catalog_stringvar,
             'vizier_catalog_entry': self.vizier_catalog_entry,
             'fitter_stringvar': self.fitter_stringvar,
