@@ -1,58 +1,24 @@
 4# -*- coding: utf-8 -*-
 """
-#     #    #    ####### ######                      
-##   ##   # #   #     # #     # #    #  ####  ##### 
-# # # #  #   #  #     # #     # #    # #    #   #   
-#  #  # #     # #     # ######  ###### #    #   #   
-#     # ####### #     # #       #    # #    #   #   
-#     # #     # #     # #       #    # #    #   #   
-#     # #     # ####### #       #    #  ####    #   
-                                                    
-  #         #         ###   
- ##        ##        #   #  
-# #       # #       #     # 
-  #         #       #     # 
-  #   ###   #   ### #     # 
-  #   ###   #   ###  #   #  
-##### ### ##### ###   ###   
+ #     #    #    ####### ######                      
+ ##   ##   # #   #     # #     # #    #  ####  ##### 
+ # # # #  #   #  #     # #     # #    # #    #   #   
+ #  #  # #     # #     # ######  ###### #    #   #   
+ #     # ####### #     # #       #    # #    #   #   
+ #     # #     # #     # #       #    # #    #   #   
+ #     # #     # ####### #       #    #  ####    #   
+                                                     
+   #         #         #                             
+  ##        ##        ##                             
+ # #       # #       # #                             
+   #         #         #                             
+   #   ###   #   ###   #                             
+   #   ###   #   ###   #                             
+ ##### ### ##### ### #####                           
                             
-Welcome to MAOPhot 1.1.0, a PSF Photometry tool using Astropy and Photutils.psf
+Welcome to MAOPhot 1.1.1, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.0 Revision
-    - minor cosmetic errors (invalid escape sequence \\A) 
-    - Updates required for Photutils 2.0
-    - check for blank Fitting Width
-    - Legacy LevMarLSQFitter no longer used replaced with TRFLSQFitter
-    - Removed execute_noniterative_psf_photometry 
-        (just set Photometry Iteration to 1 instead)
-    - IRAFStarFinder Threshold factor (*std) 
-    - added select stars 'Back' and 'Forward' buttons
-
-
-    1.0.0 Revision
-    - get_comparison_stars enhancement; when more than one match found
-      for a given comp star or vsx object, then newly matched star gets id
-      appended with ".1", or ".2", etc. (E.g., comp stars found: 120, 120.1, 
-      120.2; vsx objects: Z Tau, Z Tau.1, Z Tau.2;) Only the comp stars listed
-      in Settings, and the Object Name listed in Settings is used. User can 
-      changed those settings or change the matching radius. There is a 
-      discussion about this in the documentation.
-
-    - Radio buttons "Display all objects" and "Display selected objects only"
-      allows user to display all detected objects or only ones listed in 
-      the settings
-
-    - Check star in settings has priority over saved cvs file. User can change
-      check star and then re-run "Two Color Photometry".
-
-    - Added Non Iterative PSF Photometry option which uses class
-       PSFPhotometry 
-    - check_star boolean in DataFrame is bool type throughout, not str
-    - Upgraded to Photutils 1.10.0 and Panda 2.1.4, etc.
-    - changed "Close" button in Settings window to "OK"
-    - report JD is DATE-OBS + EXPOSURE/2 (like AAVSO report)
-    - minor changes to Notes in report to reflect current AAVSO report
-    - added AMASS to AAVSO report
+    1.1.1 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -207,7 +173,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -370,6 +336,7 @@ class MyGUI:
     isolated_stars_tbl = None
 
     # Parameter declaration  and init 
+    find_peaks_npeaks_entry = None
     fit_width_entry = None
     max_ensemble_magnitude_entry = None
     fwhm_entry = None
@@ -634,13 +601,20 @@ class MyGUI:
 
     def find_peaks(self):
         global header
-        self.console_msg("Starting find peaks...")
+        self.console_msg("Find Peaks: starting find peaks...")
 
         #make sure an image is loaded
         if len(image_data) == 0:
-            self.console_msg("Cannot proceed; an image must be loaded first; use File->Open...")
+            self.console_msg("Find Peaks: cannot proceed; an image must be loaded first; use File->Open...")
             return
 
+        # test fit_width
+        _shape = self.fit_width_entry.get().strip()
+        if not _shape or not _shape.isnumeric():
+            self.console_msg("Find Peaks: fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+            self.console_msg("Ready")
+            return
+        
         try:
             """
             Determine the background using simple statistics
@@ -648,28 +622,31 @@ class MyGUI:
             """
             # just for reference, lets looks at these stats first
             mean, median, std = sigma_clipped_stats(image_data, sigma=2.0)
-            self.console_msg("Median sigma clipped level: " + str(round(median,2)))
-            self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
-            self.console_msg("Std sigma clipped level: " + str(round(std,2)))
+            self.console_msg("Find Peaks: median sigma clipped level: " + str(round(median,2)))
+            self.console_msg("Find Peaks: mean sigma clipped level: " + str(round(mean,2)))
+            self.console_msg("Find Peaks: std sigma clipped level: " + str(round(std,2)))
+
+
+            _npeaks = self.find_peaks_npeaks_entry.get().strip()
+            if not _npeaks or not _npeaks.isnumeric():
+                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
+                npeaks = np.inf
+            else:
+                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + _npeaks)
+                npeaks = int(_npeaks)
 
             # now ready to find peaks
 
-            peaks_tbl = find_peaks(image_data, threshold=median + (std*10), box_size=10)
+            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=10, npeaks=npeaks)
 
-            peaks_tbl_len = len(peaks_tbl)
             if peaks_tbl == None or len(peaks_tbl) == 0:
-                self.console_msg("No peaks found!!!")
+                self.console_msg("Find Peaks: no peaks found!!!")
                 self.console_msg("Ready")
-                return; 
+                return
+            else:
+                peaks_tbl_len = len(peaks_tbl)
+                self.console_msg("Find Peaks: found " + str(peaks_tbl_len) + " peaks.")
 
-            self.console_msg("ePSF using find_peaks: found " + str(peaks_tbl_len) + " peaks.")
-            
-            _shape = self.fit_width_entry.get().strip()
-            if not _shape or not _shape.isnumeric():
-                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
-                self.console_msg("Ready")
-                return; 
-        
             #
             # Important table definitions
             #
@@ -687,35 +664,36 @@ class MyGUI:
             # test linearity_limit_entry 
             linearity_limit = self.linearity_limit_entry.get().strip()
             if not linearity_limit or not linearity_limit.isnumeric():
-                self.console_msg("linearity limit is not valid....setting to 60000")
+                self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
                 linearity_limit = 60000
 
             x = peaks_tbl['x_peak']
             y = peaks_tbl['y_peak']
             peak = peaks_tbl['peak_value']
             mask = peak < int(linearity_limit)
-            # prelim_stars_tbl are inbound stars (not to close to the edge)
+            # 
             non_saturated_stars_tbl = Table()
             non_saturated_stars_tbl['x_peak'] = x[mask]  
             non_saturated_stars_tbl['y_peak'] = y[mask]  
             non_saturated_stars_tbl['peak_value'] = peak[mask]  
 
             non_saturated_stars_tbl_len = len(non_saturated_stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(peaks_tbl_len - non_saturated_stars_tbl_len) + " peaks over linearity limit.")
-            self.console_msg("ePSF: " + str(non_saturated_stars_tbl_len) + " peaks remain.")
+            self.console_msg("Find Peaks: found and removed " + str(peaks_tbl_len - non_saturated_stars_tbl_len) + " peaks over linearity limit.")
+            self.console_msg("Find Peaks: " + str(non_saturated_stars_tbl_len) + " peaks remain.")
+
+            if non_saturated_stars_tbl_len == 0:
+                # none found below sat level
+                self.console_msg("Find Peaks: there were no peaks found over linearity limit, increase 'Max Number of Peaks'")
+                self.console_msg("Find Peaks: for unlimited, set 'Max Number of Peaks' to ''")
+                self.console_msg("Ready")
+                return
 
             # mask out peaks near the boundary; use twice the aperature entry
             #
-            # test fit_width
-            _shape = self.fit_width_entry.get().strip()
-            if not _shape or not _shape.isnumeric():
-                self.console_msg("Fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
-                self.console_msg("Ready")
-                return; 
         
             self.fit_shape = int(_shape) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
-            hsize = (size - 1)/2 # Eg., 5
+            hsize = (size - 1)/2 * 15 # Eg., 5 * 15 = 75
             x = non_saturated_stars_tbl['x_peak']  
             y = non_saturated_stars_tbl['y_peak']  
             _image = Image.fromarray(image_data)
@@ -730,8 +708,8 @@ class MyGUI:
             prelim_stars_tbl['rejected'] = False #init
 
             prelim_stars_tbl_len = len(prelim_stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(non_saturated_stars_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
-            self.console_msg("ePSF: " + str(prelim_stars_tbl_len) + " peaks remain.")
+            self.console_msg("Find Peaks: found and removed " + str(non_saturated_stars_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
+            self.console_msg("Find Peaks: " + str(prelim_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to 
             # another in the same list
@@ -760,8 +738,8 @@ class MyGUI:
             self.isolated_stars_tbl['rejected'] = False #init
 
             isolated_stars_tbl_len = len(self.isolated_stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
-            self.console_msg("ePSF: " + str(isolated_stars_tbl_len) + " peaks remain.")
+            self.console_msg("Find Peaks: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
+            self.console_msg("Find Peaks: " + str(isolated_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to a 
             # coordinate in ePSF_rejection_list
@@ -790,8 +768,8 @@ class MyGUI:
             self.stars_tbl['y'] = y[mask]  
 
             stars_tbl_len = len(self.stars_tbl)
-            self.console_msg("ePSF: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
-            self.console_msg("ePSF: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
+            self.console_msg("Find Peaks: found and removed " + str(isolated_stars_tbl_len - stars_tbl_len) + " peaks rejected by user.")
+            self.console_msg("Find Peaks: " + str(stars_tbl_len) + " peaks remain for EPSF Builder.")
 
             self.clear_selstars()
 
@@ -814,7 +792,7 @@ class MyGUI:
                 self.selstars_plot[self.candidate_stars_index].imshow(self.candidate_stars[self.candidate_stars_index],
                      norm=norm, origin='lower', cmap='viridis')
 
-            self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
+            #self.console_msg("candidate_stars index = " + str(self.candidate_stars_index), level=logging.DEBUG)
 
             plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
@@ -2866,6 +2844,14 @@ class MyGUI:
             separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
+            find_peaks_npeaks_label = tk.Label(
+                self.es_top, text="Max Number of Peaks:")
+            find_peaks_npeaks_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.find_peaks_npeaks_entry = tk.Entry(
+                self.es_top, width=settings_entry_width)
+            self.find_peaks_npeaks_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
             fit_width_label = tk.Label(
                 self.es_top, text="Fitting Width/Height, px (odd only):")
             fit_width_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
@@ -4357,6 +4343,7 @@ class MyGUI:
         buttons in popup window: Settings
         """
         self.valid_parameter_list = {
+            'find_peaks_npeaks_entry': self.find_peaks_npeaks_entry,
             'fit_width_entry': self.fit_width_entry,
             'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
             'fwhm_entry': self.fwhm_entry,
