@@ -626,18 +626,10 @@ class MyGUI:
             self.console_msg("Find Peaks: mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Find Peaks: std sigma clipped level: " + str(round(std,2)))
 
-
-            _npeaks = self.find_peaks_npeaks_entry.get().strip()
-            if not _npeaks or not _npeaks.isnumeric():
-                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
-                npeaks = np.inf
-            else:
-                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + _npeaks)
-                npeaks = int(_npeaks)
-
             # now ready to find peaks
 
-            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=10, npeaks=npeaks)
+            # Always get all (np.inf) the peaks then cull them with user_npeaks after getting isolated_stars_tbl
+            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=10, npeaks=np.inf)
 
             if peaks_tbl == None or len(peaks_tbl) == 0:
                 self.console_msg("Find Peaks: no peaks found!!!")
@@ -688,14 +680,16 @@ class MyGUI:
                 self.console_msg("Ready")
                 return
 
-            # mask out peaks near the boundary; use twice the aperature entry
+            #
+            # mask out peaks near the edge
             #
         
             self.fit_shape = int(_shape) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
-            hsize = (size - 1)/2 * 15 # Eg., 5 * 15 = 75
+            hsize = (size - 1)/2 * 15 # Eg., 5 * 15 = 75 away from edge
             x = non_saturated_stars_tbl['x_peak']  
             y = non_saturated_stars_tbl['y_peak']  
+            peak = non_saturated_stars_tbl['peak_value']
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
@@ -705,6 +699,7 @@ class MyGUI:
             prelim_stars_tbl = Table()
             prelim_stars_tbl['x'] = x[mask]  
             prelim_stars_tbl['y'] = y[mask]  
+            prelim_stars_tbl['peak_value'] = peak[mask]  
             prelim_stars_tbl['rejected'] = False #init
 
             prelim_stars_tbl_len = len(prelim_stars_tbl)
@@ -728,6 +723,7 @@ class MyGUI:
     
             x = prelim_stars_tbl['x']  
             y = prelim_stars_tbl['y']  
+            peak = prelim_stars_tbl['peak_value']
             reject_this = prelim_stars_tbl['rejected']
 
             mask = reject_this == False  # only keep ones we don't reject
@@ -735,11 +731,34 @@ class MyGUI:
             self.isolated_stars_tbl = Table()
             self.isolated_stars_tbl['x'] = x[mask]  
             self.isolated_stars_tbl['y'] = y[mask]  
+            self.isolated_stars_tbl['peak_value'] = peak[mask]  
             self.isolated_stars_tbl['rejected'] = False #init
 
             isolated_stars_tbl_len = len(self.isolated_stars_tbl)
             self.console_msg("Find Peaks: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
             self.console_msg("Find Peaks: " + str(isolated_stars_tbl_len) + " peaks remain.")
+
+            # Now cull the table to the user setting 'Mac number of Peaks", user_npeaks
+
+            # Test the user setting of Max num of Peaks
+            # This is ONLY applied after isolated_stars_tbl is created; the initial set, peaks_tbl,
+            # has no limitations 
+            user_npeaks = self.find_peaks_npeaks_entry.get().strip()
+            if not user_npeaks or not user_npeaks.isnumeric():
+                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
+                user_npeaks = np.inf
+            else:
+                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + str(int(user_npeaks)))
+                user_npeaks = int(user_npeaks)
+
+                #First sort in order of highest peak value
+                self.isolated_stars_tbl.sort(keys='peak_value', reverse=True)
+                # Remove unwanted rows 
+                if user_npeaks < isolated_stars_tbl_len:
+                    self.isolated_stars_tbl.remove_rows(slice(user_npeaks, None, 1))
+
+            #re-count
+            isolated_stars_tbl_len = len(self.isolated_stars_tbl)
 
             # now set 'rejected' to True for any stars that are proximate to a 
             # coordinate in ePSF_rejection_list
