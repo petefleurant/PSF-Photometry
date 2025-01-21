@@ -446,6 +446,10 @@ class MyGUI:
                 image_height = image_data.shape[0]
                 self.wcs_header = WCS(image[0].header)
 
+                if not self.wcs_header.has_celestial:
+                    self.console_msg(
+                        "Note, Celestial coordinate information not in header.")
+
                 FITS_minimum = np.min(image_data)
                 FITS_maximum = np.max(image_data)
                 self.console_msg("Width: " + str(image_width) +
@@ -522,12 +526,8 @@ class MyGUI:
         
         if len(image_file) > 0:
             try:
-                
                 self.load_FITS(image_file)
-                self.display_image()
-                self.clear_psf_label()
-                self.clear_epsf_plot()
-                self.clear_selstars()
+                self.clear_ePSF()
                 
             except Exception as e:
                 self.error_raised = True
@@ -629,7 +629,7 @@ class MyGUI:
             # now ready to find peaks
 
             # Always get all (np.inf) the peaks then cull them with user_npeaks after getting isolated_stars_tbl
-            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=10, npeaks=np.inf)
+            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=3, npeaks=np.inf)
 
             if peaks_tbl == None or len(peaks_tbl) == 0:
                 self.console_msg("Find Peaks: no peaks found!!!")
@@ -924,7 +924,7 @@ class MyGUI:
 
         try:
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=True) 
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True) 
 
             # when calling epsf_builder, maxiters=50 causes following exception:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
@@ -1002,7 +1002,6 @@ class MyGUI:
                 self.console_msg("Loading Rejection list from: " + str(file_name))
                 self.ePSF_rejection_list = pd.read_csv(str(file_name))
                 self.ePSF_rejection_list["stale"] = True #reset 
-                self.ePSF_samples_plotted = True
                 self.display_image()
             else:
                 return
@@ -1088,6 +1087,13 @@ class MyGUI:
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
+            # mask out peaks with peak_value > linearity_limit_entry
+            # test linearity_limit_entry 
+            linearity_limit = self.linearity_limit_entry.get().strip()
+            if not linearity_limit or not linearity_limit.isnumeric():
+                self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
+                linearity_limit = 60000
+
             star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
                                         fwhm = fwhm,
                                         minsep_fwhm = 1,
@@ -1095,7 +1101,8 @@ class MyGUI:
                                         roundhi = 3.0,
                                         roundlo = -5.0,
                                         sharplo = sharplo,
-                                        sharphi = 2.0
+                                        sharphi = 2.0,
+                                        peakmax=float(linearity_limit)
                                         )
             
             # subtract background
@@ -1161,7 +1168,7 @@ class MyGUI:
                                                 finder = star_find,
                                                 grouper = None, #mode = 'new'; or SourceGrouper(min_separation=50),
                                                 fitter = selected_fitter,
-                                                fitter_maxiters = 10,
+                                                #fitter_maxiters = 10,
                                                 maxiters = iterations,
                                                 localbkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
@@ -1527,7 +1534,7 @@ class MyGUI:
                         if vsx_ids_in_photometry_table and len(str(matching_star["vsx_id"])) > 1:
                             self.console_msg("Matching VSX Source: " + str(matching_star["vsx_id"]))
                                 
-                        elif type(matching_star["match_id"]) in (str, int, np.float64):
+                        elif type(matching_star["match_id"]) in (str, int):
                             self.console_msg(
                                 "Matching catalog source ID: " + str(matching_star["match_id"]) + 
                                     "; label: " + str(matching_star["label"]) +
@@ -2381,7 +2388,7 @@ class MyGUI:
             frame_center = self.wcs_header.pixel_to_world(
                 int(image_width / 2), (image_height / 2))
 
-            if not hasattr(frame_center, "ra"):
+            if not self.wcs_header.has_celestial:
                 #file needs to be plate solved first
                 self.console_msg("Image needs to be plate solved first! execute 'Photometry->Solve Image'")
                 self.console_msg("Ready")
@@ -2463,8 +2470,10 @@ class MyGUI:
     
                 elif catalog_selection == "Gaia DR2":
                     catalog = "I/345"
+                    sourceId_column_name = "DR2Name"
                     ra_column_name = "RA_ICRS"
                     dec_column_name = "DE_ICRS"
+                    catalog_columns = ["DR2Name", "RA_ICRS", "DE_ICRS", "Plx", "Gmag", "RPmag", "Lum"]
     
                 else:
                     self.console_msg("UNEXPECTED ERROR UNKOWN CATALOG SELECTION!!!!!", level=logging.ERROR)
@@ -2478,8 +2487,10 @@ class MyGUI:
                 
                 mag_column_name = self.filter + "mag"
     
-                comparison_stars = Vizier(
-                    catalog=catalog, row_limit=-1).query_region(frame_center, radius=frame_radius)[0]
+                # [0] implies I/345/gaia2; [1] implies I/345/varres
+                comparison_stars = Vizier(catalog=catalog,
+                                          columns=catalog_columns,
+                                          row_limit=-1).query_region(frame_center, radius=frame_radius)[0] 
 
 
                 # print(comparison_stars)
@@ -2530,7 +2541,7 @@ class MyGUI:
                     match_is_check = comparison_stars.iloc[match_index]["Check Star"]
                 else:
                     match_id = comparison_stars[match_index][0]
-                    match_label = ""
+                    match_label = comparison_stars[match_index][sourceId_column_name]
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
@@ -2585,10 +2596,11 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_ra"] = match_ra
                     self.results_tab_df.loc[index, "match_dec"] = match_dec
                     self.results_tab_df.loc[index, "match_mag"] = match_mag
-                    self.results_tab_df.loc[index, "check_star"] = match_is_check
-                    
-                    #record comp stars used for console if AAVSO comp stars
-                    comp_stars_found.append((str(match_label), match_is_check))
+
+                    if using_aavso_catalog:
+                        self.results_tab_df.loc[index, "check_star"] = match_is_check
+                        #record comp stars used for console if AAVSO comp stars
+                        comp_stars_found.append((str(match_label), match_is_check))
                     
                 else:
                     #Here if separation >= matching_radius
@@ -3099,7 +3111,7 @@ class MyGUI:
             catalog_label = tk.Label(self.es_top, text="Comparison Catalog:")
             catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             catalog_dropdown = tk.OptionMenu(
-                self.es_top, self.catalog_stringvar, "AAVSO")
+                self.es_top, self.catalog_stringvar, "AAVSO", "Gaia DR2")
                 # , "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog") <--not supporting now
             catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
