@@ -514,6 +514,13 @@ class MyGUI:
                 +" "+str(e), level=logging.ERROR)
             pass
 
+    ###############################################################
+    #
+    #
+    #  open_FITS_file
+    # 
+    #
+    ###############################################################
     def open_FITS_file(self):
         global header
 
@@ -1652,6 +1659,13 @@ class MyGUI:
         self.console_msg("Zoom: " + str(self.zoom_level))
         self.display_image()
 
+    ###############################################################
+    #
+    #
+    #  solve_image
+    # 
+    #
+    ###############################################################
     def solve_image(self):
         global generated_image
         global header
@@ -1663,27 +1677,33 @@ class MyGUI:
 
         self.console_msg("Solving via Astrometry.Net...")
         try:
-            # First check if a phtometry table exists.
+            # First check if a photometry table exists.
 
             ast = AstrometryNet()
             ast.api_key = self.astrometrynet_key_entry.get()
-            ast.URL = "http://" + self.astrometrynet_entry.get()
-            ast.API_URL = "http://" + self.astrometrynet_entry.get() + "/api"
+            #ast.URL = "http://" + self.astrometrynet_entry.get()
+            #ast.API_URL = "http://" + self.astrometrynet_entry.get() + "/api"
 
             sources_df = self.results_tab_df.sort_values("flux_fit", ascending=False)
-            width, height = generated_image.size
+            image_data = fits.getdata(self.image_file)
+            image_width = image_data.shape[1]
+            image_height = image_data.shape[0]
+
 
             self.wcs_header = ast.solve_from_source_list(sources_df['x_fit'], sources_df['y_fit'],
-                                                         width, height,
-                                                         solve_timeout=360)
-            self.console_msg("Astrometry.Net solution reference point RA: " + 
-                                str(self.wcs_header["CRVAL1"]) + " Dec: " + 
-                                str(self.wcs_header["CRVAL2"]))
+                                                         image_width, image_height,
+                                                         solve_timeout=360, verbose=True)
+            if self.wcs_header:
+                self.console_msg("Astrometry.Net solution reference point RA: " + 
+                                    str(self.wcs_header["CRVAL1"]) + " Dec: " + 
+                                    str(self.wcs_header["CRVAL2"]))
+                header = header + self.wcs_header
+                self.wcs_header = WCS(header)
+            else:
+                self.console_msg("Astrometry.Net solution NOT FOUND")
+            
             self.console_msg("Ready")
 
-            header = header + self.wcs_header
-            self.wcs_header = WCS(header)
-            
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -1709,7 +1729,7 @@ class MyGUI:
         self.two_color_photometry('V-I')
 
     #
-    # two_color_phtometry
+    # two_color_photometry
     # 
     # This calculates the two color photometry process as executed in AAVSO VPhot
     # TwoColorPhotometry. 
