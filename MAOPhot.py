@@ -492,7 +492,6 @@ class MyGUI:
                         self.error_raised = True
                         exc_type, exc_obj, exc_tb = sys.exc_info()
                         self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
-                        pass
 
                 if 'jd' in header:
                     jd = header['jd']
@@ -512,7 +511,6 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) 
                 +" "+str(e), level=logging.ERROR)
-            pass
 
     ###############################################################
     #
@@ -693,7 +691,7 @@ class MyGUI:
         
             self.fit_shape = int(_shape) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
-            hsize = (size - 1)/2 * 15 # Eg., 5 * 15 = 75 away from edge
+            hsize = (size - 1)/2 
             x = non_saturated_stars_tbl['x_peak']  
             y = non_saturated_stars_tbl['y_peak']  
             peak = non_saturated_stars_tbl['peak_value']
@@ -2388,9 +2386,7 @@ class MyGUI:
             
             master_report.to_csv(dir_path + self.object_name_entry.get() + "-" + input_color + "-Master-Report.csv", index=False)
             self.console_msg("Master Report saved to " + str(dir_path + self.object_name_entry.get() + "-" + input_color + "-Master-Report.csv"))
-
-            pass
-            
+            self.console_msg("Ready")
             
         except Exception as e:
             self.error_raised = True
@@ -3663,8 +3659,8 @@ class MyGUI:
                 f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
                         cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
 
-            self.console_msg(
-                "AAVSO Photometry report saved to " + str(report_filename))
+            self.console_msg("AAVSO Photometry report saved to " + str(report_filename))
+            self.console_msg("Ready")
 
         except Exception as e:
             self.error_raised = True
@@ -3936,8 +3932,8 @@ class MyGUI:
                 f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
                         cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
 
-            self.console_msg(
-                "AAVSO Photometry report saved to " + str(report_filename))
+            self.console_msg("AAVSO Photometry report saved to " + str(report_filename))
+            self.console_msg("Ready")
 
         except Exception as e:
             self.error_raised = True
