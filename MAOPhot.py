@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #         #                             
-  ##        ##        ##                             
- # #       # #       # #                             
-   #         #         #                             
-   #   ###   #   ###   #                             
-   #   ###   #   ###   #                             
- ##### ### ##### ### #####                           
-                            
-Welcome to MAOPhot 1.1.1, a PSF Photometry tool using Astropy and Photutils.psf
+   #         #        #####  
+  ##        ##       #     # 
+ # #       # #             # 
+   #         #        #####  
+   #   ###   #   ### #       
+   #   ###   #   ### #       
+ ##### ### ##### ### ####### 
+                                                         
+Welcome to MAOPhot 1.1.2, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.1 Revision
+    1.1.2 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -59,8 +59,6 @@ objects in image field
 - User can optionally enter a AAVSO Chart ID when retrieving comparison star
  data
 - User can specify check star and list of comp stars to use
-
-
 
     More about Single Image Photometry
 
@@ -173,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -1726,6 +1724,7 @@ class MyGUI:
     def VI_two_color_photometry(self):
         self.two_color_photometry('V-I')
 
+    #######################################################################################
     #
     # two_color_photometry
     # 
@@ -1733,6 +1732,8 @@ class MyGUI:
     # TwoColorPhotometry. 
     # The parameter input_color is either 'B-V','V-R', or 'V-I' The formulae are the same/
     #
+    ########################################################################################
+    
     def two_color_photometry(self, input_color):
         try:
             """
@@ -3479,6 +3480,12 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
+############################################################
+#
+#  generate_aavso_report_1image
+#
+############################################################
+
     def generate_aavso_report_1image(self):
         global image_width, image_height
 
@@ -3558,18 +3565,20 @@ class MyGUI:
 
         try:
             """
-            Typical Single Image Report (note only 1 check and 1 comp star)
-
+            Typical Single Image Report 
+            
             #TYPE=EXTENDED
             #OBSCODE=FPIA
-            #SOFTWARE=VPhot 4.0.27
+            #SOFTWARE=Self-developed; MAOPhot 1.1.2 using Photutils
+            #DELIM=,
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
             #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-            W Her,2459735.64795,14.599,0.010,B,NO,STD,144,-6.423,139,-6.659,na,na,X27989RA,
-            Mittelman ATMoB Observatory|CMAGINS=-6.423|CREFERR=0.061|CREFMAG=14.933|KMAG=14.697
-            |KMAGINS=-6.659|KREFERR=0.037|KREFMAG=14.709|VMAGINS=-6.757
+            Z Tau,2460691.51184,10.762,0.026,V,NO,STD,ENSEMBLE,na,108,10.800,1.3675,na,X39599EMF,
+            Mittelman ATMoB Observatory|KDEC=15.939826|KMAGINS=-10.919|KMAGSTD=10.800|KRA=88.102325
+            |KREFERR=0.020|KREFMAG=10.757|VMAGINS=-10.956
+
             """
 
             #Check if the Var to report on has been measured
@@ -3601,7 +3610,8 @@ class MyGUI:
                 comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)].iloc[0]
 
                 comp_IM = comp_star["inst_mag"]
-                comp_star_mag = comp_star["match_mag"]
+                #comp_star_mag = comp_star["match_mag"]
+                comp_star_mag = float(comp_star["match_mag"])
 
                 check_IM = check_star["inst_mag"]
                 check_star_mag = check_IM - comp_IM + comp_star_mag
@@ -3652,7 +3662,7 @@ class MyGUI:
                          "|KMAG=" + str(round(check_star_mag, decimal_places)) +\
                          "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
                          "|KREFERR=" + str(round(check_star_err, decimal_places)) +\
-                         "|KREFMAG=" + str(round(check_star_mag_ref, decimal_places)) +\
+                         "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
                          "|VMAGINS=" + str(round(var_IM, decimal_places))
                 
                 # Add " " after notes, because TA clobbers last char
@@ -3702,7 +3712,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=VPhot 4.0.44
+        #SOFTWARE=Self-developed; MAOPhot 1.1.2 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -3997,7 +4007,7 @@ class MyGUI:
         #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
-        self.program_name_note = " using Photutils"
+        self.program_name_note = "using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
 
         # Check if therre is a ./log dir
