@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #        #####  
+    #         #        #####  
   ##        ##       #     # 
  # #       # #             # 
    #         #        #####  
-   #   ###   #   ### #       
-   #   ###   #   ### #       
- ##### ### ##### ### ####### 
+   #   ###   #   ###       # 
+   #   ###   #   ### #     # 
+ ##### ### ##### ###  #####  
                                                          
-Welcome to MAOPhot 1.1.2, a PSF Photometry tool using Astropy and Photutils.psf
+Welcome to MAOPhot 1.1.3, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.2 Revision
+    1.1.3 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -1205,7 +1205,10 @@ class MyGUI:
             self.console_msg("Residuals saved to: " + residual_file_name)
             """
 
-            self.results_tab_df = result_tab.to_pandas()
+            # Remove any multidimensional columns
+            goodnames = [name for name in result_tab.colnames if len(result_tab[name].shape) <=1]
+            
+            self.results_tab_df = result_tab[goodnames].to_pandas()
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
             if len(self.airmass_entry.get()) > 0:
@@ -3569,7 +3572,7 @@ class MyGUI:
             
             #TYPE=EXTENDED
             #OBSCODE=FPIA
-            #SOFTWARE=Self-developed; MAOPhot 1.1.2 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.3 using Photutils
             #DELIM=,
             #DELIM=,
             #DATE=JD
@@ -3712,7 +3715,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.2 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.3 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
