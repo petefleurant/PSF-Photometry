@@ -302,6 +302,7 @@ def generate_FITS_thumbnail(stretch_min, stretch_max, zoom_level,
                                      a=generated_image)
 
 image_file = ""
+settings_filename = ""
 image_data = []
        
 
@@ -325,8 +326,10 @@ class MyGUI:
     ensemble_size = 0
     jd = 0
     image_file = ""
+    settings_filename = ""
     photometry_circles = {}
-    valid_parameter_list = {}
+    valid_parameter_list = {} # contains user's settings
+    valid_config_list = {} # contains 'global' MAOPhot settings/config parameters
     ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
     ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[], "stale":[]})
     epsf_model = None
@@ -365,6 +368,7 @@ class MyGUI:
     object_notes_entry = None
     display_all_objects = None
     candidate_stars = None
+    settings_filename_entry = None # special case this is only place holder for filename
 
 
     #
@@ -1883,6 +1887,22 @@ class MyGUI:
             if not self.results_tab_df_colorV["label"].isin([check_star_in_setting_with_prefix]).any():
                 self.console_msg("Settings check star: " + check_star_in_setting +
                                   " not found in " + input_color[2] + "; select another check star")
+                # Remember: input_color is like "B-V", so input_color[0] is B and input_color[2] is V
+                return
+
+            #check to see if Settings' Object Name is in both tables
+            if not self.results_tab_df_colorB["vsx_id"].isin([variable_star]).any():
+                self.console_msg("Settings Object Name: " + variable_star +
+                                  " not found in " + input_color[0] + "; select " +
+                                      variable_star + " in " + input_color[0] +
+                                        "image with mouse; make sure you click on the same star in each image")
+                return
+
+            if not self.results_tab_df_colorV["vsx_id"].isin([variable_star]).any():
+                self.console_msg("Settings Object Name: " + variable_star +
+                                  " not found in " + input_color[2] + "; select " +
+                                      variable_star + " in " + input_color[2] +
+                                        "image with mouse; make sure you click on the same star in each image")
                 return
 
             #Reset the old check_star (if it is True) and set the new one 
@@ -2798,7 +2818,47 @@ class MyGUI:
             self.es_top.lift()
 
 
+    ############################################################################################
+    #
+    # load_config
+    #
+    # load configuration file (./.config)
+    #
+    ############################################################################################
+    def load_config(self):
+        try:
+            # Check if .config file has been created
+            # if there then load existing config parameters
+            if os.path.exists(self.config_file):
+                configs = {}
+                with open(str(self.config_file)) as f:
+                    r = csv.DictReader(f)
+                    for row in r:
+                        # dict from OrderedDict, required for Python < 3.8 as DictReader behavior changed
+                        row = dict(row)
+                        # append configs dictionary with the read row
+                        configs.update(row)
+                    for key in configs:
+                        if key not in self.valid_config_list:
+                            continue
+                        if hasattr(self, key):  # Check if the attribute exists
+                            setattr(self, key, configs[key])
+        
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            #Logger not up yet do print to console
+            print("Exception at line no: " + str(exc_tb.tb_lineno) )
+            os._exit(1)
 
+    ############################################################################################
+    #
+    # load_settings
+    #    
+    # command for "Load..." button in Settings window
+    #
+    ############################################################################################
+    
     def load_settings(self):
         try:
             options = {}
@@ -2808,9 +2868,33 @@ class MyGUI:
             options['title'] = 'Load MAOPhot settings...'
 
             file_name = fd.askopenfilename(**options)
-            
+
+            self.open_settings(file_name)
+
+            self.console_msg("Loaded settings from " + str(file_name))
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+        finally:
+            # bring the settings window back to the front                
+            self.es_top.lift()
+
+
+    ############################################################################################
+    #
+    #
+    #      open_settings  
+    #
+    #
+    ############################################################################################
+
+    def open_settings(self, file_name):
+        try:            
             if len(str(file_name)) > 0:
-                self.console_msg("Loading settings from " + str(file_name))
+                self.settings_filename = str(file_name)
                 settings = {}
                 with open(str(file_name)) as f:
                     r = csv.DictReader(f)
@@ -2826,25 +2910,26 @@ class MyGUI:
                             self.set_entry_text(
                                 getattr(self, key), settings[key])
                         if type(getattr(self, key)) == tk.StringVar:
-                            getattr(self, key).set(settings[key])
+                             getattr(self, key).set(settings[key])
                         if type(getattr(self, key)) == tk.BooleanVar:
                             getattr(self, key).set(settings[key])
-
-            self.console_msg("Ready")
-
+                    #special case for settings filename
+                    self.set_entry_text(self.settings_filename_entry, self.settings_filename)
+                    self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
 
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
-        finally:
-            # bring the settings window back to the front                
-            self.es_top.lift()
+            pass
+            #self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
 
 
+    ############################################################################################
     #
     # show_settings; From File->Edit Settings.... 
     #
+    ############################################################################################
+
     def show_settings(self):
         self.es_top.deiconify()
 
@@ -2866,8 +2951,6 @@ class MyGUI:
             self.es_top = es_
 
             self.es_top.protocol("WM_DELETE_WINDOW", self.es_top.withdraw)
-
-            #self.es_top.minsize(width=int(self.screen_width*.2), height=int(self.screen_height*height_factor_))
 
             tk.Grid.columnconfigure(self.es_top, 0, weight=1)
 
@@ -3203,6 +3286,20 @@ class MyGUI:
                 settings_right_frame, width=extended_settings_entry_width)
             self.astrometrynet_key_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
             self.astrometrynet_key_entry.config(show="*")
+            row += 1
+
+            separator_ = ttk.Separator(settings_right_frame, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            settingsfile_key_label = tk.Label(
+                settings_right_frame, text="Settings Filename:")
+            settingsfile_key_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.settings_filename_entry = tk.Entry(
+                settings_right_frame, width=extended_settings_entry_width)
+            self.settings_filename_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
+            self.set_entry_text(self.settings_filename_entry, self.settings_filename)
+            self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
             row += 1
 
 
@@ -4005,13 +4102,62 @@ class MyGUI:
     ##########################################################################        
 
     def __init__(self):
-
  
+        ############################################################################
+        #
+        #  valid_parameter_list facilitates loading from and saving to a settings file
+        #  buttons in popup window: Settings
+        # 
+        ############################################################################
+        self.valid_parameter_list = {
+            'find_peaks_npeaks_entry': self.find_peaks_npeaks_entry,
+            'fit_width_entry': self.fit_width_entry,
+            'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
+            'fwhm_entry': self.fwhm_entry,
+            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
+            'photometry_iterations_entry': self.photometry_iterations_entry,
+            'sharplo_entry': self.sharplo_entry,
+            'matching_radius_entry': self.matching_radius_entry,
+            'aavso_obscode_entry': self.aavso_obscode_entry,
+            'telescope_entry': self.telescope_entry,
+            'tbv_entry': self.tbv_entry,
+            'tv_bv_entry': self.tv_bv_entry,
+            'tb_bv_entry': self.tb_bv_entry,
+            'tvr_entry': self.tvr_entry,
+            'tv_vr_entry': self.tv_vr_entry,
+            'tr_vr_entry': self.tr_vr_entry,
+            'tvi_entry': self.tvi_entry,
+            'tv_vi_entry': self.tv_vi_entry,
+            'ti_vi_entry': self.ti_vi_entry,
+            'linearity_limit_entry': self.linearity_limit_entry,
+            'catalog_stringvar': self.catalog_stringvar,
+            'vizier_catalog_entry': self.vizier_catalog_entry,
+            'fitter_stringvar': self.fitter_stringvar,
+            'astrometrynet_entry': self.astrometrynet_entry,
+            'astrometrynet_key_entry': self.astrometrynet_key_entry,
+            'object_kref_entry': self.object_kref_entry,
+            'object_sel_comp_entry': self.object_sel_comp_entry,
+            'object_name_entry': self.object_name_entry,
+            'object_notes_entry': self.object_notes_entry,
+            'display_all_objects': self.display_all_objects
+            }
+
+        ############################################################################
+        #
+        #  valid_config_list list of config parameters loaded from .config file
+        # 
+        ############################################################################
+        self.valid_config_list = {
+            'settings_filename': self.settings_filename
+        }
+
+        
         #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
         self.program_name_note = "using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
+        self.config_file = ".//.config"
 
         # Check if therre is a ./log dir
         self.logging_dir = ".//logs//"
@@ -4031,6 +4177,8 @@ class MyGUI:
         self.our_fh.setFormatter(self.our_formatter)
         self.our_logger.addHandler(self.our_fh)
         
+        self.load_config()
+
         #
         #
         #
@@ -4398,43 +4546,10 @@ class MyGUI:
         self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
 
         self.launch_settings()
-
-        """
-        valid_parameter_list facilitates loading from and saving to a settings file
-        buttons in popup window: Settings
-        """
-        self.valid_parameter_list = {
-            'find_peaks_npeaks_entry': self.find_peaks_npeaks_entry,
-            'fit_width_entry': self.fit_width_entry,
-            'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
-            'fwhm_entry': self.fwhm_entry,
-            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
-            'photometry_iterations_entry': self.photometry_iterations_entry,
-            'sharplo_entry': self.sharplo_entry,
-            'matching_radius_entry': self.matching_radius_entry,
-            'aavso_obscode_entry': self.aavso_obscode_entry,
-            'telescope_entry': self.telescope_entry,
-            'tbv_entry': self.tbv_entry,
-            'tv_bv_entry': self.tv_bv_entry,
-            'tb_bv_entry': self.tb_bv_entry,
-            'tvr_entry': self.tvr_entry,
-            'tv_vr_entry': self.tv_vr_entry,
-            'tr_vr_entry': self.tr_vr_entry,
-            'tvi_entry': self.tvi_entry,
-            'tv_vi_entry': self.tv_vi_entry,
-            'ti_vi_entry': self.ti_vi_entry,
-            'linearity_limit_entry': self.linearity_limit_entry,
-            'catalog_stringvar': self.catalog_stringvar,
-            'vizier_catalog_entry': self.vizier_catalog_entry,
-            'fitter_stringvar': self.fitter_stringvar,
-            'astrometrynet_entry': self.astrometrynet_entry,
-            'astrometrynet_key_entry': self.astrometrynet_key_entry,
-            'object_kref_entry': self.object_kref_entry,
-            'object_sel_comp_entry': self.object_sel_comp_entry,
-            'object_name_entry': self.object_name_entry,
-            'object_notes_entry': self.object_notes_entry,
-            'display_all_objects': self.display_all_objects
-            }
+        self.open_settings(self.settings_filename)
+        if os.path.exists(self.settings_filename):
+            self.console_msg("Loaded settings from " + str(self.settings_filename))
+        self.console_msg("Ready")
 
         tk.mainloop()
 
