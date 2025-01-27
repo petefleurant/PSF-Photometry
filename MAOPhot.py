@@ -2782,6 +2782,14 @@ class MyGUI:
         self.display_image()
 
 
+    ############################################################################################
+    #
+    # save_settings_as
+    #
+    # function callback for Save As.. button in Settings Window
+    #
+    ############################################################################################
+
     def save_settings_as(self):
         options = {}
         options['defaultextension'] = '.txt'
@@ -2843,6 +2851,7 @@ class MyGUI:
                             continue
                         if hasattr(self, key):  # Check if the attribute exists
                             setattr(self, key, configs[key])
+                    pass
         
         except Exception as e:
             self.error_raised = True
@@ -2921,8 +2930,6 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             pass
-            #self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
-
 
     ############################################################################################
     #
@@ -4057,13 +4064,34 @@ class MyGUI:
     #  exit_app
     # 
     # 
-    # Ask for confirmation before exiting
+    # Ask for confirmation before saving conig items exiting; 
     #
     ##########################################################################        
     
     def exit_app(self):
         if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
-            os._exit(0)
+            # save config items
+            try:
+                config = {}
+                '''
+                Use the valid_config list which contains the official list
+                of config parameters
+                '''
+                mao_config = list(self.valid_config_list)
+                for param in mao_config:
+                    config.update({param : getattr(self, param)})
+
+                with open(str(self.config_file), 'w') as f:
+                    w = csv.DictWriter(f, config.keys())
+                    w.writeheader()
+                    w.writerow(config)
+                os._exit(0)
+            
+            except Exception as e:
+                self.error_raised = True
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+                os._exit(1)
 
     ##########################################################################
     # 
@@ -4077,21 +4105,6 @@ class MyGUI:
     
     def exit_fullscreen(self, event):
         self.window.wm_attributes('-fullscreen', False)
-
-    ##########################################################################
-    # 
-    # 
-    #  on_close
-    # 
-    # 
-    # Ask for confirmation before exiting
-    #
-    ##########################################################################        
-    
-    def on_close(self):
-        if tk.messagebox.askokcancel("Quit", "Do you really want to exit?"):
-            self.window.destroy()  # Close the window and exit the program
-            os._exit(0)
 
     ##########################################################################
     # 
@@ -4202,7 +4215,7 @@ class MyGUI:
         self.window.bind('<Escape>', self.exit_fullscreen)
         
         # Bind the "X" button to the custom close function
-        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.window.protocol("WM_DELETE_WINDOW", self.exit_app)
 
         self.window.title(self.program_full_name)
 
