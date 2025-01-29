@@ -2419,6 +2419,16 @@ class MyGUI:
      
 
 
+    #######################################################################################
+    #
+    # get_comparison_stars
+    # 
+    # This is callback after Photometry__>Get Comparison Stars is clicked
+    # 
+    # 
+    #
+    ########################################################################################
+    
     def get_comparison_stars(self):
         global image_width, image_height
         comp_stars_found = [] #init
@@ -2463,6 +2473,10 @@ class MyGUI:
             """
                 Most if not all the time we will be using AAVSO catalog for comp and check stars
             """
+
+            ## Init 
+            using_aavso_catalog = False
+            using_apass_dr9 = False
     
             if catalog_selection == "AAVSO":
                 using_aavso_catalog = True
@@ -2484,14 +2498,14 @@ class MyGUI:
  
             
             else:
-                using_aavso_catalog = False
                 
                 #Use VizierR catalog
                 if catalog_selection == "APASS DR9":
                     catalog = "II/336"
-                    #catalog = "J/other/JAD/20.4"
                     ra_column_name = "RAJ2000"
                     dec_column_name = "DEJ2000"
+                    catalog_columns = ["RAJ2000", "DEJ2000", "Vmag", "Bmag"]
+                    using_apass_dr9 = True
     
                 elif catalog_selection == "URAT1":
                     catalog = "I/329"
@@ -2541,12 +2555,12 @@ class MyGUI:
 
             if len(comparison_stars) == 0:
                 self.console_msg(
-                    "NO Comparison stars found in the field; make sure filter and chart Id is correct.")
+                    "NO Comparison stars found in the field; make sure filter and/or chart Id is correct.")
                 self.console_msg("Ready")
                 return
             else:                
                 self.console_msg(
-                    "Found " + str(len(comparison_stars)) + " objects in the field.")
+                    "Found " + str(len(comparison_stars)) + " comp stars in the field.")
 
 
             self.console_msg("Matching image to catalog...")
@@ -2579,6 +2593,16 @@ class MyGUI:
                     match_dec= catalog_comparison[match_index].dec.degree
                     match_mag = comparison_stars.iloc[match_index][mag_column_name]
                     match_is_check = comparison_stars.iloc[match_index]["Check Star"]
+                elif using_apass_dr9:
+                    match_id = "RA" + format(comparison_stars[match_index][ra_column_name], '.2f') +\
+                                     "+" + \
+                                    "DE" + format(comparison_stars[match_index][dec_column_name], '.2f')
+                    # Create a label similar to APASS' 
+                    match_label = format(comparison_stars[match_index][mag_column_name] * 10, '3.0f') 
+
+                    match_ra = comparison_stars[match_index][ra_column_name]
+                    match_dec = comparison_stars[match_index][dec_column_name]
+                    match_mag = comparison_stars[match_index][mag_column_name]
                 else:
                     match_id = comparison_stars[match_index][0]
                     match_label = comparison_stars[match_index][sourceId_column_name]
@@ -2626,7 +2650,11 @@ class MyGUI:
                                 n += 1
                             
                             #new comp label
-                            match_label = str(match_label)  + "." + str(n)
+                            if using_apass_dr9:
+                                #use an '_' to delimet duplicates (they may not be in the saem location)
+                                match_label = str(match_label)  + "_" + str(n)
+                            else:
+                                match_label = str(match_label)  + "." + str(n)
 
                     #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
@@ -2730,7 +2758,7 @@ class MyGUI:
                 self.console_msg("Found no VSX sources in the field.")
                 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
-            self.console_msg("Photometry table saved (with following comp stars) to " + str(self.image_file + ".csv"))
+            self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
 
             if using_aavso_catalog:
                 comp_list = ''
@@ -3218,8 +3246,8 @@ class MyGUI:
             catalog_label = tk.Label(settings_right_frame, text="Comparison Catalog:")
             catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             catalog_dropdown = tk.OptionMenu(
-                settings_right_frame, self.catalog_stringvar, "AAVSO", "Gaia DR2")
-                # , "APASS DR9", "URAT1", "USNO-B1.0", "Gaia DR2", "VizieR Catalog") <--not supporting now
+                settings_right_frame, self.catalog_stringvar, "AAVSO", "Gaia DR2", "APASS DR9")
+            #, "URAT1", "USNO-B1.0", "VizieR Catalog") <--not supporting now
             catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
@@ -4118,45 +4146,6 @@ class MyGUI:
  
         ############################################################################
         #
-        #  valid_parameter_list facilitates loading from and saving to a settings file
-        #  buttons in popup window: Settings
-        # 
-        ############################################################################
-        self.valid_parameter_list = {
-            'find_peaks_npeaks_entry': self.find_peaks_npeaks_entry,
-            'fit_width_entry': self.fit_width_entry,
-            'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
-            'fwhm_entry': self.fwhm_entry,
-            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
-            'photometry_iterations_entry': self.photometry_iterations_entry,
-            'sharplo_entry': self.sharplo_entry,
-            'matching_radius_entry': self.matching_radius_entry,
-            'aavso_obscode_entry': self.aavso_obscode_entry,
-            'telescope_entry': self.telescope_entry,
-            'tbv_entry': self.tbv_entry,
-            'tv_bv_entry': self.tv_bv_entry,
-            'tb_bv_entry': self.tb_bv_entry,
-            'tvr_entry': self.tvr_entry,
-            'tv_vr_entry': self.tv_vr_entry,
-            'tr_vr_entry': self.tr_vr_entry,
-            'tvi_entry': self.tvi_entry,
-            'tv_vi_entry': self.tv_vi_entry,
-            'ti_vi_entry': self.ti_vi_entry,
-            'linearity_limit_entry': self.linearity_limit_entry,
-            'catalog_stringvar': self.catalog_stringvar,
-            'vizier_catalog_entry': self.vizier_catalog_entry,
-            'fitter_stringvar': self.fitter_stringvar,
-            'astrometrynet_entry': self.astrometrynet_entry,
-            'astrometrynet_key_entry': self.astrometrynet_key_entry,
-            'object_kref_entry': self.object_kref_entry,
-            'object_sel_comp_entry': self.object_sel_comp_entry,
-            'object_name_entry': self.object_name_entry,
-            'object_notes_entry': self.object_notes_entry,
-            'display_all_objects': self.display_all_objects
-            }
-
-        ############################################################################
-        #
         #  valid_config_list list of config parameters loaded from .config file
         # 
         ############################################################################
@@ -4559,13 +4548,56 @@ class MyGUI:
         self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
 
         self.launch_settings()
-        self.open_settings(self.settings_filename)
+
+        # Now that the widjets are defined we can create this dict for saving data:
+        
+        ############################################################################
+        #
+        #  valid_parameter_list facilitates loading from and saving to a settings file
+        #  buttons in popup window: Settings
+        # 
+        ############################################################################
+        self.valid_parameter_list = {
+            'find_peaks_npeaks_entry': self.find_peaks_npeaks_entry,
+            'fit_width_entry': self.fit_width_entry,
+            'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
+            'fwhm_entry': self.fwhm_entry,
+            'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
+            'photometry_iterations_entry': self.photometry_iterations_entry,
+            'sharplo_entry': self.sharplo_entry,
+            'matching_radius_entry': self.matching_radius_entry,
+            'aavso_obscode_entry': self.aavso_obscode_entry,
+            'telescope_entry': self.telescope_entry,
+            'tbv_entry': self.tbv_entry,
+            'tv_bv_entry': self.tv_bv_entry,
+            'tb_bv_entry': self.tb_bv_entry,
+            'tvr_entry': self.tvr_entry,
+            'tv_vr_entry': self.tv_vr_entry,
+            'tr_vr_entry': self.tr_vr_entry,
+            'tvi_entry': self.tvi_entry,
+            'tv_vi_entry': self.tv_vi_entry,
+            'ti_vi_entry': self.ti_vi_entry,
+            'linearity_limit_entry': self.linearity_limit_entry,
+            'catalog_stringvar': self.catalog_stringvar,
+            'vizier_catalog_entry': self.vizier_catalog_entry,
+            'fitter_stringvar': self.fitter_stringvar,
+            'astrometrynet_entry': self.astrometrynet_entry,
+            'astrometrynet_key_entry': self.astrometrynet_key_entry,
+            'object_kref_entry': self.object_kref_entry,
+            'object_sel_comp_entry': self.object_sel_comp_entry,
+            'object_name_entry': self.object_name_entry,
+            'object_notes_entry': self.object_notes_entry,
+            'display_all_objects': self.display_all_objects
+            }
+
+        # if .config had a valid settings_filename, then load that one in
         if os.path.exists(self.settings_filename):
+            self.open_settings(self.settings_filename)
             self.console_msg("Loaded settings from " + str(self.settings_filename))
+            
         self.console_msg("Ready")
 
         tk.mainloop()
-
 
 myGUI = MyGUI()
 
