@@ -2598,7 +2598,7 @@ class MyGUI:
                                      "+" + \
                                     "DE" + format(comparison_stars[match_index][dec_column_name], '.2f')
                     # Create a label similar to APASS' 
-                    match_label = format(comparison_stars[match_index][mag_column_name] * 10, '3.0f') 
+                    match_label = format(comparison_stars[match_index][mag_column_name] * 10, '3.0f') + "A"
 
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
@@ -2646,14 +2646,14 @@ class MyGUI:
                             # So rename it to match_label + ".n" (n = 0, 1, 2, etc.)
                             # Get the latest (check for ".n")
                             n = 0
-                            while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
-                                n += 1
-                            
-                            #new comp label
                             if using_apass_dr9:
                                 #use an '_' to delimet duplicates (they may not be in the saem location)
+                                while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "_" + str(n))]).empty):
+                                    n += 1
                                 match_label = str(match_label)  + "_" + str(n)
                             else:
+                                while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
+                                    n += 1
                                 match_label = str(match_label)  + "." + str(n)
 
                     #Found a match within matching_radius
@@ -2669,6 +2669,8 @@ class MyGUI:
                         self.results_tab_df.loc[index, "check_star"] = match_is_check
                         #record comp stars used for console if AAVSO comp stars
                         comp_stars_found.append((str(match_label), match_is_check))
+                    else:
+                        self.results_tab_df.loc[index, "check_star"] = False
                     
                 else:
                     #Here if separation >= matching_radius
