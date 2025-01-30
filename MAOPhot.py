@@ -2046,7 +2046,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -2065,7 +2065,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -2084,7 +2084,7 @@ class MyGUI:
                         {
                         "type": "check",
                         "name": check_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -2121,7 +2121,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMB": comp_star_B["inst_mag"],
                         "IMV": comp_star_V["inst_mag"],
                         "B": comp_star_B["match_mag"],
@@ -2139,7 +2139,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMV": comp_star_B["inst_mag"],
                         "IMR": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -2157,7 +2157,7 @@ class MyGUI:
                         {
                         "type": "var",
                         "name": var_star_label,
-                        "comp": int(comp_no_prefix),
+                        "comp": comp_no_prefix,
                         "IMV": comp_star_B["inst_mag"],
                         "IMI": comp_star_V["inst_mag"],
                         "V": comp_star_B["match_mag"],
@@ -2258,8 +2258,8 @@ class MyGUI:
                     }
             
                 self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
-                                  " (B: " + format(check_B, ' >6.3f') +")" +
-                                    " (V: " + format(check_V, ' >6.3f') +")" "\n" +
+                                  " (B: " + format(float(check_B), ' >6.3f') +")" +
+                                    " (V: " + format(float(check_V), ' >6.3f') +")" "\n" +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2317,8 +2317,8 @@ class MyGUI:
                     }
             
                 self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
-                                  " (V: " + format(check_B, ' >6.3f') +")" +
-                                    " (R: " + format(check_V, ' >6.3f') +")" "\n" +
+                                  " (V: " + format(float(check_B), ' >6.3f') +")" +
+                                    " (R: " + format(float(check_V), ' >6.3f') +")" "\n" +
                                       result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2527,7 +2527,7 @@ class MyGUI:
                     sourceId_column_name = "DR2Name"
                     ra_column_name = "RA_ICRS"
                     dec_column_name = "DE_ICRS"
-                    catalog_columns = ["DR2Name", "RA_ICRS", "DE_ICRS", "Plx", "Gmag", "RPmag", "Lum"]
+                    catalog_columns = ["DR2Name", "RA_ICRS", "DE_ICRS", "Plx", "Gmag", "RPmag", "BPmag", "Lum"]
     
                 else:
                     self.console_msg("UNEXPECTED ERROR UNKOWN CATALOG SELECTION!!!!!", level=logging.ERROR)
@@ -2576,7 +2576,8 @@ class MyGUI:
                 catalog_comparison = SkyCoord(
                     comparison_stars[ra_column_name],
                     comparison_stars[dec_column_name])
-
+                #here not using aacso cat so we need check star info
+                check_star_to_use = self.object_kref_entry.get().strip()
                 
             for index, row in self.results_tab_df.iterrows():
                 photometry_star_coordinates = SkyCoord(
@@ -2603,6 +2604,8 @@ class MyGUI:
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
+                    match_is_check = (match_label == check_star_to_use)
+
                 else:
                     match_id = comparison_stars[match_index][0]
                     match_label = comparison_stars[match_index][sourceId_column_name]
@@ -2665,7 +2668,7 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_dec"] = match_dec
                     self.results_tab_df.loc[index, "match_mag"] = match_mag
 
-                    if using_aavso_catalog:
+                    if using_aavso_catalog or using_apass_dr9:
                         self.results_tab_df.loc[index, "check_star"] = match_is_check
                         #record comp stars used for console if AAVSO comp stars
                         comp_stars_found.append((str(match_label), match_is_check))
