@@ -555,7 +555,7 @@ class MyGUI:
         file_name = fd.asksaveasfile(**options)
         
         try:
-            if len(str(file_name)) > 0:
+            if file_name != None and len(str(file_name)) > 0:
                 self.console_msg("Saving FITS as " + str(file_name.name))
                 fits.writeto(file_name.name, image_data,
                              header, overwrite=True)
@@ -2835,6 +2835,7 @@ class MyGUI:
         try:
             if len(str(file_name)) > 0:
                 self.console_msg("Saving settings as " + str(file_name.name))
+                self.settings_filename = str(file_name.name)
                 settings = {}
                 '''
                 Use the valid_parameter list which contains the official list
@@ -2848,6 +2849,10 @@ class MyGUI:
                     w = csv.DictWriter(f, settings.keys())
                     w.writeheader()
                     w.writerow(settings)
+
+                #special case for settings filename
+                self.set_entry_text(self.settings_filename_entry, self.settings_filename)
+                self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
                 self.console_msg("Saved.")
         
         except Exception as e:
