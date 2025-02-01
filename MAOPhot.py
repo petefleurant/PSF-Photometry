@@ -365,6 +365,8 @@ class MyGUI:
     object_kref_entry = None
     object_sel_comp_entry = None
     object_name_entry = None
+    object_name_alpha_entry = None
+    object_name_delta_entry = None
     object_notes_entry = None
     display_all_objects = None
     candidate_stars = None
@@ -1493,15 +1495,15 @@ class MyGUI:
         ADU = image_data[y-1, x-1]
         sky = self.wcs_header.pixel_to_world(x, y)
         sky_coordinate_string = ""
-
+        clicked_coordinate = None
 
         if hasattr(sky, 'ra'):
-            c = SkyCoord(ra=sky.ra, dec=sky.dec)
-            sky_coordinate_string = "α δ: "+c.to_string("hmsdms")
-        self.console_msg("Position X: "+str(x)+"\t Y: "+str(y) +
-                         "\t ADU: "+str(ADU) + "\t\t\t" + sky_coordinate_string)
-        psf_canvas_x = x
-        psf_canvas_y = y
+            clicked_coordinate = SkyCoord(ra=sky.ra, dec=sky.dec)
+            sky_coordinate_string = "α δ: " + clicked_coordinate.to_string("hmsdms", precision=2)
+            self.console_msg("Position X: "+str(x)+"\t Y: "+str(y) +
+                             "\t ADU: "+str(ADU) + "\t\t\t" + sky_coordinate_string)
+            alpha_delta = [] # used to keep alpha and delta, may end up in settings
+            alpha_delta = clicked_coordinate.to_string("hmsdms", precision=2).split()
 
         if self.ePSF_samples_plotted:
             #add the selected coordinate into the ePSF_rejection_list
@@ -1521,7 +1523,7 @@ class MyGUI:
                 sky_coordinate_string = ""
                 if hasattr(sky, 'ra'):
                     c = SkyCoord(ra=sky.ra, dec=sky.dec)
-                    sky_coordinate_string = " α δ: " + c.to_string("hmsdms")
+                    sky_coordinate_string = " α δ: " + c.to_string("hmsdms", precision=2)
                 if x_fit != 0 and y_fit != 0:
                     psf_canvas_x = x_fit
                     psf_canvas_y = y_fit
@@ -1534,7 +1536,6 @@ class MyGUI:
                                         x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
                 self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
                     round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
-
 
                 if "match_id" in self.results_tab_df:
                     matching_star_criterion = (self.results_tab_df["x_fit"] == x_fit) & (
@@ -1564,6 +1565,13 @@ class MyGUI:
                                 self.console_msg("Object Name is now: " + user_name)
                                 self.set_entry_text(self.object_name_entry, user_name)
                                 self.results_tab_df.loc[matching_star.name, "vsx_id"] = user_name
+
+                                if clicked_coordinate != None:
+                                    self.set_entry_text(self.object_name_alpha_entry, alpha_delta[0])
+                                    self.set_entry_text(self.object_name_delta_entry, alpha_delta[1])
+                                    self.results_tab_df.loc[matching_star.name, "RAJ2000"] = clicked_coordinate.ra.deg
+                                    self.results_tab_df.loc[matching_star.name, "DEJ2000"] = clicked_coordinate.dec.deg
+
                                 self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
                                 self.console_msg("Photometry saved to " + str(self.image_file + ".csv") + "; len = " + str(len(self.results_tab_df)))
                                 self.display_image()
@@ -1797,7 +1805,7 @@ class MyGUI:
             #
 
             variable_star = self.object_name_entry.get().strip()
-            if len(variable_star) == 0:
+            if variable_star == None or len(variable_star) == 0:
                 self.console_msg(
                     "Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'")
                 self.console_msg("Ready")
@@ -2433,6 +2441,12 @@ class MyGUI:
         global image_width, image_height
         comp_stars_found = [] #init
         try:
+            if not os.path.exists(self.image_file + ".csv"):
+                # No photometry exists!
+                self.console_msg("Image needs photometry first, run 'Photometry->Iterative PSF Photometry' first")
+                self.console_msg("Ready")
+                return
+
             self.filter = self.filter_entry.get()
 
             frame_center = self.wcs_header.pixel_to_world(
@@ -2535,7 +2549,7 @@ class MyGUI:
 
                 self.console_msg(
                     "Inquiring VizieR Catalog " + catalog_selection + ", center α δ " +
-                        frame_center.to_string("hmsdms") +
+                        frame_center.to_string("hmsdms", precision=2) +
                         ", radius " + str(frame_radius))
     
                 
@@ -2613,11 +2627,8 @@ class MyGUI:
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
                     
-                match_coordinates = SkyCoord(
-                    ra=match_ra * u.deg, dec=match_dec * u.deg)
-                separation = photometry_star_coordinates.separation(
-                    match_coordinates)
-                
+                match_coordinates = SkyCoord(ra=match_ra * u.deg, dec=match_dec * u.deg)
+                separation = photometry_star_coordinates.separation(match_coordinates)
 
                 if separation < (matching_radius * u.deg):
                     # Sometimes the flux_fit is negative.
@@ -2684,17 +2695,24 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_mag"] = ""
                     self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
 
-            self.console_msg(
-                "Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
+            self.console_msg("Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
 
 
             # B/vsx : AAVSO International Variable Star Index VSX 
             # B/vsx/vsx : Variable Star indeX,
-            vsx_result = Vizier(
-                catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center, radius=frame_radius)
+            vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center,
+                                                                                 radius=frame_radius)
 
             #Look for any and all VSX stars
+            #first init this flag 
+            found_user_object = False
             if len(vsx_result) > 0:
+                # See if user has specified an Object Name and if so, then 
+                # if there is a match and (separation < matching_radius), then 
+                # insert aplph and delta into Settings.
+                object_name = self.object_name_entry.get().strip()
+                object_name_exist =  object_name != None and len(object_name) > 0
+
                 vsx_stars = vsx_result[0]
                 self.console_msg(
                     "Found " + str(len(vsx_stars)) + " VSX sources in the field. Matching...")
@@ -2709,10 +2727,11 @@ class MyGUI:
                     match_id = vsx_stars[match_index]["Name"]
                     match_ra = vsx_stars[match_index]["RAJ2000"]
                     match_dec = vsx_stars[match_index]["DEJ2000"]
-                    match_coordinates = SkyCoord(
-                        ra=match_ra * u.deg, dec=match_dec * u.deg)
-                    separation = photometry_star_coordinates.separation(
-                        match_coordinates)
+                    match_coordinates = SkyCoord(ra=match_ra * u.deg, dec=match_dec * u.deg)
+                    alpha_delta = [] # used to keep alpha and delta, may end up in settings
+                    alpha_delta = match_coordinates.to_string("hmsdms", precision=2).split()
+
+                    separation = photometry_star_coordinates.separation(match_coordinates)
                     
                     if separation < (matching_radius * u.deg):
                         # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
@@ -2757,10 +2776,47 @@ class MyGUI:
                                           "; RAJ2000:" + str(match_ra) +\
                                           "; DEJ2000:" + str(match_dec) +\
                                           "; separation:" + str(separation) )
+                        #If there is a match, update Settings with alpha and delta
+                        if object_name_exist and object_name == str(match_id):
+                            self.set_entry_text(self.object_name_alpha_entry, alpha_delta[0])
+                            self.set_entry_text(self.object_name_delta_entry, alpha_delta[1])
+                            found_user_object = True
+
                     else:
                         self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__ # prevent nan
             else:
                 self.console_msg("Found no VSX sources in the field.")
+
+            # If necessary search using Object Alpha and Delta
+            object_alpha = self.object_name_alpha_entry.get().strip()
+            object_alpha_exist =  object_alpha != None and len(object_alpha) > 0
+            object_delta = self.object_name_delta_entry.get().strip()
+            object_delta_exist =  object_delta != None and len(object_delta) > 0
+            if object_name_exist and object_alpha_exist and object_delta_exist and not found_user_object:
+                user_object = SkyCoord(object_alpha, object_delta, frame='icrs')
+                for index, row in self.results_tab_df.iterrows():
+                    photometry_star_coordinates = SkyCoord(ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg, frame='icrs')
+                    separation = photometry_star_coordinates.separation(user_object)
+                    if separation < (matching_radius * u.deg):
+                        # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
+                        # That causes a blank inst_mag (can't take a log of neg number) 
+                        # Check for this and if so, ignore
+                        # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
+                        # IterativePSFPhotometry; not known if following is still needed)
+                        # 
+                        if self.results_tab_df.loc[index, "flux_fit"] < 0:
+                            self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__
+                            continue
+
+                        # We found it 
+                        self.results_tab_df.loc[index, "vsx_id"] = object_name
+                        self.results_tab_df.loc[index, "RAJ2000"] = user_object.ra.deg
+                        self.results_tab_df.loc[index, "DEJ2000"] = user_object.dec.deg
+                        found_user_object = True
+                        break
+
+            if object_name_exist and not found_user_object:
+                self.console_msg("DID NOT FIND Object Name:" + object_name + "!!!!")
                 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
@@ -3290,6 +3346,22 @@ class MyGUI:
             self.object_name_entry = tk.Entry(
                 settings_right_frame, width=extended_settings_entry_width, background='pink')
             self.object_name_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            object_name_alpha_label = tk.Label(
+                settings_right_frame, text="α:")
+            object_name_alpha_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_name_alpha_entry = tk.Entry(
+                settings_right_frame, width=extended_settings_entry_width)
+            self.object_name_alpha_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            object_name_delta_label = tk.Label(
+                settings_right_frame, text="δ:")
+            object_name_delta_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.object_name_delta_entry = tk.Entry(
+                settings_right_frame, width=extended_settings_entry_width)
+            self.object_name_delta_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             object_kref_label = tk.Label(settings_right_frame, text="Use Check Star (AAVSO Label):")
@@ -3958,10 +4030,20 @@ class MyGUI:
         aux_result_first_color = master_report[master_report["color"] == first_filter[input_color]]
         aux_result_second_color = master_report[master_report["color"] == second_filter[input_color]]
 
+        # The "KNAME" is a float like 150.0 from AAVSO comps OR is a str like '150A_1' from APASS 
+        # Test here and create a string for either case
+        if isinstance(aux_result_first_color["KNAME"].iloc[0], str):
+            aux_result_first_color_kname = str(aux_result_first_color["KNAME"].iloc[0])
+        elif isinstance(aux_result_first_color["KNAME"].iloc[0], (np.float64, int)):
+            aux_result_first_color_kname = str(int(aux_result_first_color["KNAME"].iloc[0]))
+        else:
+            aux_result_first_color_kname = '???'
+            self.console_msg("Unrecognised KNAME type in Master-Report")
 
 
         if input_color == 'B-V':
-            self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            # Old::: self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
                             " (B: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
                             " (V: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" "\n" + 
                             ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -3979,7 +4061,8 @@ class MyGUI:
                             ("B* Std: " + format(B_std_var, ' >6.3f') +  
                             "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(56))
         elif input_color == 'V-R':
-            self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            # Old::: self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
                             " (V: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
                             " (R: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" "\n" + 
                             ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -3997,7 +4080,8 @@ class MyGUI:
                             ("V* Std: " + format(B_std_var, ' >6.3f') +  
                             "  R* Std: " + format(V_std_var, ' >6.3f')).rjust(56))
         elif input_color == 'V-I':
-            self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            # Old::: self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
                             " (V: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
                             " (I: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" "\n" + 
                             ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -4039,7 +4123,8 @@ class MyGUI:
                 mtype = "STD"
                 cname = "ENSEMBLE"
                 cmag = "na"
-                kname = str(int(aux_result_first_color["KNAME"]))
+                # Old::: kname = str(int(aux_result_first_color["KNAME"]))
+                kname = aux_result_first_color_kname
                 kmag = str(round(B_mean_check, decimal_places))
                 amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
                     if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
@@ -4596,6 +4681,8 @@ class MyGUI:
             'object_kref_entry': self.object_kref_entry,
             'object_sel_comp_entry': self.object_sel_comp_entry,
             'object_name_entry': self.object_name_entry,
+            'object_name_alpha_entry': self.object_name_alpha_entry,
+            'object_name_delta_entry': self.object_name_delta_entry,
             'object_notes_entry': self.object_notes_entry,
             'display_all_objects': self.display_all_objects
             }
