@@ -4262,10 +4262,10 @@ class MyGUI:
         self.program_version = __version__
         self.program_name_note = "using Photutils"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
-        self.config_file = ".//.config"
+        self.config_file = os.getcwd() + "\\.config"
 
-        # Check if therre is a ./log dir
-        self.logging_dir = ".//logs//"
+        # Check if there is a ./log dir
+        self.logging_dir = os.getcwd() + "\\logs\\"
 
         # Check if directory exists
         if not os.path.exists(self.logging_dir):
