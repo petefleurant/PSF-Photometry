@@ -2512,13 +2512,24 @@ class MyGUI:
  
             
             else:
-                
+
+                # Default value
+                # Changes for some catalogs
+                mag_column_name = self.filter + "mag"
+
                 #Use VizierR catalog
                 if catalog_selection == "APASS DR9":
                     catalog = "II/336"
                     ra_column_name = "RAJ2000"
                     dec_column_name = "DEJ2000"
-                    catalog_columns = ["RAJ2000", "DEJ2000", "Vmag", "Bmag"]
+                    catalog_columns = ["RAJ2000", "DEJ2000", "Vmag", "Bmag", "r'mag", "i'mag"]
+                    DR9_Mag_name = {
+                        "V" : "Vmag",
+                        "B" : "Bmag",
+                        "R" : "r_mag", # Sloan
+                        "I" : "i_mag", # Sloan
+                        }
+                    mag_column_name = DR9_Mag_name[self.filter]
                     using_apass_dr9 = True
     
                 elif catalog_selection == "URAT1":
@@ -2551,9 +2562,6 @@ class MyGUI:
                     "Inquiring VizieR Catalog " + catalog_selection + ", center α δ " +
                         frame_center.to_string("hmsdms", precision=2) +
                         ", radius " + str(frame_radius))
-    
-                
-                mag_column_name = self.filter + "mag"
     
                 # [0] implies I/345/gaia2; [1] implies I/345/varres
                 comparison_stars = Vizier(catalog=catalog,
