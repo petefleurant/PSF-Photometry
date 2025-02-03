@@ -1,5 +1,14 @@
 # PSF-Photometry
-Welcome to MAOPhot 1.1.2, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+Welcome to MAOPhot 1.1.3, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+
+1.1.3 Changes
+
+1)	Support for APASS DR9
+2)	Added filename of Settings file to settings
+3)	Added use of a config file (./.config) and its management
+4)	Added Object RA and Dec to Settings (α and δ)
+5)	Application now installed in %LOCALAPPDATA%\MAOPhot
+
 
 PSF photometry models the star's light distribution as a mathematical function called the Point Spread Function (PSF), which describes how the star's light spreads across the detector. The PSF is then fitted to the star to determine its total flux, accounting for overlaps with nearby stars.
 
