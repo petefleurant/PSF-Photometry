@@ -217,6 +217,7 @@ from astroquery.vizier import Vizier
 from astroquery.astrometry_net import AstrometryNet
 from tqdm import tqdm
 from PIL import Image, ImageTk, ImageMath
+import io
 import pandas as pd
 import logging
 import sys
@@ -227,6 +228,24 @@ import numpy as np
 import warnings
 import datetime
 from time import gmtime, strftime
+
+#############################################################################
+#
+#  My Utilities
+#
+#############################################################################
+
+#
+# is_number returns True if s (usually a str) can be converted to a float
+#
+def is_number(s):
+    try:
+        float(s)  # Try converting to float
+        return True
+    except ValueError:
+        return False
+
+
 
 warnings.filterwarnings("ignore")
 matplotlib.use("TkAgg")
@@ -933,7 +952,7 @@ class MyGUI:
 
         try:
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=10, progress_bar=True) 
+            epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True) 
 
             # when calling epsf_builder, maxiters=50 causes following exception:
             # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
@@ -1059,7 +1078,7 @@ class MyGUI:
             return
         try:
             # test fwhm
-            if self.fwhm_entry.get().strip().isnumeric():
+            if is_number(self.fwhm_entry.get().strip()):
                 fwhm = float(self.fwhm_entry.get())
             else:
                 self.console_msg("FWHM not numeric, using 3")
@@ -1076,11 +1095,11 @@ class MyGUI:
             if self.photometry_iterations_entry.get().isnumeric():
                 iterations = int(self.photometry_iterations_entry.get())
             else:
-                self.console_msg("Photometry Iteration not numeric, using 3")
+                self.console_msg("Photometry Iteration not positive int, using 3")
                 iterations = 3
 
             # test sharplo
-            if self.sharplo_entry.get().strip().isnumeric():
+            if is_number(self.sharplo_entry.get().strip()):
                 sharplo = float(self.sharplo_entry.get())
             else:
                 self.console_msg("Lower Bound for Sharpness not numeric, using 0")
@@ -2433,6 +2452,10 @@ class MyGUI:
     # 
     # This is callback after Photometry__>Get Comparison Stars is clicked
     # 
+    #
+    #  APASS DR9 uses designation with 'B" (e.g., 123B_2)  mag 12.3
+    #  APASS DR10 uses designation with 'A" (e.g., 123A_2)
+    #  APASS DR11 uses designation with 'C" (e.g., 123C_2)
     # 
     #
     ########################################################################################
@@ -2491,6 +2514,7 @@ class MyGUI:
             ## Init 
             using_aavso_catalog = False
             using_apass_dr9 = False
+            using_apass_dr10 = False
     
             if catalog_selection == "AAVSO":
                 using_aavso_catalog = True
@@ -2502,14 +2526,32 @@ class MyGUI:
                 comparison_stars = \
                     self.aavso_get_comparison_stars(frame_center, filter_band=str(
                     self.filter_entry.get()),
-                    field_of_view=fov_horizontal,
+                    field_of_view=fov_horizontal,  # divide by 2?
                     maglimit=self.max_ensemble_magnitude_entry.get())
                 
                 ra_column_name = "RA"
                 dec_column_name = "Dec"
                 mag_column_name = "Mag"
+            
+            elif catalog_selection == "APASS DR10":
+                using_apass_dr10 = True
                 
- 
+                #APASS DR10 (not in Vizier but on a AAVSO server)
+                self.console_msg("Getting APASS DR10 Comparison Stars...")
+                comparison_stars = \
+                    self.APASS_DR10_get_comparison_stars(frame_center, filter=str(self.filter_entry.get()),
+                    #divide fov_horizontal by 60 because in arcminutes add 10%; api is limited to 2 degrees
+                    field_of_view=fov_horizontal/60*1.1,
+                    maglimit=self.max_ensemble_magnitude_entry.get())
+                
+                if type(comparison_stars) == int:
+                    self.console_msg("Get Comparison Stars failed (APASS DR10)", level=logging.ERROR)
+                    self.console_msg("Ready")
+                    return
+
+                ra_column_name = "RA"
+                dec_column_name = "Dec"
+                mag_column_name = "Mag"
             
             else:
 
@@ -2594,11 +2636,17 @@ class MyGUI:
                     comparison_stars[ra_column_name],
                     comparison_stars[dec_column_name],
                     unit=(u.hourangle, u.deg))
+                
+            elif using_apass_dr10:
+                catalog_comparison = SkyCoord(
+                    comparison_stars[ra_column_name],
+                    comparison_stars[dec_column_name],
+                    unit=(u.deg, u.deg))
             else:
                 catalog_comparison = SkyCoord(
                     comparison_stars[ra_column_name],
                     comparison_stars[dec_column_name])
-                #here not using aacso cat so we need check star info
+                #here not using aavso cat so we need check star info
                 check_star_to_use = self.object_kref_entry.get().strip()
                 
             for index, row in self.results_tab_df.iterrows():
@@ -2606,22 +2654,27 @@ class MyGUI:
                     ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
                 match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
                     catalog_comparison)
-                # print(str(photometry_star_coordinates))
-                # print(match_index)
-                # Name of the catalog
+
+                #Catalog specific hacks
                 if using_aavso_catalog:
                     match_id = comparison_stars.iloc[match_index]["AUID"]
+
+                if using_apass_dr10:
+                    match_id = comparison_stars.iloc[match_index]["Label"] # DR10 doesn't have AUID
+
+                if using_aavso_catalog or using_apass_dr10:
                     match_label = comparison_stars.iloc[match_index]["Label"]
                     match_ra = catalog_comparison[match_index].ra.degree
                     match_dec= catalog_comparison[match_index].dec.degree
                     match_mag = comparison_stars.iloc[match_index][mag_column_name]
                     match_is_check = comparison_stars.iloc[match_index]["Check Star"]
+
                 elif using_apass_dr9:
                     match_id = "RA" + format(comparison_stars[match_index][ra_column_name], '.2f') +\
                                      "+" + \
                                     "DE" + format(comparison_stars[match_index][dec_column_name], '.2f')
                     # Create a label similar to APASS' 
-                    match_label = format(comparison_stars[match_index][mag_column_name] * 10, '3.0f') + "A"
+                    match_label = format(comparison_stars[match_index][mag_column_name] * 10, '3.0f') + "B"
 
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
@@ -2669,11 +2722,11 @@ class MyGUI:
                             # Get the latest (check for ".n")
                             n = 0
                             if using_apass_dr9:
-                                #use an '_' to delimet duplicates (they may not be in the saem location)
+                                #use an '_' to delimit duplicates (they may not be in the same location)
                                 while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "_" + str(n))]).empty):
                                     n += 1
                                 match_label = str(match_label)  + "_" + str(n)
-                            else:
+                            elif not using_apass_dr10: # for now not caring about duplicates 
                                 while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
                                     n += 1
                                 match_label = str(match_label)  + "." + str(n)
@@ -2687,7 +2740,7 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_dec"] = match_dec
                     self.results_tab_df.loc[index, "match_mag"] = match_mag
 
-                    if using_aavso_catalog or using_apass_dr9:
+                    if using_aavso_catalog or using_apass_dr9 or using_apass_dr10:
                         self.results_tab_df.loc[index, "check_star"] = match_is_check
                         #record comp stars used for console if AAVSO comp stars
                         comp_stars_found.append((str(match_label), match_is_check))
@@ -3320,7 +3373,7 @@ class MyGUI:
             catalog_label = tk.Label(settings_right_frame, text="Comparison Catalog:")
             catalog_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             catalog_dropdown = tk.OptionMenu(
-                settings_right_frame, self.catalog_stringvar, "AAVSO", "Gaia DR2", "APASS DR9")
+                settings_right_frame, self.catalog_stringvar, "AAVSO", "Gaia DR2", "APASS DR9", "APASS DR10")
             #, "URAT1", "USNO-B1.0", "VizieR Catalog") <--not supporting now
             catalog_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
@@ -3699,6 +3752,180 @@ class MyGUI:
                     "Check Star": is_check_star}
 
             return result
+        
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+
+############################################################
+#
+#  APASS_DR10_get_comparison_stars
+#
+############################################################
+
+    def APASS_DR10_get_comparison_stars(self, frame_center, filter='V', field_of_view=2, maglimit=20):
+        try:
+           
+            ra = frame_center.ra
+            dec = frame_center.dec
+
+            r = requests.get('https://www.aavso.org/cgi-bin/apass_dr10_download.pl?ra='+str(ra)+
+                             '&dec='+str(dec)+
+                             '&radius='+str(field_of_view)+
+                             '&maglimit='+str(maglimit)+
+                             '&outtype=1')
+
+            if r.status_code != 200:
+                self.console_msg("Fetch of APASS DR10 Comparison Stars Failed! status: "+ str(r.status_code))
+                return -1
+            else:
+                self.console_msg("Downloaded APASS DR10 Comparison Stars")
+
+               
+            # Back to the result
+            result_df = pd.read_csv(io.StringIO(r.text))
+
+            """
+            If we are using R or I We have to convert the Sloan Filters to Johnson equivalents
+            
+            From code George sent me:
+            sr: Sloan_r (SR)
+            si: Sloan_i (SI)
+            sr_e: SRerr
+            si_e: SIerr
+
+
+            Formula
+
+            If sr > 0 And si > 0 Then
+                r = v - 1.09 * (sr - si) - 0.22
+                r_e = Math.Sqrt(v_e ^ 2 + 1.09 ^ 2 * (sr_e ^ 2 + si_e ^ 2))
+                i = r - (sr - si) - 0.21
+                i_e = Math.Sqrt(r_e ^ 2 + (sr_e ^ 2 + si_e ^ 2))
+
+            Existing columns:
+                       
+            radeg,raerr("),decdeg,decerr("),Johnson_V (V),Verr,Vnobs,Johnson_B (B),
+            Berr,Bnobs,Sloan_u (SU),SUerr,SUnobs,Sloan_g (SG),SGerr,SGnobs,Sloan_r (SR),
+            SRerr,SRnobs,Sloan_i (SI),SIerr,SInobs,Sloan_z (SZ),SZerr,SZnobs,PanSTARRS_Y (Y),Yerr,Ynobs
+
+            """
+
+            """
+            filter_scheme = {
+                'V' : 'Johnson_V (V)',
+                'B' : 'Johnson_B (B)',
+                'R' : 'Sloan_r (SR)',
+                'I' : 'Sloan_i (SI)'
+            }
+
+            # update renaming_scheme with proper filter to use
+            filter_in_apass = filter_scheme[filter]
+
+            # add this filter_in_apass to list of columns we want to keep
+            # this becomes the Mag we are interrested in
+            renaming_list[filter_in_apass] = 'Mag'
+
+            if 'Johnson_V (V)' not in renaming_list: 
+                # This column always gas to be in the table because is derives the Label
+                renaming_list['Johnson_V (V)'] = 'V'
+
+            
+            """
+
+            # rename columns 
+            renaming_list = {
+                'radeg' : 'RA',
+                'decdeg' : 'Dec',
+                'Johnson_V (V)' : 'V',
+                'Johnson_B (B)' : 'B',
+                'Sloan_r (SR)' : 'sr',
+                'Sloan_i (SI)' : 'si',
+                'Verr' : 'V_e',
+                'SRerr' : 'sr_e',
+                'SIerr' : 'si_e'
+            }
+
+            # build a list of columns to drop, the ones not in the renaming_list
+            drop_list = []
+            for col in result_df.columns:
+                if col not in renaming_list:
+                    drop_list.append(col)
+            # drop them
+            result_df.drop(columns=drop_list, inplace=True)
+
+            # rename using the renaming_list
+            result_df = result_df.rename(columns=renaming_list)
+
+            if filter == 'I' or filter == 'R':
+                #we need to convert 
+                """
+                If sr > 0 And si > 0 Then
+                    R = V - 1.09 * (sr - si) - 0.22
+                    R_e = Math.Sqrt(V_e ^ 2 + 1.09 ^ 2 * (sr_e ^ 2 + si_e ^ 2))
+                    I = R - (sr - si) - 0.21
+                    I_e = Math.Sqrt(r_e ^ 2 + (sr_e ^ 2 + si_e ^ 2))
+
+                """ 
+
+                #Define some helper functions
+                def calc_R(v, sr, si):
+                    return v - 1.09 * (sr - si) -.22
+
+                def calc_R_e(v_e, sr_e, si_e):
+                    return np.sqrt(v_e**2 + 1.09**2 * (sr_e**2 + si_e**2))
+
+                def calc_I(r, sr, si):
+                    return r - (sr - si) -.21
+
+                def calc_I_e(r_e, sr_e, si_e):
+                    return np.sqrt(r_e**2 + (sr_e**2 + si_e**2))
+
+
+                # Remove NaN's
+                result_df.dropna(subset=['V', 'sr', 'si'], inplace=True)
+
+                #remove any sr<0 or si<0
+                result_df.drop(result_df[result_df['sr'] < 0].index, inplace=True)
+                result_df.drop(result_df[result_df['si'] < 0].index, inplace=True)
+
+                # Calculate Johnson equivalents
+                result_df['R'] = result_df.apply(lambda row: calc_R(row['V'], row['sr'], row['si']), axis=1)
+                result_df["R_e"] = result_df.apply(lambda row: calc_R_e(row['V_e'], row['sr_e'], row['si_e']), axis=1)
+                result_df['I'] = result_df.apply(lambda row: calc_I(row['R'], row['sr'], row['si']), axis=1)
+                result_df["I_e"] = result_df.apply(lambda row: calc_I_e(row['R_e'], row['sr_e'], row['si_e']), axis=1)
+
+            else:
+                # Here if V or B so Drop NaN's for these irst get rid of any NaN in 'V' column
+                result_df = result_df.dropna(subset=['V', 'B'])
+
+
+            # Add the Label column E.g., Vmag = 13.2, then Label is 132A
+
+            result_df["Label"] = result_df['V'].apply(lambda x: str(int(round(x * 10.0, 0)))+'A')
+
+            # Rename the filter of interest (filter) to just Mag
+            result_df = result_df.rename(columns={filter : 'Mag'})
+
+            # Now append any duplicate labels with _N, where N is the nth duplicate
+
+            # Identify duplicates and create a counter
+            result_df['dup_count'] = result_df.groupby('Label').cumcount()
+
+            # Append counter only to duplicates
+            result_df['Label'] = result_df.apply(lambda x: f"{x['Label']}_{x['dup_count']}" if x['dup_count'] > 0 else x['Label'], axis=1)
+
+            # Drop the helper column
+            result_df.drop(columns=['dup_count'], inplace=True)
+
+
+            #Add the "Check Star" column where it is set to True if it is the user's check star
+            check_star_to_use = self.object_kref_entry.get().strip()
+
+            result_df['Check Star'] = result_df['Label'] == check_star_to_use
+
+            return result_df
         
         except Exception as e:
             self.error_raised = True
