@@ -335,6 +335,7 @@ class MyGUI:
     epsf_model = None
     stars_tbl = None
     isolated_stars_tbl = None
+    fits_header_filter = ""
 
     # Parameter declaration  and init 
     find_peaks_npeaks_entry = None
@@ -371,7 +372,8 @@ class MyGUI:
     display_all_objects = None
     candidate_stars = None
     settings_filename_entry = None # special case this is only place holder for filename
-
+    auto_behavior = None
+    filter_entry = None
 
     #
     # The TopLoevel window containing the settings
@@ -410,6 +412,8 @@ class MyGUI:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
             self.canvas.bind("<Button-1>", self.mouse_main_canvas_click)
+            self.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
+            self.canvas.bind("<Shift-MouseWheel>", self.on_canvas_shift_mousewheel)
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
             self.plot_photometry()
@@ -462,9 +466,18 @@ class MyGUI:
                     "FITS Minimum: " + str(FITS_minimum) + " Maximum: " +
                     str(FITS_maximum))
                 if 'filter' in header:
-                    self.filter = str(header['filter'])
-                    self.set_entry_text(self.filter_entry, self.filter)
-                    self.console_msg("Filter: " + self.filter)
+                    self.fits_header_filter = str(header['filter'])
+                    # User may want to use his own filter or filter not in Fits file
+                    if self.auto_behavior.get():
+                        self.filter = self.fits_header_filter
+                        self.filter_entry.config(state='normal')
+                        self.set_entry_text(self.filter_entry, self.filter)
+                        self.filter_entry.config(state='disable')
+                        self.console_msg("Filter: " + self.filter)
+                    else:
+                        self.filter_entry.config(state='normal')
+                        self.filter = self.filter_entry.get().strip()
+                        self.console_msg("Filter set by user: " + self.filter)
                 else:
                     self.console_msg(
                         "Filter name not in FITS header. Set filter manually.")
@@ -1477,6 +1490,47 @@ class MyGUI:
         self.submit_rejects_selstars_button.config(state=submit_button_state)
 
         return
+
+    ###############################################################
+    #
+    #
+    #  on_auto_behavior_checkbox_checked
+    #
+    #  if checked, diable CCD Filter Text
+    # 
+    ###############################################################
+
+    def on_auto_behavior_checkbox_checked(self):
+        if self.auto_behavior.get():
+            self.filter_entry.config(state='normal')
+            self.set_entry_text(self.filter_entry, self.fits_header_filter)
+            self.filter_entry.config(state='disabled')
+        else:
+            self.filter_entry.config(state='normal')
+
+    ###############################################################
+    #
+    #
+    #  on_canvas_mousewheel
+    #
+    #  scroll vertically 
+    # 
+    ###############################################################
+
+    def on_canvas_mousewheel(self, event):
+        self.canvas.yview_scroll(-1 * (event.delta // 120), "units")  # Scroll vertically
+
+    ###############################################################
+    #
+    #
+    #  on_canvas_shift_mousewheel
+    #
+    #  scroll horizontally 
+    # 
+    ###############################################################
+
+    def on_canvas_shift_mousewheel(self, event):
+            self.canvas.xview_scroll(-1 * (event.delta // 120), "units")  # Scroll horizontally
 
     ###############################################################
     #
@@ -2500,8 +2554,7 @@ class MyGUI:
                 #have a AUID
                 self.console_msg("Getting AAVSO Comparison Stars...")
                 comparison_stars = \
-                    self.aavso_get_comparison_stars(frame_center, filter_band=str(
-                    self.filter_entry.get()),
+                    self.aavso_get_comparison_stars(frame_center, filter_band=str(self.filter),
                     field_of_view=fov_horizontal,
                     maglimit=self.max_ensemble_magnitude_entry.get())
                 
@@ -2900,11 +2953,21 @@ class MyGUI:
             if len(str(file_name)) > 0:
                 self.console_msg("Saving settings as " + str(file_name.name))
                 self.settings_filename = str(file_name.name)
-                settings = {}
+                
                 '''
                 Use the valid_parameter list which contains the official list
                 of user parameters
                 '''
+
+                # But first check if auto_behavior is set (CCD Filter from FITS), if set
+                # then dont save any Fits data, erase filter_entry, put back later
+                if self.auto_behavior.get():
+                    filter_entry = self.filter_entry.get()
+                    self.filter_entry.config(state='normal')
+                    self.set_entry_text(self.filter_entry, "")
+                    self.filter_entry.config(state='disable')
+
+                settings = {}
                 mao_parameters = list(self.valid_parameter_list)
                 for param in mao_parameters:
                     settings.update({param : self.valid_parameter_list[param].get()})
@@ -2918,6 +2981,12 @@ class MyGUI:
                 self.set_entry_text(self.settings_filename_entry, self.settings_filename)
                 self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
                 self.console_msg("Saved.")
+
+                # Put back that filter_entry if auto_behavior on
+                if self.auto_behavior.get():
+                    self.filter_entry.config(state='normal')
+                    self.set_entry_text(self.filter_entry, filter_entry)
+                    self.filter_entry.config(state='disable')
         
         except Exception as e:
             self.error_raised = True
@@ -3257,15 +3326,14 @@ class MyGUI:
             row = 0
 
 
-            separator_telescope_ = ttk.Separator(settings_right_frame, orient='horizontal')
-            separator_telescope_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_ = ttk.Separator(settings_right_frame, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
             """
                     AAVSO Report Settings
             """
-            _label_ = tk.Label(
-                settings_right_frame, text="AAVSO Report Settings")
+            _label_ = tk.Label(settings_right_frame, text="AAVSO Report Settings")
             _label_.grid(row=row, columnspan=3, sticky=tk.EW)
             row += 1
 
@@ -3286,13 +3354,6 @@ class MyGUI:
             self.exposure_entry = tk.Entry(
                 settings_right_frame, width=settings_entry_width, background='pink')
             self.exposure_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-            row += 1
-
-            filter_label = tk.Label(settings_right_frame, text="CCD Filter:")
-            filter_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.filter_entry = tk.Entry(
-                settings_right_frame, width=extended_settings_entry_width, background='pink')
-            self.filter_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             airmass_label = tk.Label(settings_right_frame, text="Airmass:")
@@ -3331,6 +3392,21 @@ class MyGUI:
             self.vizier_catalog_entry.grid(row=row, column=2, sticky=tk.E)
             row += 1
 
+            separator_ = ttk.Separator(settings_right_frame, orient='horizontal')
+            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            row += 1
+
+            from_fits_header_check = tk.Checkbutton(settings_right_frame, text="From FITS",
+                                                     variable=self.auto_behavior,
+                                                     command=self.on_auto_behavior_checkbox_checked)
+            from_fits_header_check.grid(row=row, column=0, sticky=tk.W)
+            
+            filter_label = tk.Label(settings_right_frame, text="CCD Filter:")
+            filter_label.grid(row=row, column=1, sticky=tk.E)
+            self.filter_entry = tk.Entry(settings_right_frame,
+                                          width=extended_settings_entry_width, background='pink')
+            self.filter_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
 
             separator_ = ttk.Separator(settings_right_frame, orient='horizontal')
             separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
@@ -4649,6 +4725,10 @@ class MyGUI:
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("TRF LS")
         self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
+        self.auto_behavior = tk.BooleanVar()
+        self.auto_behavior.set(False)
+
+        
 
         self.launch_settings()
 
@@ -4692,7 +4772,9 @@ class MyGUI:
             'object_name_alpha_entry': self.object_name_alpha_entry,
             'object_name_delta_entry': self.object_name_delta_entry,
             'object_notes_entry': self.object_notes_entry,
-            'display_all_objects': self.display_all_objects
+            'display_all_objects': self.display_all_objects,
+            'auto_behavior': self.auto_behavior,
+            'filter_entry': self.filter_entry
             }
 
         # if .config had a valid settings_filename, then load that one in
