@@ -2784,6 +2784,8 @@ class MyGUI:
                                 while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
                                     n += 1
                                 match_label = str(match_label)  + "." + str(n)
+                            elif using_apass_dr10:
+                                pass
 
                     #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
@@ -3847,6 +3849,11 @@ class MyGUI:
             ra = frame_center.ra
             dec = frame_center.dec
 
+            if not is_number(maglimit):
+                maglimit = 20
+            else:
+                maglimit = float(maglimit)
+
             r = requests.get('https://www.aavso.org/cgi-bin/apass_dr10_download.pl?ra='+str(ra)+
                              '&dec='+str(dec)+
                              '&radius='+str(field_of_view)+
@@ -3862,6 +3869,13 @@ class MyGUI:
                
             # Back to the result
             result_df = pd.read_csv(io.StringIO(r.text))
+
+            #
+            #  KEEP UNTIL cgi-bin/apass_dr10_download.pl IS FIXED!!!!!!
+            #
+            #remove any with Johnson V > maglimit (until cgi-bin/apass_dr10_download.pl is fixed!)
+            self.console_msg("Removing entries where 'Johnson_V (V)' > maglimit REMOVE after cgi-bin/apass_dr10_download.pl is fixed")
+            result_df.drop(result_df[result_df['Johnson_V (V)'] > maglimit].index, inplace=True)
 
             """
             If we are using R or I We have to convert the Sloan Filters to Johnson equivalents
@@ -3905,7 +3919,7 @@ class MyGUI:
             renaming_list[filter_in_apass] = 'Mag'
 
             if 'Johnson_V (V)' not in renaming_list: 
-                # This column always gas to be in the table because is derives the Label
+                # This column always has to be in the table because is derives values under the Label
                 renaming_list['Johnson_V (V)'] = 'V'
 
             
@@ -3966,6 +3980,7 @@ class MyGUI:
                 #remove any sr<0 or si<0
                 result_df.drop(result_df[result_df['sr'] < 0].index, inplace=True)
                 result_df.drop(result_df[result_df['si'] < 0].index, inplace=True)
+
 
                 # Calculate Johnson equivalents
                 result_df['R'] = result_df.apply(lambda row: calc_R(row['V'], row['sr'], row['si']), axis=1)
