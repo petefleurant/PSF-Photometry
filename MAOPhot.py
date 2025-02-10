@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-    #         #        #####  
-  ##        ##       #     # 
- # #       # #             # 
-   #         #        #####  
-   #   ###   #   ###       # 
-   #   ###   #   ### #     # 
- ##### ### ##### ###  #####  
-                                                         
-Welcome to MAOPhot 1.1.3, a PSF Photometry tool using Astropy and Photutils.psf
+   #         #       #       
+  ##        ##       #    #  
+ # #       # #       #    #  
+   #         #       #    #  
+   #   ###   #   ### ####### 
+   #   ###   #   ###      #  
+ ##### ### ##### ###      #  
 
-    1.1.3 Revision
+Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy and Photutils.psf
+
+    1.1.4 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -194,10 +194,12 @@ from photutils.background import Background2D
 from photutils.background import MedianBackground
 from photutils.background import MADStdBackgroundRMS
 from photutils.background import LocalBackground
+from photutils.background import MMMBackground
 from photutils.detection import find_peaks
+from photutils.detection import DAOStarFinder
 from photutils.psf import IterativePSFPhotometry, PSFPhotometry
 from photutils.psf import CircularGaussianPRF, SourceGrouper
-from photutils.detection import IRAFStarFinder
+from photutils.detection import DAOStarFinder
 from photutils.psf import extract_stars
 from photutils.psf import EPSFBuilder,EPSFFitter
 from tkinter import filedialog as fd
@@ -668,6 +670,8 @@ class MyGUI:
             self.console_msg("Find Peaks: std sigma clipped level: " + str(round(std,2)))
 
             # now ready to find peaks
+            #daofind = DAOStarFinder(fwhm=3.0, threshold=5 * std)
+            #peaks_tbl = daofind(data=image_data - median)
 
             # Always get all (np.inf) the peaks then cull them with user_npeaks after getting isolated_stars_tbl
             peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=3, npeaks=np.inf)
@@ -1101,7 +1105,7 @@ class MyGUI:
             if self.star_detection_threshold_factor_entry.get().isnumeric():
                 star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
             else:
-                self.console_msg("IRAFStarFinder threshold factor not numeric, using 10")
+                self.console_msg("DAOStarFinder threshold factor not numeric, using 10")
                 star_detection_threshold_factor = 10
 
             # test iterations
@@ -1135,16 +1139,24 @@ class MyGUI:
                 self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
                 linearity_limit = 60000
 
+            star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
+                                       fwhm=fwhm,
+                                        peakmax=float(linearity_limit)
+                                       )
+
+            """
             star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
                                         fwhm = fwhm,
-                                        minsep_fwhm = 1,
-                                        exclude_border = True,
+                                        minsep_fwhm = 0,
+                                        #exclude_border = True,
                                         roundhi = 3.0,
                                         roundlo = -5.0,
-                                        sharplo = sharplo,
-                                        sharphi = 2.0,
+                                        #sharplo = sharplo,
+                                        #sharphi = 2.0,
                                         peakmax=float(linearity_limit)
                                         )
+            """
+            
             
             # subtract background
             clean_image = image_data - median_val
@@ -1152,16 +1164,17 @@ class MyGUI:
             working_image = NDData(data=clean_image)
 
             # How many stars will it find?
-            iraf_result = star_find.find_stars(clean_image)
-            if iraf_result == None or len(iraf_result) == 0:
-                self.console_msg("IRAFStarFinder did not find any stars, adjust lower bound of sharpness")
+            star_finder_result = star_find.find_stars(clean_image)
+            if star_finder_result == None or len(star_finder_result) == 0:
+                self.console_msg("DAOStarFinder did not find any stars, adjust lower bound of sharpness")
                 self.console_msg("Ready")
                 return
 
-            self.console_msg("IRAFStarFinder number of stars found : "  + str(len(iraf_result)))
+            self.console_msg("DAOStarFinder number of stars found : "  + str(len(star_finder_result)))
 
-           
-            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8)
+            bkgstat = MMMBackground()
+
+            local_bkg = LocalBackground(inner_radius=fwhm*4, outer_radius=fwhm*8, bkg_estimator=bkgstat)
 
             if self.fitter_stringvar.get() == "Sequential LS Programming":
                 self.console_msg(
@@ -1247,6 +1260,33 @@ class MyGUI:
             goodnames = [name for name in result_tab.colnames if len(result_tab[name].shape) <=1]
             
             self.results_tab_df = result_tab[goodnames].to_pandas()
+
+            """
+            flags : bitwise flag values
+
+                1 : one or more pixels in the fit_shape region were masked
+
+                2 : the fit x and/or y position lies outside of the input data
+
+                4 : the fit flux is less than or equal to zero
+
+                8 : the fitter may not have converged. In this case, you can try increasing the maximum number of fit iterations using the fitter_maxiters keyword.
+
+                16 : the fitter parameter covariance matrix was not returned
+
+                32 : the fit x or y position is at the bounded value            
+            
+            """
+            #
+            # Remove any entries with flags != 0; 
+            # 
+            self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['flags'] != 0].index, inplace=True)
+
+            #
+            # Remove poor fits qfit > .07
+            #
+            self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['qfit'] > 0.07].index, inplace=True)
+
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
             if len(self.airmass_entry.get()) > 0:
@@ -2746,19 +2786,6 @@ class MyGUI:
                 separation = photometry_star_coordinates.separation(match_coordinates)
 
                 if separation < (matching_radius * u.deg):
-                    # Sometimes the flux_fit is negative.
-                    # That causes a blank inst_mag (can't take a log of neg number) 
-                    # Check for this and if so, ignore
-                    # 
-                    if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                        self.results_tab_df.loc[index, "match_id"] = ""
-                        self.results_tab_df.loc[index, "label"] = __empty_cell__
-                        self.results_tab_df.loc[index, "match_ra"] = ""
-                        self.results_tab_df.loc[index, "match_dec"] = ""
-                        self.results_tab_df.loc[index, "match_mag"] = ""
-                        self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
-                        continue
-
 
                     """
                     For a given comp star and matching_radius, there could be 
@@ -2785,7 +2812,19 @@ class MyGUI:
                                     n += 1
                                 match_label = str(match_label)  + "." + str(n)
                             elif using_apass_dr10:
-                                pass
+                                # Choose the entry with the lowest qfit (Quality of Fit Score)
+                                if already_gotten['qfit'].iloc[0] < self.results_tab_df.iloc[index]['qfit']:
+                                    # The the new match is NOT a better fit. ignore it
+                                    continue
+                                else:
+                                    # The new match IS a better fit, move the label to it
+                                    # Erase the old
+                                    self.results_tab_df.loc[already_gotten.index, "match_id"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "label"] = __empty_cell__ 
+                                    self.results_tab_df.loc[already_gotten.index, "match_ra"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "match_dec"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "match_mag"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "check_star"] = False 
 
                     #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
@@ -2811,7 +2850,7 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_dec"] = ""
                     self.results_tab_df.loc[index, "match_mag"] = ""
                     self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
-
+            
             self.console_msg("Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
 
 
@@ -2915,16 +2954,6 @@ class MyGUI:
                     photometry_star_coordinates = SkyCoord(ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg, frame='icrs')
                     separation = photometry_star_coordinates.separation(user_object)
                     if separation < (matching_radius * u.deg):
-                        # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
-                        # That causes a blank inst_mag (can't take a log of neg number) 
-                        # Check for this and if so, ignore
-                        # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
-                        # IterativePSFPhotometry; not known if following is still needed)
-                        # 
-                        if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                            self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__
-                            continue
-
                         # We found it 
                         self.results_tab_df.loc[index, "vsx_id"] = object_name
                         self.results_tab_df.loc[index, "RAJ2000"] = user_object.ra.deg
@@ -2934,7 +2963,16 @@ class MyGUI:
 
             if object_name_exist and not found_user_object:
                 self.console_msg("DID NOT FIND Object Name:" + object_name + "!!!!")
-                
+
+
+            # Now clean up results_tab_df pf rows that were never accessed. 
+            # Remove NaN values
+            self.results_tab_df = self.results_tab_df.dropna(subset=['label'])  
+            # Remove rows with unknown label
+            self.results_tab_df.drop(self.results_tab_df[(self.results_tab_df['label'] != "%") &
+                                                      (~self.results_tab_df['label'].str.contains(r'^'+__label_prefix__, regex=True))].index, inplace=True)
+
+
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
             self.console_msg("Photometry table saved to " + str(self.image_file + ".csv"))
 
@@ -3245,7 +3283,7 @@ class MyGUI:
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            star_detection_threshold_factor_label = tk.Label(settings_left_frame, text="IRAFStarFinder Threshold Factor (*std):")
+            star_detection_threshold_factor_label = tk.Label(settings_left_frame, text="DAOStarFinder Threshold Factor (*std):")
             star_detection_threshold_factor_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.star_detection_threshold_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.star_detection_threshold_factor_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
@@ -4113,7 +4151,7 @@ class MyGUI:
             
             #TYPE=EXTENDED
             #OBSCODE=FPIA
-            #SOFTWARE=Self-developed; MAOPhot 1.1.3 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.4 using Photutils
             #DELIM=,
             #DELIM=,
             #DATE=JD
@@ -4256,7 +4294,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.3 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.4 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
