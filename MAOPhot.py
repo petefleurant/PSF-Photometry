@@ -180,7 +180,7 @@ from ast import Assert
 from astropy.stats import SigmaClip
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import gaussian_sigma_to_fwhm
-from astropy.table import Table
+from astropy.table import Table, QTable
 from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
 from astropy.nddata import NDData
 from astropy.nddata import Cutout2D
@@ -630,7 +630,6 @@ class MyGUI:
 # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
 # 
 # peaks_tbl: initial set of stars from find_peaks
-# non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
 # prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
 # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
 # stars_tbl: isolated_stars_tbl minus ones rejected by user
@@ -644,21 +643,53 @@ class MyGUI:
 
     def find_peaks(self):
         global header
-        self.console_msg("Find Peaks: starting find peaks...")
-
-        #make sure an image is loaded
-        if len(image_data) == 0:
-            self.console_msg("Find Peaks: cannot proceed; an image must be loaded first; use File->Open...")
-            return
-
-        # test fit_width
-        _shape = self.fit_width_entry.get().strip()
-        if not _shape or not _shape.isnumeric():
-            self.console_msg("Find Peaks: fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
-            self.console_msg("Ready")
-            return
-        
         try:
+            self.console_msg("Find Peaks: starting find peaks...")
+
+            #make sure an image is loaded
+            if len(image_data) == 0:
+                self.console_msg("Find Peaks: cannot proceed; an image must be loaded first; use File->Open...")
+                return
+
+            # test fit_width
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Find Peaks: fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
+                return
+
+            # test fwhm
+            if is_number(self.fwhm_entry.get().strip()):
+                fwhm = float(self.fwhm_entry.get())
+            else:
+                self.console_msg("FWHM not numeric, using 3")
+                fwhm = 3.0
+
+            # test star_detection_threshold_factor
+            if self.star_detection_threshold_factor_entry.get().isnumeric():
+                star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
+            else:
+                self.console_msg("DAOStarFinder threshold factor not numeric, using 10")
+                star_detection_threshold_factor = 10
+
+            # linearity_limit will get passed to DAOStarFinder
+            # test linearity_limit_entry 
+            linearity_limit = self.linearity_limit_entry.get().strip()
+            if not linearity_limit or not linearity_limit.isnumeric():
+                self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
+                linearity_limit = 60000
+
+            # "Max num of Peaks" will get passed as brightest to DAOStarFinder
+            # Test the user setting of "Max num of Peaks"
+            user_npeaks = self.find_peaks_npeaks_entry.get().strip()
+            if not user_npeaks or not user_npeaks.isnumeric():
+                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
+                user_npeaks = None
+            else:
+                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + str(int(user_npeaks)))
+                user_npeaks = int(user_npeaks)
+
+
             """
             Determine the background using simple statistics
             ------------------------------------------------
@@ -670,11 +701,13 @@ class MyGUI:
             self.console_msg("Find Peaks: std sigma clipped level: " + str(round(std,2)))
 
             # now ready to find peaks
-            #daofind = DAOStarFinder(fwhm=3.0, threshold=5 * std)
-            #peaks_tbl = daofind(data=image_data - median)
+            star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
+                                       fwhm=fwhm,
+                                        peakmax=float(linearity_limit),
+                                        brightest=user_npeaks
+                                       )
 
-            # Always get all (np.inf) the peaks then cull them with user_npeaks after getting isolated_stars_tbl
-            peaks_tbl = find_peaks(data=image_data, threshold=median + (std*10), box_size=3, npeaks=np.inf)
+            peaks_tbl = QTable(star_find(data=image_data - median))
 
             if peaks_tbl == None or len(peaks_tbl) == 0:
                 self.console_msg("Find Peaks: no peaks found!!!")
@@ -690,40 +723,11 @@ class MyGUI:
             # peaks_tbl, prelim_stars_tbl, isolated_stars_tbl, stars_tbl
             # 
             # peaks_tbl: initial set of stars from find_peaks
-            # non_saturated_stars_tbl: peaks_tbl minus any peak_value > linearity_limit_entry
             # prelim_stars_tbl: non_saturated_stars_tbl minus the ones near the edge
             # isolated_stars_tbl: prelim_stars_tbl minus ones with close companions
             # stars_tbl: isolated_stars_tbl minus ones rejected by user
             # candidate_stars: extracted stars from stars_tbl
             #
-
-            # mask out peaks with peak_value > linearity_limit_entry
-            # test linearity_limit_entry 
-            linearity_limit = self.linearity_limit_entry.get().strip()
-            if not linearity_limit or not linearity_limit.isnumeric():
-                self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
-                linearity_limit = 60000
-
-            x = peaks_tbl['x_peak']
-            y = peaks_tbl['y_peak']
-            peak = peaks_tbl['peak_value']
-            mask = peak < int(linearity_limit)
-            # 
-            non_saturated_stars_tbl = Table()
-            non_saturated_stars_tbl['x_peak'] = x[mask]  
-            non_saturated_stars_tbl['y_peak'] = y[mask]  
-            non_saturated_stars_tbl['peak_value'] = peak[mask]  
-
-            non_saturated_stars_tbl_len = len(non_saturated_stars_tbl)
-            self.console_msg("Find Peaks: found and removed " + str(peaks_tbl_len - non_saturated_stars_tbl_len) + " peaks over linearity limit.")
-            self.console_msg("Find Peaks: " + str(non_saturated_stars_tbl_len) + " peaks remain.")
-
-            if non_saturated_stars_tbl_len == 0:
-                # none found below sat level
-                self.console_msg("Find Peaks: there were no peaks found over linearity limit, increase 'Max Number of Peaks'")
-                self.console_msg("Find Peaks: for unlimited, set 'Max Number of Peaks' to ''")
-                self.console_msg("Ready")
-                return
 
             #
             # mask out peaks near the edge
@@ -732,9 +736,9 @@ class MyGUI:
             self.fit_shape = int(_shape) # Eg., 5
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 
-            x = non_saturated_stars_tbl['x_peak']  
-            y = non_saturated_stars_tbl['y_peak']  
-            peak = non_saturated_stars_tbl['peak_value']
+            x = peaks_tbl['xcentroid']  
+            y = peaks_tbl['ycentroid']  
+            peak = peaks_tbl['peak']
             _image = Image.fromarray(image_data)
             width, height = _image.size
             mask = ((x > hsize) & (x < (width -1 - hsize)) &
@@ -744,11 +748,11 @@ class MyGUI:
             prelim_stars_tbl = Table()
             prelim_stars_tbl['x'] = x[mask]  
             prelim_stars_tbl['y'] = y[mask]  
-            prelim_stars_tbl['peak_value'] = peak[mask]  
+            prelim_stars_tbl['peak'] = peak[mask]  
             prelim_stars_tbl['rejected'] = False #init
 
             prelim_stars_tbl_len = len(prelim_stars_tbl)
-            self.console_msg("Find Peaks: found and removed " + str(non_saturated_stars_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
+            self.console_msg("Find Peaks: found and removed " + str(peaks_tbl_len - prelim_stars_tbl_len) + " peaks on edge.")
             self.console_msg("Find Peaks: " + str(prelim_stars_tbl_len) + " peaks remain.")
 
             # now set 'rejected' to True for any stars that are proximate to 
@@ -768,7 +772,7 @@ class MyGUI:
     
             x = prelim_stars_tbl['x']  
             y = prelim_stars_tbl['y']  
-            peak = prelim_stars_tbl['peak_value']
+            peak = prelim_stars_tbl['peak']
             reject_this = prelim_stars_tbl['rejected']
 
             mask = reject_this == False  # only keep ones we don't reject
@@ -776,31 +780,13 @@ class MyGUI:
             self.isolated_stars_tbl = Table()
             self.isolated_stars_tbl['x'] = x[mask]  
             self.isolated_stars_tbl['y'] = y[mask]  
-            self.isolated_stars_tbl['peak_value'] = peak[mask]  
+            self.isolated_stars_tbl['peak'] = peak[mask]  
             self.isolated_stars_tbl['rejected'] = False #init
 
             isolated_stars_tbl_len = len(self.isolated_stars_tbl)
             self.console_msg("Find Peaks: found and removed " + str(prelim_stars_tbl_len - isolated_stars_tbl_len) + " close companions.")
             self.console_msg("Find Peaks: " + str(isolated_stars_tbl_len) + " peaks remain.")
 
-            # Now cull the table to the user setting 'Mac number of Peaks", user_npeaks
-
-            # Test the user setting of Max num of Peaks
-            # This is ONLY applied after isolated_stars_tbl is created; the initial set, peaks_tbl,
-            # has no limitations 
-            user_npeaks = self.find_peaks_npeaks_entry.get().strip()
-            if not user_npeaks or not user_npeaks.isnumeric():
-                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
-                user_npeaks = np.inf
-            else:
-                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + str(int(user_npeaks)))
-                user_npeaks = int(user_npeaks)
-
-                #First sort in order of highest peak value
-                self.isolated_stars_tbl.sort(keys='peak_value', reverse=True)
-                # Remove unwanted rows 
-                if user_npeaks < isolated_stars_tbl_len:
-                    self.isolated_stars_tbl.remove_rows(slice(user_npeaks, None, 1))
 
             #re-count
             isolated_stars_tbl_len = len(self.isolated_stars_tbl)
@@ -816,7 +802,7 @@ class MyGUI:
                 for index, row in self.ePSF_rejection_list.iterrows():
                     reject_x = row['x']
                     reject_y = row['y']
-                    if abs(reject_x - psf_x) <= hsize and abs(reject_y - psf_y) <= hsize:
+                    if abs(reject_x - psf_x) <= hsize+3 and abs(reject_y - psf_y) <= hsize+3:
                         #user does not want this one
                         self.isolated_stars_tbl[isolated_index]['rejected'] = True
                         break
@@ -1039,7 +1025,7 @@ class MyGUI:
             options = {}
             options['defaultextension'] = '.csv'
             options['filetypes'] = [('CSV', '.csv')]
-            options['title'] = 'Choose the ' + self.image_file + '-rejection.csv'
+            options['title'] = 'Choose the rejection list (*.csv)'
 
             file_name = fd.askopenfilename(**options)
 
@@ -1132,32 +1118,29 @@ class MyGUI:
             self.console_msg("Mean sigma clipped level: " + str(round(mean,2)))
             self.console_msg("Std sigma clipped level: " + str(round(std,2)))
 
-            # mask out peaks with peak_value > linearity_limit_entry
+            # pass linearity_limit to DAOStarFinder
             # test linearity_limit_entry 
             linearity_limit = self.linearity_limit_entry.get().strip()
             if not linearity_limit or not linearity_limit.isnumeric():
                 self.console_msg("Find Peaks: linearity limit is not valid....setting to 60000")
                 linearity_limit = 60000
 
+            # "Max num of Peaks" will get passed as brightest to DAOStarFinder
+            # Test the user setting of "Max num of Peaks"
+            user_npeaks = self.find_peaks_npeaks_entry.get().strip()
+            if not user_npeaks or not user_npeaks.isnumeric():
+                self.console_msg("Find Peaks: setting max num of peaks to 'unlimited'")
+                user_npeaks = None
+            else:
+                self.console_msg("Find Peaks: limiting max num of Peaks to the user setting: " + str(int(user_npeaks)))
+                user_npeaks = int(user_npeaks)
+
             star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
                                        fwhm=fwhm,
-                                        peakmax=float(linearity_limit)
+                                        peakmax=float(linearity_limit),
+                                        brightest=user_npeaks
                                        )
 
-            """
-            star_find = IRAFStarFinder(threshold = star_detection_threshold_factor*std,
-                                        fwhm = fwhm,
-                                        minsep_fwhm = 0,
-                                        #exclude_border = True,
-                                        roundhi = 3.0,
-                                        roundlo = -5.0,
-                                        #sharplo = sharplo,
-                                        #sharphi = 2.0,
-                                        peakmax=float(linearity_limit)
-                                        )
-            """
-            
-            
             # subtract background
             clean_image = image_data - median_val
 
@@ -1220,7 +1203,7 @@ class MyGUI:
                                                 psf_model = psf_model,
                                                 fit_shape = self.fit_shape,
                                                 finder = star_find,
-                                                grouper = None, #mode = 'new'; or SourceGrouper(min_separation=50),
+                                                grouper = SourceGrouper(min_separation=3*fwhm),
                                                 fitter = selected_fitter,
                                                 #fitter_maxiters = 10,
                                                 maxiters = iterations,
@@ -2003,12 +1986,18 @@ class MyGUI:
             if not self.results_tab_df_colorB["label"].isin([check_star_in_setting_with_prefix]).any():
                 self.console_msg("Settings check star: " + check_star_in_setting +
                                   " not found in " + input_color[0] + "; select another check star")
+                list_of_comps = self.results_tab_df_colorV["label"][self.results_tab_df_colorV['label'].isin(self.results_tab_df_colorB['label']) & (self.results_tab_df_colorV['label'] != "%")]
+                list_good_comps = ", ".join(comp.split(maxsplit=1)[-1] for comp in list_of_comps.astype(str))
+                self.console_msg("Pick from following: "+list_good_comps)
                 return
             
             if not self.results_tab_df_colorV["label"].isin([check_star_in_setting_with_prefix]).any():
                 self.console_msg("Settings check star: " + check_star_in_setting +
                                   " not found in " + input_color[2] + "; select another check star")
                 # Remember: input_color is like "B-V", so input_color[0] is B and input_color[2] is V
+                list_of_comps = self.results_tab_df_colorV["label"][self.results_tab_df_colorV['label'].isin(self.results_tab_df_colorB['label']) & (self.results_tab_df_colorV['label'] != "%")]
+                list_good_comps = ", ".join(comp.split(maxsplit=1)[-1] for comp in list_of_comps.astype(str))
+                self.console_msg("Pick from following: "+list_good_comps)
                 return
 
             #check to see if Settings' Object Name is in both tables
@@ -4418,7 +4407,7 @@ class MyGUI:
                             ("B* Std: " + format(B_std_check, ' >6.3f') +
                             "  V* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
 
-            self.console_msg("Variable Star Estimates\n" +
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
                             ("B* Ave: " + format(B_mean_var, ' >6.3f') +
                             "  V* Ave: " + format(V_mean_var, ' >6.3f') +
                             "  (B-V)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
@@ -4437,7 +4426,7 @@ class MyGUI:
                             ("V* Std: " + format(B_std_check, ' >6.3f') +
                             "  R* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
 
-            self.console_msg("Variable Star Estimates\n" +
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
                             ("V* Ave: " + format(B_mean_var, ' >6.3f') +
                             "  R* Ave: " + format(V_mean_var, ' >6.3f') +
                             "  (V-R)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
@@ -4456,7 +4445,7 @@ class MyGUI:
                             ("V* Std: " + format(B_std_check, ' >6.3f') +
                             "  I* Std: " + format(V_std_check, ' >6.3f')).rjust(56))
 
-            self.console_msg("Variable Star Estimates\n" +
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
                             ("V* Ave: " + format(B_mean_var, ' >6.3f') +
                             "  I* Ave: " + format(V_mean_var, ' >6.3f') +
                             "  (V-I)*: " + format(B_mean_var-V_mean_var, ' >6.3f')).rjust(72) +
