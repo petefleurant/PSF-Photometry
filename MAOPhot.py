@@ -395,7 +395,8 @@ class MyGUI:
     settings_filename_entry = None # special case this is only place holder for filename
     auto_behavior = None
     filter_entry = None
-
+    max_qfit_entry = None
+    min_separation_factor_entry = None
     #
     # The TopLoevel window containing the settings
     es_top = None
@@ -1108,10 +1109,26 @@ class MyGUI:
                 self.console_msg("Lower Bound for Sharpness not numeric, using 0")
                 sharplo = 0
 
-            """
-            Determine the background using simple statistics
-            ------------------------------------------------
-            """
+            # test min_separation_factor_entry
+            if is_number(self.min_separation_factor_entry.get().strip()):
+                min_separation = float(self.min_separation_factor_entry.get()) * fwhm
+                grouper = SourceGrouper(min_separation)
+                self.console_msg("Min Separation for Gouper set to: " + str(min_separation))
+            else:
+                self.console_msg("Min Separation: NaN; no grouping performed; each source fit independently")
+                grouper = None
+
+            # test max qfit
+            if is_number(self.max_qfit_entry.get().strip()):
+                max_qfit = float(self.max_qfit_entry.get())
+            else:
+                max_qfit = 0.1
+            self.console_msg("Max qfit set to: " + str(max_qfit))
+
+            #
+            # Determine the background using simple statistics
+            #
+            
             # just for reference, lets looks at these stats first
             mean, median_val, std = sigma_clipped_stats(image_data, sigma=2.0)
             self.console_msg("Median sigma clipped level: " + str(round(median_val,2)))
@@ -1203,7 +1220,7 @@ class MyGUI:
                                                 psf_model = psf_model,
                                                 fit_shape = self.fit_shape,
                                                 finder = star_find,
-                                                grouper = SourceGrouper(min_separation=3*fwhm),
+                                                grouper = grouper,
                                                 fitter = selected_fitter,
                                                 #fitter_maxiters = 10,
                                                 maxiters = iterations,
@@ -1266,9 +1283,9 @@ class MyGUI:
             self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['flags'] != 0].index, inplace=True)
 
             #
-            # Remove poor fits qfit > .07
+            # Remove poor fits qfit > max_qfit (defaults to .1)
             #
-            self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['qfit'] > 0.07].index, inplace=True)
+            self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['qfit'] > max_qfit].index, inplace=True)
 
             self.results_tab_df["removed_from_ensemble"] = False
             self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
@@ -2702,7 +2719,7 @@ class MyGUI:
 
             if len(comparison_stars) == 0:
                 self.console_msg(
-                    "NO Comparison stars found in the field; make sure filter and/or chart Id is correct.")
+                    "NO Comparison stars found in the field; make sure filter, chart Id (optional), and comp names are correct.")
                 self.console_msg("Ready")
                 return
             else:                
@@ -2775,45 +2792,25 @@ class MyGUI:
                 separation = photometry_star_coordinates.separation(match_coordinates)
 
                 if separation < (matching_radius * u.deg):
-
-                    """
-                    For a given comp star and matching_radius, there could be 
-                    more than one match. Name the successive matches by appending
-                    the string ".n" where n is 0, 1, 2, 3.... 
-                    The original comp star does not get its label appended.
-                    So, you could have comp stars:
-                    120, 120.0, 120.1, 120.2, etc.
-                    """
+                    #For a given comp star and matching_radius, there could be 
+                    #more than one match. Choose the entry with the lowest qfit (Quality of Fit Score)
                     if "label" in self.results_tab_df:
                         already_gotten = self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label))]    
                         if not already_gotten.empty:
                             # Here if we already got this comp star 
-                            # So rename it to match_label + ".n" (n = 0, 1, 2, etc.)
-                            # Get the latest (check for ".n")
-                            n = 0
-                            if using_apass_dr9:
-                                #use an '_' to delimit duplicates (they may not be in the same location)
-                                while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "_" + str(n))]).empty):
-                                    n += 1
-                                match_label = str(match_label)  + "_" + str(n)
-                            elif not using_apass_dr10: # for now not caring about duplicates 
-                                while(not (self.results_tab_df.loc[self.results_tab_df["label"] == (__label_prefix__ + str(match_label) + "." + str(n))]).empty):
-                                    n += 1
-                                match_label = str(match_label)  + "." + str(n)
-                            elif using_apass_dr10:
-                                # Choose the entry with the lowest qfit (Quality of Fit Score)
-                                if already_gotten['qfit'].iloc[0] < self.results_tab_df.iloc[index]['qfit']:
-                                    # The the new match is NOT a better fit. ignore it
-                                    continue
-                                else:
-                                    # The new match IS a better fit, move the label to it
-                                    # Erase the old
-                                    self.results_tab_df.loc[already_gotten.index, "match_id"] = ""
-                                    self.results_tab_df.loc[already_gotten.index, "label"] = __empty_cell__ 
-                                    self.results_tab_df.loc[already_gotten.index, "match_ra"] = ""
-                                    self.results_tab_df.loc[already_gotten.index, "match_dec"] = ""
-                                    self.results_tab_df.loc[already_gotten.index, "match_mag"] = ""
-                                    self.results_tab_df.loc[already_gotten.index, "check_star"] = False 
+                            # Choose the entry with the lowest qfit (Quality of Fit Score)
+                            if already_gotten['qfit'].iloc[0] < self.results_tab_df.iloc[index]['qfit']:
+                                # The the new match is NOT a better fit. ignore it
+                                continue
+                            else:
+                                # The new match IS a better fit, move the label to it
+                                # Erase the old
+                                self.results_tab_df.loc[already_gotten.index, "match_id"] = ""
+                                self.results_tab_df.loc[already_gotten.index, "label"] = __empty_cell__ 
+                                self.results_tab_df.loc[already_gotten.index, "match_ra"] = ""
+                                self.results_tab_df.loc[already_gotten.index, "match_dec"] = ""
+                                self.results_tab_df.loc[already_gotten.index, "match_mag"] = ""
+                                self.results_tab_df.loc[already_gotten.index, "check_star"] = False 
 
                     #Found a match within matching_radius
                     self.results_tab_df.loc[index, "match_id"] = \
@@ -2879,38 +2876,23 @@ class MyGUI:
                     separation = photometry_star_coordinates.separation(match_coordinates)
                     
                     if separation < (matching_radius * u.deg):
-                        # Sometimes the flux_fit is negative out of the IterativelySubtractedPSFPhotometry.
-                        # That causes a blank inst_mag (can't take a log of neg number) 
-                        # Check for this and if so, ignore
-                        # (IterativelySubtractedPSFPhotometry is now deprecated and replaced by 
-                        # IterativePSFPhotometry; not known if following is still needed)
-                        # 
-                        if self.results_tab_df.loc[index, "flux_fit"] < 0:
-                            self.results_tab_df.loc[index, "vsx_id"] = __empty_cell__
-                            continue
-                        
-                        """
-                        For a given vsx and matching_radius, there could be 
-                        more than one match. Name the successive matches by appending
-                        the string ".n" where n is 0, 1, 2, 3.... 
-                        The original comp star does not get its label appended.
-                        So, you could have vsx stars:
-                        Z Tau, Z Tau.0, Z Tau.1, Z Tau.2, etc.
-                        """
-                    
                         if "vsx_id" in self.results_tab_df:
                             already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == match_id]    
                             if not already_gotten.empty:
                                 # Here if we already got this vsx
-                                # So rename it to match_id + ".n" (n = 0, 1, 2, etc)
-                                # Get the latest (check for ".n")
-                                n = 0
-                                while(not (self.results_tab_df.loc[self.results_tab_df["vsx_id"] == (str(match_id) + "." + str(n))]).empty):
-                                    n += 1
-                                
-                                #new vsx label
-                                match_id = str(match_id)  + "." + str(n)
-
+                                # Choose the entry with the lowest qfit (Quality of Fit Score)
+                                if already_gotten['qfit'].iloc[0] < self.results_tab_df.iloc[index]['qfit']:
+                                    # The the new match is NOT a better fit. ignore it
+                                    continue
+                                else:
+                                    # The new match IS a better fit, move the label to it
+                                    # Erase the old
+                                    self.results_tab_df.loc[already_gotten.index, "match_id"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "label"] = __empty_cell__ 
+                                    self.results_tab_df.loc[already_gotten.index, "match_ra"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "match_dec"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "match_mag"] = ""
+                                    self.results_tab_df.loc[already_gotten.index, "check_star"] = False 
 
                         # Found a match within matching_radius
                         self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
@@ -2954,12 +2936,13 @@ class MyGUI:
                 self.console_msg("DID NOT FIND Object Name:" + object_name + "!!!!")
 
 
-            # Now clean up results_tab_df pf rows that were never accessed. 
-            # Remove NaN values
-            self.results_tab_df = self.results_tab_df.dropna(subset=['label'])  
-            # Remove rows with unknown label
-            self.results_tab_df.drop(self.results_tab_df[(self.results_tab_df['label'] != "%") &
-                                                      (~self.results_tab_df['label'].str.contains(r'^'+__label_prefix__, regex=True))].index, inplace=True)
+            if "label" in self.results_tab_df:
+                # Now clean up results_tab_df pf rows that were never accessed. 
+                # Remove NaN values
+                self.results_tab_df = self.results_tab_df.dropna(subset=['label'])  
+                # Remove rows with unknown label
+                self.results_tab_df.drop(self.results_tab_df[(self.results_tab_df['label'] != "%") &
+                                                        (~self.results_tab_df['label'].str.contains(r'^'+__label_prefix__, regex=True))].index, inplace=True)
 
 
             self.results_tab_df.to_csv(self.image_file + ".csv", index=False)
@@ -3237,27 +3220,37 @@ class MyGUI:
             """
 
             separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
             row += 1
 
             _label_ = tk.Label(settings_left_frame, text="ePSF and PSF Photometry Parameters")
-            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            _label_.grid(row=row, columnspan=5, sticky=tk.EW)
             row += 1
 
             separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
             row += 1
 
             find_peaks_npeaks_label = tk.Label(settings_left_frame, text="Max Number of Peaks:")
             find_peaks_npeaks_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.find_peaks_npeaks_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.find_peaks_npeaks_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            qfit_label = tk.Label(settings_left_frame, text="Max qfit:")
+            qfit_label.grid(row=row, column=3, sticky=tk.E)
+            self.max_qfit_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
+            self.max_qfit_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             fit_width_label = tk.Label(settings_left_frame, text="Fitting Width/Height, px (odd only):")
             fit_width_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.fit_width_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fit_width_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            min_separation_factor_label = tk.Label(settings_left_frame, text="Min Separation Factor, (x FWHM):")
+            min_separation_factor_label.grid(row=row, column=3, sticky=tk.E)
+            self.min_separation_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
+            self.min_separation_factor_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             max_ensemble_magnitude_label = tk.Label(settings_left_frame, text="Maximum Ensemble Magnitude:")
@@ -3272,7 +3265,7 @@ class MyGUI:
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            star_detection_threshold_factor_label = tk.Label(settings_left_frame, text="DAOStarFinder Threshold Factor (*std):")
+            star_detection_threshold_factor_label = tk.Label(settings_left_frame, text="DAOStarFinder Threshold Factor (x std):")
             star_detection_threshold_factor_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.star_detection_threshold_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.star_detection_threshold_factor_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
@@ -3304,7 +3297,7 @@ class MyGUI:
             row += 1
 
             separator_telescope = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_telescope.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_telescope.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
             row += 1
 
             """
@@ -3312,11 +3305,11 @@ class MyGUI:
             """
             _label_ = tk.Label(
                 settings_left_frame, text="Telescope Parameters")
-            _label_.grid(row=row, columnspan=3, sticky=tk.EW)
+            _label_.grid(row=row, columnspan=5, sticky=tk.EW)
             row += 1
 
             separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
             row += 1
 
             telescope_label = tk.Label(settings_left_frame, text="Telescope:")
@@ -3404,7 +3397,7 @@ class MyGUI:
             #
 
             settings_right_frame = tk.Frame(self.es_top, padx=__our_padding__, pady=__our_padding__)
-            settings_right_frame.grid(row=0, column=2, sticky=tk.NSEW)
+            settings_right_frame.grid(row=0, column=1, sticky=tk.NSEW)
 
             row = 0
 
@@ -3590,7 +3583,7 @@ class MyGUI:
             # Separator and Buttons across the bottom
             row=1
             separator_ = ttk.Separator(self.es_top, orient='horizontal')
-            separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
+            separator_.grid(row=row, columnspan=2, pady=5, sticky=tk.EW)
             row += 1
 
             #
@@ -3599,9 +3592,9 @@ class MyGUI:
             load_settings_button = tk.Button(self.es_top, text="Load...", command=self.load_settings)
             load_settings_button.grid(row=row, column=0, padx=20, sticky=tk.W)
             save_settings_button = tk.Button(self.es_top, text="Save As...", command=self.save_settings_as)
-            save_settings_button.grid(row=row, column=1, padx=20) #, sticky=tk.W)
+            save_settings_button.grid(row=row, column=0, padx=20, sticky=tk.E)
             close_settings_button = tk.Button(self.es_top, text="  OK/Hide  ", command=self.es_top.withdraw)
-            close_settings_button.grid(row=row, column=2, padx=20, sticky=tk.E)
+            close_settings_button.grid(row=row, column=1, padx=20, sticky=tk.E)
             row += 1
 
             # Update layout to calculate dimensions
@@ -3809,10 +3802,11 @@ class MyGUI:
             sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
                 
             for comp in sel_comps_to_use:
-                sel_comps.append(int(comp.strip()))
+                if is_number(comp):
+                    sel_comps.append(int(comp.strip()))
                 
             check_star_to_use = self.object_kref_entry.get().strip()
-            if check_star_to_use.isnumeric():
+            if is_number(check_star_to_use):
                 #add it to the list of comps
                 check_star = int(check_star_to_use)
                 sel_comps.append(check_star)
@@ -5044,7 +5038,9 @@ class MyGUI:
             'object_notes_entry': self.object_notes_entry,
             'display_all_objects': self.display_all_objects,
             'auto_behavior': self.auto_behavior,
-            'filter_entry': self.filter_entry
+            'filter_entry': self.filter_entry,
+            'max_qfit_entry': self.max_qfit_entry,
+            'min_separation_factor_entry': self.min_separation_factor_entry
             }
 
         # if .config had a valid settings_filename, then load that one in
