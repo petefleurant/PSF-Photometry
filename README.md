@@ -1,13 +1,20 @@
 # PSF-Photometry
-Welcome to MAOPhot 1.1.3, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
 
-1.1.3 Changes
+MAOPhot 1.1.4 Changes
 
-1)	Support for APASS DR9
-2)	Added filename of Settings file to settings
-3)	Added use of a config file (./.config) and its management
-4)	Added Object RA and Dec to Settings (α and δ)
-5)	Application now installed in %LOCALAPPDATA%\MAOPhot
+1) Support for APASS DR10 [along with AAVSO, GAIA DR2, and APASS DR9]
+2) Added Setting: Max qfit , [‘qfit’ is quality of PSF fit, lower number is better fit; MAOPhot discards any PSF fit with qfit > Max qfit”;
+anything below 0.1 is considered good]
+3) Added Setting Min Separation Factor [this x FWHM = the minimum distance (in pixels) such that any two sources separated by less than this distance will be placed in the same group]
+4) Added Setting: "From Fits" checkbox for CCD Filter; when unchecked user can manually override FILTER value in Fits header
+5) “Find Peaks” and “Iterative PSF Photometry” now uses DAOStarFinder
+6) In APASS DR10, remove any entries with Johnson (V) > maglimit until cgi-bin/apass_dr10_download.pl is fixed
+7) Use mouse wheel and shift-mouse wheel to scroll
+
+Critical changes
+  - insure that all fitted PSF's have qfit (Quality of Merit) < "Max qfit" ; Only the lowest qfit match found within the "Matching Radius" is used. This match may not be found until a later iteration of "Iterative PSF Photometry". 
+  - use of APASS DR10. The "Maximum Ensemble Magnitude", in Settings,  is used to limit the inital comps received from the AAVSO. for a FOV > 60', a mag limit of 15 is recommended, FOV > 120', a mag limit of 12 is recommended
 
 
 PSF photometry models the star's light distribution as a mathematical function called the Point Spread Function (PSF), which describes how the star's light spreads across the detector. The PSF is then fitted to the star to determine its total flux, accounting for overlaps with nearby stars.
