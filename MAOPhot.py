@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #       #       
-  ##        ##       #    #  
- # #       # #       #    #  
-   #         #       #    #  
-   #   ###   #   ### ####### 
-   #   ###   #   ###      #  
- ##### ### ##### ###      #  
+   #         #       ####### 
+  ##        ##       #       
+ # #       # #       #       
+   #         #       ######  
+   #   ###   #   ###       # 
+   #   ###   #   ### #     # 
+ ##### ### ##### ###  #####  
+                             
+Welcome to MAOPhot 1.1.5, a PSF Photometry tool using Astropy and Photutils.psf
 
-Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy and Photutils.psf
-
-    1.1.4 Revision
+    1.1.5 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -332,7 +332,6 @@ class MyGUI:
 
     zoom_level = 1
     linreg_error = 0
-    zoom_step = 0.5
     photometry_results_plotted = False
     ePSF_samples_plotted = False
     results_tab_df = pd.DataFrame()
@@ -422,7 +421,7 @@ class MyGUI:
 #
 #######################################################################################
 
-    def display_image(self):
+    def display_image(self, verbose=False):
         if len(image_data) > 0:
             self.canvas.delete("all")
             global generated_image
@@ -438,7 +437,7 @@ class MyGUI:
             self.canvas.bind("<Shift-MouseWheel>", self.on_canvas_shift_mousewheel)
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
-            self.plot_photometry()
+            self.plot_photometry(verbose=verbose)
 
 #######################################################################################
 #
@@ -1370,9 +1369,10 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) + " " + str(e), level=logging.ERROR)
 
-    def plot_photometry(self):
+    def plot_photometry(self, verbose=True):
         try:
-            self.console_msg("Plotting Photometry...")
+            if verbose:
+                self.console_msg("Plotting Photometry...")
 
             labels_in_photometry_table = "label" in self.results_tab_df
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
@@ -1453,8 +1453,9 @@ class MyGUI:
                                     text=str(row["vsx_id"]).strip(),
                                     fill='yellow')
 
-            self.console_msg("Plotting Photometry...complete")
-            self.console_msg("Ready")
+            if verbose:
+                self.console_msg("Plotting Photometry...complete")
+                self.console_msg("Ready")
             
         except Exception as e:
             self.error_raised = True
@@ -1572,12 +1573,17 @@ class MyGUI:
     #
     #  on_canvas_mousewheel
     #
-    #  scroll vertically 
+    #  Zoom in and out
     # 
     ###############################################################
 
     def on_canvas_mousewheel(self, event):
-        self.canvas.yview_scroll(-1 * (event.delta // 120), "units")  # Scroll vertically
+        if event.delta > 0:
+            self.zoom_level *= 1.1
+        else:
+            self.zoom_level /= 1.1
+        self.canvas.scale("all", 0, 0, self.zoom_level, self.zoom_level)
+        self.display_image(verbose=False)
 
     ###############################################################
     #
@@ -1766,16 +1772,16 @@ class MyGUI:
         self.psf_canvas.create_image(0, 0, anchor=tk.NW, image=self.image_crop)
 
     def zoom_in(self):
-        self.canvas.scale("all", 0, 0, 1+self.zoom_step, 1+self.zoom_step)
-        self.zoom_level = self.zoom_level * (1+self.zoom_step)
+        self.zoom_level *= 1.1
+        self.canvas.scale("all", 0, 0, self.zoom_level, self.zoom_level)
         self.console_msg("Zoom: "+str(self.zoom_level))
-        self.display_image()
+        self.display_image(verbose=False)
 
     def zoom_out(self):
-        self.canvas.scale("all", 0, 0, 1-self.zoom_step, 1-self.zoom_step)
-        self.zoom_level = self.zoom_level * (1-self.zoom_step)
-        self.console_msg("Zoom: " + str(self.zoom_level))
-        self.display_image()
+        self.zoom_level /= 1.1
+        self.canvas.scale("all", 0, 0, self.zoom_level, self.zoom_level)
+        self.console_msg("Zoom: "+str(self.zoom_level))
+        self.display_image(verbose=False)
 
     def zoom_100(self):
         self.canvas.scale("all", 0, 0, 1, 1)
@@ -4134,7 +4140,7 @@ class MyGUI:
             
             #TYPE=EXTENDED
             #OBSCODE=FPIA
-            #SOFTWARE=Self-developed; MAOPhot 1.1.4 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.5 using Photutils
             #DELIM=,
             #DELIM=,
             #DATE=JD
@@ -4277,7 +4283,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.4 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.5 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
