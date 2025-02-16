@@ -1,6 +1,11 @@
 # PSF-Photometry
 Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
 
+1.1.5 Changes
+
+1)	Image can be dragged by Shift+Left-moouse-button; 
+2) Image can be zoomed in, and zoomed out with mouse wheel
+
 1.1.4 Changes
 
 1)	Support for APASS DR10 [along with GAIA DR2, APASS DR9]
