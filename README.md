@@ -4,7 +4,7 @@ Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy 6.1.6 and Photutil
 1.1.5 Changes
 
 1)	Image can be dragged by Shift+Left-moouse-button; 
-2) Image can be zoomed in, and zoomed out with mouse wheel
+2)  Image can be zoomed in, and zoomed out with mouse wheel
 
 1.1.4 Changes
 
