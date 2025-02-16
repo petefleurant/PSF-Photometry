@@ -346,6 +346,7 @@ class MyGUI:
     ensemble_size = 0
     jd = 0
     image_file = ""
+    image_id = None
     settings_filename = ""
     photometry_circles = {}
     valid_parameter_list = {} # contains user's settings
@@ -430,9 +431,19 @@ class MyGUI:
                                     self.zoom_level,
                                     self.stretching_stringvar.get())
             self.image = ImageTk.PhotoImage(generated_image)
-            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
+            self.image_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
             self.canvas.bind("<Button-1>", self.mouse_main_canvas_click)
+
+            #
+            # For dragging
+            #
+            self.canvas.tag_bind(self.image_id, "<Shift-Button-1>", self.on_drag_start)
+            self.canvas.tag_bind(self.image_id, "<Shift-B1-Motion>", self.on_drag_move)
+
+            #
+            # For zooming 
+            #
             self.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
             self.canvas.bind("<Shift-MouseWheel>", self.on_canvas_shift_mousewheel)
             if self.ePSF_samples_plotted:
@@ -1587,7 +1598,6 @@ class MyGUI:
 
     ###############################################################
     #
-    #
     #  on_canvas_shift_mousewheel
     #
     #  scroll horizontally 
@@ -1595,7 +1605,33 @@ class MyGUI:
     ###############################################################
 
     def on_canvas_shift_mousewheel(self, event):
-            self.canvas.xview_scroll(-1 * (event.delta // 120), "units")  # Scroll horizontally
+        self.canvas.xview_scroll(-1 * (event.delta // 120), "units")  # Scroll horizontally
+
+
+    ###############################################################
+    #
+    #  on_drag_start
+    #
+    #  start dragging image 
+    # 
+    ###############################################################
+    
+    def on_drag_start(self, event):
+        # Stores initial click position.
+        self.canvas.scan_mark(event.x, event.y)
+    
+    ###############################################################
+    #
+    #  on_drag_move
+    #
+    #  drag image 
+    # 
+    ###############################################################
+    
+    def on_drag_move(self, event):
+        # Moves the image with the mouse while Shift + Button-1 is held.
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
+        self.plot_photometry(verbose=False)
 
     ###############################################################
     #
@@ -1607,6 +1643,11 @@ class MyGUI:
 
     def mouse_main_canvas_click(self, event):
         global image_data
+
+        # if care if shift key is not pressed; only use <Shift-Button-1> callback 
+        if event.state & 0x01: 
+            return
+        
         x = int(self.canvas.canvasx(event.x) / self.zoom_level)
         y = int(self.canvas.canvasy(event.y) / self.zoom_level)
         self.last_clicked_x = x
@@ -1620,7 +1661,7 @@ class MyGUI:
             clicked_coordinate = SkyCoord(ra=sky.ra, dec=sky.dec)
             sky_coordinate_string = "α δ: " + clicked_coordinate.to_string("hmsdms", precision=2)
             self.console_msg("Position X: "+str(x)+"\t Y: "+str(y) +
-                             "\t ADU: "+str(ADU) + "\t\t\t" + sky_coordinate_string)
+                            "\t ADU: "+str(ADU) + "\t\t\t" + sky_coordinate_string)
             alpha_delta = [] # used to keep alpha and delta, may end up in settings
             alpha_delta = clicked_coordinate.to_string("hmsdms", precision=2).split()
 
@@ -1673,7 +1714,7 @@ class MyGUI:
                             #ask if user wants to name this object
                             result = simpledialog.askstring("Object Name", "Replace Object Name (and assign vsx status) with: ", 
                                                             initialvalue="my-user-obj")
-   
+
                             if result:
                                 user_name = result.strip()
                                 """
@@ -1704,7 +1745,6 @@ class MyGUI:
 
 
             self.console_msg("Ready")
-
 
     ###############################################################
     #
