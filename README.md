@@ -1,5 +1,5 @@
 # PSF-Photometry
-Welcome to MAOPhot 1.1.4, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+Welcome to MAOPhot 1.1.5, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
 
 1.1.5 Changes
 
