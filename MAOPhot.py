@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #       ####### 
-  ##        ##       #       
+   #         #        #####  
+  ##        ##       #     # 
  # #       # #       #       
    #         #       ######  
-   #   ###   #   ###       # 
+   #   ###   #   ### #     # 
    #   ###   #   ### #     # 
  ##### ### ##### ###  #####  
-                             
-Welcome to MAOPhot 1.1.5, a PSF Photometry tool using Astropy and Photutils.psf
+                                                          
+Welcome to MAOPhot 1.1.6, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.5 Revision
+    1.1.6 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.5"
+__version__ = "1.1.6"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -378,6 +378,15 @@ class MyGUI:
     tvi_entry = None
     tv_vi_entry = None
     ti_vi_entry = None
+    tbv_err_entry = None
+    tv_bv_err_entry = None
+    tb_bv_err_entry = None
+    tvr_err_entry = None
+    tv_vr_err_entry = None
+    tr_vr_err_entry = None
+    tvi_err_entry = None
+    tv_vi_err_entry = None
+    ti_vi_err_entry = None
     linearity_limit_entry = None
     catalog_stringvar = None
     vizier_catalog_entry = None
@@ -397,7 +406,12 @@ class MyGUI:
     filter_entry = None
     max_qfit_entry = None
     min_separation_factor_entry = None
-    #
+    extinction_B_entry = None
+    extinction_V_entry = None
+    extinction_I_entry = None
+    extinction_R_entry = None
+    extinction_C_entry = None
+
     # The TopLoevel window containing the settings
     es_top = None
 
@@ -3341,99 +3355,240 @@ class MyGUI:
                                                 "TRF LS", "Sequential LS Programming", "Simplex LS")
             fitter_dropdown.grid(row=row, column=2, sticky=tk.EW)
             row += 1
-
+            
             separator_telescope = ttk.Separator(settings_left_frame, orient='horizontal')
             separator_telescope.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
             row += 1
 
-            """
-                    Telescope Parameters
-            """
-            _label_ = tk.Label(
-                settings_left_frame, text="Telescope Parameters")
-            _label_.grid(row=row, columnspan=5, sticky=tk.EW)
-            row += 1
-
-            separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_.grid(row=row, columnspan=5, pady=5, sticky=tk.EW)
-            row += 1
+            #
+            #        Telescope Name and Parameters
+            #
 
             telescope_label = tk.Label(settings_left_frame, text="Telescope:")
             telescope_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.telescope_entry = tk.Entry(settings_left_frame, width=extended_settings_entry_width)
-            self.telescope_entry.grid(row=row, column=2, sticky=tk.EW)
+            self.telescope_entry.grid(row=row, column=2, sticky=tk.W)
+
             row += 1
 
+            separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
+            separator_.grid(row=row, columnspan=4, pady=5, sticky=tk.EW)
+            row += 1
+            
             #
-            # Tbv, Tb_bv, Tv_bv
+            # Filter Band Coefficients
+            #
+            # 
+            # Tb_bv, Tb_br, Tb_bi, 
+            # Tv_bv, Tv_vr, 
+            # Tr_vr, Tr_ri
+            # Ti_ri, 
+            # Tv_vi,
+            # Ti_vi, 
+            # Tr_ri
+            #   ... same order as seen in VPhot Telescope Profiles
             #
 
-            tbv_label = tk.Label(settings_left_frame, text="Tbv:")
-            tbv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tbv_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tbv_entry.grid(row=row, column=2, sticky=tk.EW)
+            #
+            # Extinction Coefficients
+            #
+            # B, V, R, I, C
+            #
+            #
+
+
+            _label = tk.Label(settings_left_frame, text="Transformation Coefficients:")
+            _label.grid(row=row, column=0, columnspan=3, sticky=tk.W)
+
+            _label = tk.Label(settings_left_frame, text="Extinction Coefficients:")
+            _label.grid(row=row, column=2, sticky=tk.E)
+
             row += 1
 
             tb_bv_label = tk.Label(settings_left_frame, text="Tb_bv:")
-            tb_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tb_bv_entry = tk.Entry(settings_left_frame, width=extended_settings_entry_width, background='pink')
-            self.tb_bv_entry.grid(row=row, column=2, sticky=tk.EW)
+            tb_bv_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tb_bv_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_bv_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tb_bv_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_bv_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # B extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="B:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_B_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_B_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
 
             tv_bv_label = tk.Label(settings_left_frame, text="Tv_bv:")
-            tv_bv_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tv_bv_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tv_bv_entry.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
+            tv_bv_label.grid(row=row, column=0, sticky=tk.E)
 
-            #
-            # Tvr, Tr_vr, Tv_vr
-            #
-            tvr_label = tk.Label(settings_left_frame, text="Tvr:")
-            tvr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tvr_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tvr_entry.grid(row=row, column=2, sticky=tk.EW)
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tv_bv_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_bv_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tv_bv_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_bv_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # V extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="V:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_V_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_V_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
 
             tv_vr_label = tk.Label(settings_left_frame, text="Tv_vr:")
-            tv_vr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tv_vr_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tv_vr_entry.grid(row=row, column=2, sticky=tk.EW)
+            tv_vr_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tv_vr_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_vr_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tv_vr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_vr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # R extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="R:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_R_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_R_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
 
             tr_vr_label = tk.Label(settings_left_frame, text="Tr_vr:")
-            tr_vr_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tr_vr_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tr_vr_entry.grid(row=row, column=2, sticky=tk.EW)
+            tr_vr_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tr_vr_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_vr_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tr_vr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_vr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # I extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="I:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_I_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_I_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
 
             #
             # Tvi, Ti_vi, Ti_vi
             #
-            tvi_label = tk.Label(settings_left_frame, text="Tvi:")
-            tvi_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tvi_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tvi_entry.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
-
             tv_vi_label = tk.Label(settings_left_frame, text="Tv_vi:")
-            tv_vi_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.tv_vi_entry = tk.Entry(settings_left_frame, background='pink')
-            self.tv_vi_entry.grid(row=row, column=2, sticky=tk.EW)
+            tv_vi_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tv_vi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_vi_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tv_vi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tv_vi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # C extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="C:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_C_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_C_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
 
             ti_vi_label = tk.Label(settings_left_frame, text="Ti_vi:")
-            ti_vi_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.ti_vi_entry = tk.Entry(settings_left_frame, background='pink')
-            self.ti_vi_entry.grid(row=row, column=2, sticky=tk.EW)
+            ti_vi_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.ti_vi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.ti_vi_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.ti_vi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.ti_vi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
             row += 1
+
+
+
+            #
+            # Colorindex Coefficients
+            #
+            # 
+            # Tbv, Tbr, Tbi, 
+            # Tvr, Tri, Tvi 
+            #   ... same order as seen in VPhot Telescope Profiles
+            #
+
+            tbv_label = tk.Label(settings_left_frame, text="Tbv:")
+            tbv_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tbv_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbv_entry.grid(row=0, column=0, ipadx=settings_entry_pad, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tbv_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbv_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            row += 1
+
+            tvr_label = tk.Label(settings_left_frame, text="Tvr:")
+            tvr_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tvr_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tvr_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tvr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tvr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            row += 1
+
+            tvi_label = tk.Label(settings_left_frame, text="Tvi:")
+            tvi_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tvi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tvi_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tvi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tvi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
             linearity_limit_label = tk.Label(settings_left_frame, text="Linearity Limit (ADU):")
-            linearity_limit_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.linearity_limit_entry = tk.Entry(settings_left_frame, background='pink')
-            self.linearity_limit_entry.grid(row=row, column=2, sticky=tk.EW)
-            row += 1
+            linearity_limit_label.grid(row=row, column=2, sticky=tk.E)
+            self.linearity_limit_entry = tk.Entry(settings_left_frame, width=settings_entry_width, background='pink')
+            self.linearity_limit_entry.grid(row=row, column=3, sticky=tk.W)
 
+            row += 1
 
             #
             #
@@ -3635,12 +3790,21 @@ class MyGUI:
             #
             # Buttons 
             #
-            load_settings_button = tk.Button(self.es_top, text="Load...", command=self.load_settings)
-            load_settings_button.grid(row=row, column=0, padx=20, sticky=tk.W)
-            save_settings_button = tk.Button(self.es_top, text="Save As...", command=self.save_settings_as)
-            save_settings_button.grid(row=row, column=0, padx=20, sticky=tk.E)
-            close_settings_button = tk.Button(self.es_top, text="  OK/Hide  ", command=self.es_top.withdraw)
-            close_settings_button.grid(row=row, column=1, padx=20, sticky=tk.E)
+            f_helper = tk.Frame(self.es_top)
+            f_helper.grid(row=row, columnspan=2, sticky=tk.EW)
+
+            f_helper.grid_columnconfigure(0, weight=1)  # Left-align button in column 0
+            f_helper.grid_columnconfigure(1, weight=2)  # Center button in column 1
+            f_helper.grid_columnconfigure(2, weight=1)  # Right-align button in column 2
+
+            load_settings_button = tk.Button(f_helper, text="Load...", command=self.load_settings)
+            load_settings_button.grid(row=0, column=0, padx=20, sticky=tk.W)
+
+            save_settings_button = tk.Button(f_helper, text="Save As...", command=self.save_settings_as)
+            save_settings_button.grid(row=0, column=1, padx=20)
+
+            close_settings_button = tk.Button(f_helper, text="  OK/Hide  ", command=self.es_top.withdraw)
+            close_settings_button.grid(row=0, column=2, padx=20, sticky=tk.E)
             row += 1
 
             # Update layout to calculate dimensions
@@ -4180,7 +4344,7 @@ class MyGUI:
             
             #TYPE=EXTENDED
             #OBSCODE=FPIA
-            #SOFTWARE=Self-developed; MAOPhot 1.1.5 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
             #DELIM=,
             #DELIM=,
             #DATE=JD
@@ -4323,7 +4487,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.5 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -5086,7 +5250,21 @@ class MyGUI:
             'auto_behavior': self.auto_behavior,
             'filter_entry': self.filter_entry,
             'max_qfit_entry': self.max_qfit_entry,
-            'min_separation_factor_entry': self.min_separation_factor_entry
+            'min_separation_factor_entry': self.min_separation_factor_entry,
+            'tbv_err_entry': self.tbv_err_entry,
+            'tv_bv_err_entry': self.tv_bv_err_entry,
+            'tb_bv_err_entry': self.tb_bv_err_entry,
+            'tvr_err_entry': self.tvr_err_entry,
+            'tv_vr_err_entry': self.tv_vr_err_entry,
+            'tr_vr_err_entry': self.tr_vr_err_entry,
+            'tvi_err_entry': self.tvi_err_entry,
+            'tv_vi_err_entry': self.tv_vi_err_entry,
+            'ti_vi_err_entry': self.ti_vi_err_entry,
+            'extinction_B_entry': self.extinction_B_entry,
+            'extinction_V_entry': self.extinction_V_entry,
+            'extinction_I_entry': self.extinction_I_entry,
+            'extinction_R_entry': self.extinction_R_entry,
+            'extinction_C_entry': self.extinction_C_entry
             }
 
         # if .config had a valid settings_filename, then load that one in
