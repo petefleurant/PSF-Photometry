@@ -64,8 +64,8 @@ objects in image field
 
         Single Image Photometry does not utilize the Transformation
         coefficients. Simple differential photometry is used.
-        Only a single comp star is used (which must be the case if the AAVSO 
-        VPhot tool, 'Transform Applier' is to be used).
+        If more than 1 comp star then CMAG=ENSEMBLE and ensemble photometry 
+        is performed
         
         Var mag = Var IM - Comp IM + Comp (known) mag
         Check star mag = Check star IM - Comp IM + Comp (known) mag
@@ -4255,22 +4255,24 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
-############################################################
-#
-#  generate_aavso_report_1image
-#
-############################################################
+    #####################################################################################
+    #
+    #    generate_aavso_report_1image
+    # 
+    #    Generates a AAVSO report in extended format for a single filter
+    #
+    #####################################################################################
 
     def generate_aavso_report_1image(self):
         global image_width, image_height
 
         """
-        Typical Single Image Report is shown below (note only 1 check and 1 comp star)
+        Typical Single Image Report is shown below
 
         Requirements to run:
          - Fits file loaded, plate solved and comp and vsx star shown and entered in settings
-         If there are more than 1 comp stars in the list 'Select Comp Stars', then the first one in the list
-         is used.
+         If there are more than 1 comp stars in the list 'Select Comp Stars', then CNAME=ENSEMBLE
+         and the average Target Estimate is used. 
         """
 
         self.console_msg("Beginning Generate AAVSO Single Image Photometry Report...")
@@ -4288,18 +4290,19 @@ class MyGUI:
                 "'Use Check Star (AAVSO Label)' must be specified; eg. '144'")
             return
 
-        comp_star_list = self.object_sel_comp_entry.get().strip()
+        comp_star_list = self.object_sel_comp_entry.get().strip().split(',')
         if len(comp_star_list) == 0:
             self.console_msg(
                 "'Select Comp Stars (AAVSO Label)' must be specified; eg. '144'")
             return
 
-        #if there is a list of comp stars, use the first one in the list
-        comp_star_name = comp_star_list.split(",")[0]
-        if len(comp_star_name) == 0:
-            self.console_msg(
-                "Cannot read first comp star in the list as a label; eg. '144'")
-            return
+        #if there is a list of comp stars, then perform ENSEMBLE photometry
+        if len(comp_star_list) == 1:
+            # single comp star
+            comp_star_name = comp_star_list[0]
+            ensemble = False
+        else:
+            ensemble = True
 
         report_dir = "aavso_reports"
         if os.path.isdir(os.path.dirname(self.image_file)):
@@ -4340,19 +4343,31 @@ class MyGUI:
 
         try:
             """
-            Typical Single Image Report 
+            Typical Single Image Report (Single comp example)
             
-            #TYPE=EXTENDED
-            #OBSCODE=FPIA
+            #TYPE=Extended
+            #OBSCODE=Zzzz
             #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
-            #DELIM=,
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
             #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-            Z Tau,2460691.51184,10.762,0.026,V,NO,STD,ENSEMBLE,na,108,10.800,1.3675,na,X39599EMF,
-            Mittelman ATMoB Observatory|KDEC=15.939826|KMAGINS=-10.919|KMAGSTD=10.800|KRA=88.102325
-            |KREFERR=0.020|KREFMAG=10.757|VMAGINS=-10.956
+            V1117 Her,2459793.58430,12.547,0.002,V,NO,STD,145,-7.117,123,-9.244,na,na,X27876MZ,Mittelman ATMoB Observatory
+            |CMAGINS=-7.117|CREFERR=0.009|CREFMAG=14.469|KMAG=12.341|KMAGINS=-9.244|KREFERR=0.001|KREFMAG=12.287|VMAGINS=-9.039 
+            
+            Typical Single Image Report (Ensemble example)
+                        
+            #TYPE=EXTENDED
+            #OBSCODE=Zzzz
+            #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
+            #DELIM=,
+            #DATE=JD
+            #OBSTYPE=CCD
+            #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+            RV Cen,2460721.28623,11.773,0.055,B,NO,STD,100,-7.492,83_1,-9.642,1.0663,na,250219,TEST ONLY TEST
+            |OBSERVAT=BSM_S|PROJNAME=AAVSO_P385_FPIA_AUTO|CDEC=-56.497943|CMAGINS=-7.492|CRA=205.021418
+            |CREFERR=0.076|CREFMAG=11.020|KDEC=-56.731108|KMAGINS=-9.642|KMAGSTD=8.870|KRA=204.63803|KREFERR=0.049|KREFMAG=8.819|VMAGINS=-6.739                        
+            
 
             """
 
@@ -4361,15 +4376,24 @@ class MyGUI:
                 self.console_msg("Var not found in table; "+ str(var_star_name) + " not found!", level=logging.ERROR)
                 return
 
-            #Check if comp star has been measured
-            if not (__label_prefix__ + comp_star_name) in self.results_tab_df_color["label"].values:
-                self.console_msg("Comp star not found in table; "+ comp_star_name + " not found!", level=logging.ERROR)
-                return
-
+            if not ensemble:
+                #Check if comp star has been measured
+                if not (__label_prefix__ + comp_star_name) in self.results_tab_df_color["label"].values:
+                    self.console_msg("Comp star not found in table; "+ comp_star_name + " not found!", level=logging.ERROR)
+                    return
+            else:
+                #Check if any comp star has been measured
+                comp_star_list_with_prefix = [__label_prefix__ + x for x in comp_star_list]
+                if not self.results_tab_df_color["label"].isin(comp_star_list_with_prefix).any():
+                    self.console_msg("No comp stars found in table!", level=logging.ERROR)
+                    return
+            
 
             with open(report_filename, mode='w') as f:
     
                 decimal_places = 3 #report is usually 3
+                decimal_places_for_ra_dec = 5
+                
     
                 f.write("#TYPE=Extended\n")
                 f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
@@ -4379,66 +4403,108 @@ class MyGUI:
                 f.write("#OBSTYPE=CCD\n")
                 f.write("#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES\n")
 
-                #var_star_name, check_star_name, comp_star_name were determined above
+                #var_star_name, check_star_name were determined above
                 var_star = self.results_tab_df_color[self.results_tab_df_color["vsx_id"] == var_star_name].iloc[0]
-                check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + check_star_name)].iloc[0]
-                comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)].iloc[0]
-
-                comp_IM = comp_star["inst_mag"]
-                #comp_star_mag = comp_star["match_mag"]
-                comp_star_mag = float(comp_star["match_mag"])
-
-                check_IM = check_star["inst_mag"]
-                check_star_mag = check_IM - comp_IM + comp_star_mag
-                check_star_mag_ref = check_star["match_mag"]
-
                 var_IM = var_star["inst_mag"]
 
-                #differential photometry
-                var_star_mag = var_IM - comp_IM + comp_star_mag
-                check_star_mag = check_IM - comp_IM + comp_star_mag
+                check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + check_star_name)].iloc[0]
+                check_IM = check_star["inst_mag"]
+                check_star_mag_ref = check_star["match_mag"]
 
-                #error estimates
-                # MERR
-                # use the  Background2D object's median level if it was fetched
-                if not self.bkg2D == None:
-                    snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
-                    snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
-                    snr_comp_star = comp_star['flux_fit']/self.bkg2D.background_median
+                check_ra = float(check_star["match_ra"])
+                check_dec = float(check_star["match_dec"])
+
+                if not ensemble:
+                    #comp_star_name was determined above
+                    comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)].iloc[0]
+                    comp_star_mag = float(comp_star["match_mag"])
+                    comp_star_ra = float(comp_star["match_ra"])
+                    comp_star_dec = float(comp_star["match_dec"])
+                    comp_IM = comp_star["inst_mag"]
+
+                    #differential photometry
+                    var_star_mag = var_IM - comp_IM + comp_star_mag
+                    check_star_mag = check_IM - comp_IM + comp_star_mag
+
+                    #error estimates
+                    # MERR
+                    # use the  Background2D object's median level if it was fetched
+                    if not self.bkg2D == None:
+                        snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
+                        snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
+                        snr_comp_star = comp_star['flux_fit']/self.bkg2D.background_median
+                    else:
+                        snr_var_star = var_star['flux_fit']/self.image_bkg_value
+                        snr_check_star = check_star['flux_fit']/self.image_bkg_value
+                        snr_comp_star = comp_star['flux_fit']/self.image_bkg_value
+
+                    var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
+                    check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
+                    comp_star_err = 2.5*np.log10(1 + 1/snr_comp_star)
+
+                    err_in_quadrature = math.sqrt(var_star_err**2 + check_star_err**2)
+
+                    starid = var_star_name
+                    date = format(float(self.date_obs_entry.get()), '.5f') 
+                    mag = str(round(var_star_mag, decimal_places))
+                    merr = str(round(err_in_quadrature, decimal_places))
+                    filt = self.filter_entry.get().strip()
+                    trans = "NO"
+                    mtype = "STD"
+                    cname = comp_star_name
+                    cmag = str(round(comp_IM, decimal_places))
+                    kname = check_star_name
+                    kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
+                    amass = self.airmass_entry.get().strip() if len(self.airmass_entry.get()) > 0 else "na"
+                    group = "na"
+                    chart = self.vizier_catalog_entry.get().strip()
+                    notes = self.object_notes_entry.get().strip()
+                    notes += "|CMAGINS=" + cmag + \
+                            "|CRA=" + str(round(comp_star_ra, decimal_places_for_ra_dec)) +\
+                            "|CDEC=" + str(round(comp_star_dec, decimal_places_for_ra_dec)) +\
+                            "|CREFERR=" + str(round(comp_star_err, decimal_places)) +\
+                            "|CREFMAG=" + str(round(comp_star_mag, decimal_places)) +\
+                            "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
+                            "|KMAGSTD=" + str(round(check_star_mag, decimal_places)) +\
+                            "|KREFERR=" + str(round(check_star_err, decimal_places)) +\
+                            "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
+                            "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
+                            "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
+                            "|VMAGINS=" + str(round(var_IM, decimal_places))
                 else:
-                    snr_var_star = var_star['flux_fit']/self.image_bkg_value
-                    snr_check_star = check_star['flux_fit']/self.image_bkg_value
-                    snr_comp_star = comp_star['flux_fit']/self.image_bkg_value
+                    # ENSEMBLE case
+                    comp_data = self.results_tab_df_color[self.results_tab_df_color["label"].isin(comp_star_list_with_prefix)]
 
-                var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
-                check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
-                comp_star_err = 2.5*np.log10(1 + 1/snr_comp_star)
+                    check_star_mag = [check_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
+                    ave_check_star_mag = np.mean(check_star_mag)
+                    stdev_check_star_mag = np.std(check_star_mag)
 
-                err_in_quadrature = math.sqrt(var_star_err**2 + check_star_err**2)
+                    var_star_mag = [var_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
+                    ave_var_star_mag = np.mean(var_star_mag)
+                    stdev_var_star_mag = np.std(var_star_mag)
 
-                starid = var_star_name
-                date = format(float(self.date_obs_entry.get()), '.5f') 
-                mag = str(round(var_star_mag, decimal_places))
-                merr = str(round(err_in_quadrature, decimal_places))
-                filt = self.filter_entry.get().strip()
-                trans = "NO"
-                mtype = "STD"
-                cname = comp_star_name
-                cmag = str(round(comp_IM, decimal_places))
-                kname = check_star_name
-                kmag = str(round(check_IM, decimal_places)) #not same as KMAG in notes
-                amass = self.airmass_entry.get().strip() if len(self.airmass_entry.get()) > 0 else "na"
-                group = "na"
-                chart = self.vizier_catalog_entry.get().strip()
-                notes = self.object_notes_entry.get().strip()
-                notes += "|CMAGINS=" + cmag + \
-                         "|CREFERR=" + str(round(comp_star_err, decimal_places)) +\
-                         "|CREFMAG=" + str(round(comp_star_mag, decimal_places)) +\
-                         "|KMAG=" + str(round(check_star_mag, decimal_places)) +\
-                         "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
-                         "|KREFERR=" + str(round(check_star_err, decimal_places)) +\
-                         "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
-                         "|VMAGINS=" + str(round(var_IM, decimal_places))
+                    starid = var_star_name
+                    date = format(float(self.date_obs_entry.get()), '.5f') 
+                    mag = str(round(ave_var_star_mag, decimal_places))
+                    merr = str(round(stdev_check_star_mag, decimal_places))
+                    filt = self.filter_entry.get().strip()
+                    trans = "NO"
+                    mtype = "STD"
+                    cname = "ENSEMBLE"
+                    cmag = "na"
+                    kname = check_star_name
+                    kmag = str(round(ave_check_star_mag, decimal_places)) # same as KMAGSTD
+                    amass = self.airmass_entry.get().strip() if len(self.airmass_entry.get()) > 0 else "na"
+                    group = "na"
+                    chart = self.vizier_catalog_entry.get().strip()
+                    notes = self.object_notes_entry.get().strip()
+                    notes += "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
+                            "|KMAGSTD=" + str(round(ave_check_star_mag, decimal_places)) +\
+                            "|KREFERR=" + str(round(stdev_check_star_mag, decimal_places)) +\
+                            "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
+                            "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
+                            "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
+                            "|VMAGINS=" + str(round(var_IM, decimal_places))
                 
                 # Add " " after notes, because TA clobbers last char
                 f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
@@ -4475,9 +4541,13 @@ class MyGUI:
     def VI_generate_aavso_report_2color(self):
         self.generate_aavso_report_2color('V-I')
 
+    #####################################################################################
     #
-    # generate_aavso_report_2color; this generates a AAVSO report in extended format
+    #    generate_aavso_report_2color
+    # 
+    #    Generates a AAVSO report in extended format for 2 filters
     #
+    #####################################################################################
 
     def generate_aavso_report_2color(self, input_color):
         global image_width, image_height
