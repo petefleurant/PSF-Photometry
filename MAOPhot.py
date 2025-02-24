@@ -1428,7 +1428,11 @@ class MyGUI:
                     #
                     # loop through all the selected comp stars and fill this sel_comps list
                     sel_comps = [] #init
-                    sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
+                    sel_comps_to_use = self.object_sel_comp_entry.get()
+                    sel_comps_to_use = [comp.strip() for comp in sel_comps_to_use.split(',')]
+                    # Make unique, just in case
+                    sel_comps_to_use = list(set(sel_comps_to_use))
+
                     #make array of int csalled sel_comps            
                     for comp in sel_comps_to_use:
                         sel_comps.append(comp.strip())
@@ -2184,7 +2188,10 @@ class MyGUI:
             loop through all the selected comp stars and fill the * table
             """
             sel_comps = [] #init
-            sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
+            sel_comps_to_use = self.object_sel_comp_entry.get()
+            sel_comps_to_use = [comp.strip() for comp in sel_comps_to_use.split(',')]
+            # Make unique, just in case
+            sel_comps_to_use = list(set(sel_comps_to_use))
 
             #make list of (comp, _prefix_comp) called sel_comps
             # Eg., ("120", "comp 120")
@@ -4009,7 +4016,10 @@ class MyGUI:
             #See if there are any specific comps to be used only
             #if a check star is specified, then add it to list, it will marked a check star later
             sel_comps = [] #init
-            sel_comps_to_use = self.object_sel_comp_entry.get().strip().split(',')
+            sel_comps_to_use = self.object_sel_comp_entry.get()
+            sel_comps_to_use = [comp.strip() for comp in sel_comps_to_use.split(',')]
+            # Make unique, just in case
+            sel_comps_to_use = list(set(sel_comps_to_use))
                 
             for comp in sel_comps_to_use:
                 if is_number(comp):
@@ -4017,6 +4027,9 @@ class MyGUI:
                 
             check_star_to_use = self.object_kref_entry.get().strip()
             if is_number(check_star_to_use):
+                # remove the check star from this list just in case
+                # this removes all of them 
+                sel_comps = [star for star in sel_comps if star != check_star_to_use]
                 #add it to the list of comps
                 check_star = int(check_star_to_use)
                 sel_comps.append(check_star)
@@ -4290,7 +4303,13 @@ class MyGUI:
                 "'Use Check Star (AAVSO Label)' must be specified; eg. '144'")
             return
 
-        comp_star_list = self.object_sel_comp_entry.get().strip().split(',')
+        comp_star_list = self.object_sel_comp_entry.get()
+        comp_star_list = [comp.strip() for comp in comp_star_list.split(',')]
+        # Make unique, just in case
+        comp_star_list = list(set(comp_star_list))
+        # remove the check star from this list just in case
+        comp_star_list = [star for star in comp_star_list if star != check_star_name]
+        #check if anything left
         if len(comp_star_list) == 0:
             self.console_msg(
                 "'Select Comp Stars (AAVSO Label)' must be specified; eg. '144'")
@@ -4471,8 +4490,21 @@ class MyGUI:
                             "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
                             "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
                             "|VMAGINS=" + str(round(var_IM, decimal_places))
+
+                    # Print the results to console (this is the Not Ensemble case)
+                    self.console_msg("Check Star Estimates using check star: " + check_star_name +
+                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) + ")\n" +
+                                     (filt+"* Mag: " + format(check_star_mag, ' >6.3f')).rjust(79) +
+                                     '\n' +
+                                     (filt+"* Err: " + format(check_star_err, ' >6.3f')).rjust(79))
+
+                    self.console_msg(var_star_name+" Variable Star Estimates:\n" +
+                                    (filt+"* Mag: " + format(var_star_mag, ' >6.3f')).rjust(79)  +
+                                    '\n' +
+                                    (filt+"* Err: " + format(err_in_quadrature, ' >6.3f')).rjust(79))
                 else:
                     # ENSEMBLE case
+
                     comp_data = self.results_tab_df_color[self.results_tab_df_color["label"].isin(comp_star_list_with_prefix)]
 
                     check_star_mag = [check_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
@@ -4481,7 +4513,6 @@ class MyGUI:
 
                     var_star_mag = [var_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
                     ave_var_star_mag = np.mean(var_star_mag)
-                    stdev_var_star_mag = np.std(var_star_mag)
 
                     starid = var_star_name
                     date = format(float(self.date_obs_entry.get()), '.5f') 
@@ -4506,6 +4537,39 @@ class MyGUI:
                             "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
                             "|VMAGINS=" + str(round(var_IM, decimal_places))
                 
+                    # make a table for "pretty" (for printing) Comparison Stars data
+                    # Rename some of the columns of interest:
+                    pretty_comp_data = pd.DataFrame()
+                    pretty_comp_data["Star"] = comp_data["label"].str.split().str[1] # We just want the 3-digit number
+                    pretty_comp_data["IM"] = comp_data["inst_mag"]
+                    pretty_comp_data["X"] = comp_data["x_fit"]
+                    pretty_comp_data["Y"] = comp_data["y_fit"]
+                    pretty_comp_data[filt+"-mag"] = comp_data["match_mag"]
+                    pretty_comp_data["TargetEstimate"] = round(var_IM - comp_data["inst_mag"] + comp_data["match_mag"], decimal_places)
+
+                    #determine the OUTLIERS, IQR, Interquartile Range 
+                    q3, q1 = np.percentile(pretty_comp_data["TargetEstimate"], [75 ,25])
+                    iqr = q3 - q1
+                    upper_limit = q3 + (iqr * 1.5)
+                    lower_limit = q1 - (iqr * 1.5)
+                    pretty_comp_data["outlier"] = np.where((pretty_comp_data["TargetEstimate"] < lower_limit) | (pretty_comp_data["TargetEstimate"] > upper_limit), "<--OUTLIER", "")
+
+                    # Print the Comparison Stars Data (this is the Ensemble case)
+                    self.console_msg("Variable Star Estimates of Var: " + var_star_name + "\n" +
+                                      pretty_comp_data.sort_values(by="Star").to_string())
+
+                    # Print the results to console (this is the Ensemble case)
+                    self.console_msg("Check Star Estimates using check star: " + check_star_name +
+                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) + ")\n" +
+                                     (filt+"* Mag: " + format(ave_check_star_mag, ' >6.3f')).rjust(79) +
+                                     '\n' +
+                                     (filt+"* Err: " + format(stdev_check_star_mag, ' >6.3f')).rjust(79))
+
+                    self.console_msg(var_star_name+" Variable Star Estimates:\n" +
+                                    (filt+"* Mag: " + format(ave_var_star_mag, ' >6.3f')).rjust(79)  +
+                                    '\n' +
+                                    (filt+"* Err: " + format(stdev_check_star_mag, ' >6.3f')).rjust(79))
+
                 # Add " " after notes, because TA clobbers last char
                 f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
                         cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
