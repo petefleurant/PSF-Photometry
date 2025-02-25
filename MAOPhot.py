@@ -982,8 +982,6 @@ class MyGUI:
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
             epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True) 
 
-            # when calling epsf_builder, maxiters=50 causes following exception:
-            # The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
             self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
 
             self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
@@ -1931,7 +1929,7 @@ class MyGUI:
             """
             #
             # NOTE! Since B-V was implemented first, the B-V filternames are
-            # still used even though imput_color may be V-R; 
+            # still used even though imput_color may be V-R or V-I; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
             Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'
@@ -2022,29 +2020,32 @@ class MyGUI:
 
             self.console_msg("Performing Two Color Photometry...")
             
-            #get the transformation coefficients
+            # Get the transformation coefficients
             #
             # NOTE! Since B-V was implemented first, the B-V filternames are
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
+            # Also get the error (+/-) figures; these are only used in the notes section of
+            # the AAVSO report; they are only treated as str
             try:
                 if input_color == 'B-V':
-                    tbv_coefficient = float(self.tbv_entry.get())
-                    tb_bv_coefficient = float(self.tb_bv_entry.get())
-                    tv_bv_coefficient = float(self.tv_bv_entry.get())
+                    tbv_coefficient = float(self.tbv_entry.get().strip()); tbv_err = float(self.tbv_err_entry.get().strip())
+                    tb_bv_coefficient = float(self.tb_bv_entry.get().strip()); tb_bv_err = float(self.tb_bv_err_entry.get().strip())
+                    tv_bv_coefficient = float(self.tv_bv_entry.get().strip()); tv_bv_err = float(self.tv_bv_err_entry.get().strip())
                 elif input_color == 'V-R':
-                    tbv_coefficient = float(self.tvr_entry.get())
-                    tb_bv_coefficient = float(self.tv_vr_entry.get())
-                    tv_bv_coefficient = float(self.tr_vr_entry.get())
+                    tbv_coefficient = float(self.tvr_entry.get().strip()); tbv_err = float(self.tvr_err_entry.get().strip())
+                    tb_bv_coefficient = float(self.tv_vr_entry.get().strip()); tb_bv_err = float(self.tv_vr_err_entry.get().strip())
+                    tv_bv_coefficient = float(self.tr_vr_entry.get().strip()); tv_bv_err = float(self.tr_vr_err_entry.get().strip())
                 elif input_color == 'V-I':
-                    tbv_coefficient = float(self.tvi_entry.get())
-                    tb_bv_coefficient = float(self.tv_vi_entry.get())
-                    tv_bv_coefficient = float(self.ti_vi_entry.get())
+                    tbv_coefficient = float(self.tvi_entry.get().strip()); tbv_err = float(self.tvi_err_entry.get().strip())
+                    tb_bv_coefficient = float(self.tv_vi_entry.get().strip()); tb_bv_err = float(self.tv_vi_err_entry.get().strip())
+                    tv_bv_coefficient = float(self.ti_vi_entry.get().strip()); tv_bv_err = float(self.ti_vi_err_entry.get().strip())
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
             except:  
-                    raise Exception("Two Color Photometry: Missing or non-numeric transform coefficient(s)")
+                    self.console_msg("Cannot proceed with Two Color Photometry: Missing or non-numeric transform coefficient(s)")
+                    return
          
             """
                CHECK STAR Calculations
@@ -2419,7 +2420,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_bv", "Tv_bv", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tbv", "TbvErr", "Tv_bv", "Tv_bvErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -2428,8 +2429,10 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "T_bv" : tbv_coefficient,
+                    "Tbv" : tbv_coefficient,
+                    "TbvErr" : tbv_err,
                     "Tv_bv" : tv_bv_coefficient,
+                    "Tv_bvErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -2443,8 +2446,10 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "T_bv" : tbv_coefficient,
+                    "Tbv" : tbv_coefficient,
+                    "TbvErr" : tbv_err,
                     "Tv_bv" : tv_bv_coefficient,
+                    "Tv_bvErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V,  #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -2478,7 +2483,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vr", "Tr_vr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvr", "TvrErr", "Tr_vr", "Tr_vrErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -2487,8 +2492,10 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "T_vr" : tbv_coefficient,
+                    "Tvr" : tbv_coefficient,
+                    "TvrErr" : tbv_err,
                     "Tr_vr" : tv_bv_coefficient,
+                    "Tr_vrErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -2502,8 +2509,10 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "T_vr" : tbv_coefficient,
+                    "Tvr" : tbv_coefficient,
+                    "TvrErr" : tbv_err,
                     "Tr_vr" : tv_bv_coefficient,
+                    "Tr_vrErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -2537,7 +2546,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "T_vi", "Ti_vi", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvi", "TviErr", "Ti_vi", "Ti_viErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -2546,8 +2555,10 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "T_vi" : tbv_coefficient,
+                    "Tvi" : tbv_coefficient,
+                    "TviErr" : tbv_err,
                     "Ti_vi" : tv_bv_coefficient,
+                    "Ti_viErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -2561,8 +2572,10 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "T_vi" : tbv_coefficient,
+                    "Tvi" : tbv_coefficient,
+                    "TviErr" : tbv_err,
                     "Ti_vi" : tv_bv_coefficient,
+                    "Ti_viErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -4626,8 +4639,8 @@ class MyGUI:
         #DATE=JD
         #OBSTYPE=CCD
         #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-        Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,Mittelman ATMoB Observatory|KMAGINS=-8.083|KMAGSTD=13.592|KREFMAG=13.585|Tvi=1.194|VMAGINS=-8.606
-        Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,Mittelman ATMoB Observatory|KMAGINS=-7.134|KMAGSTD=12.722|KREFMAG=12.731|Ti_vi=-0.138|VMAGINS=-11.032
+        Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,Mittelman ATMoB Observatory|...etc.
+        Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,Mittelman ATMoB Observatory|...etc.
 
         Note:
           DATE (in JD) is DATE-OBS + EXPOSURE/2
@@ -4637,10 +4650,10 @@ class MyGUI:
         # use first_filter, amd second_filter dict to index into appropriate filter
         first_filter = {'B-V': 'B', 'V-R': 'V', 'V-I': 'V'}
         second_filter = {'B-V': 'V', 'V-R': 'R', 'V-I': 'I'}
-        t_coefficient_tbv = {'B-V': 'T_bv', 'V-R': 'T_vr', 'V-I': 'T_vi'}
+        t_coefficient_tbv = {'B-V': 'Tbv', 'V-R': 'Tvr', 'V-I': 'Tvi'}
         t_coefficient_tv_bv = {'B-V': 'Tv_bv', 'V-R': 'Tr_vr', 'V-I': 'Ti_vi'}
-
-        t_coefficient_tbv_for_report_only = {'B-V': 'Tbv', 'V-R': 'Tvr', 'V-I': 'Tvi'}
+        t_coefficient_tbv_err = {'B-V': 'TbvErr', 'V-R': 'TvrErr', 'V-I': 'TviErr'}
+        t_coefficient_tv_bv_err = {'B-V': 'Tv_bvErr', 'V-R': 'Tr_vrErr', 'V-I': 'Ti_viErr'}
 
         self.console_msg("Beginning Generate AAVSO Two Color Ensemble Report...")
         var_star_name = self.object_name_entry.get().strip()
@@ -4826,7 +4839,8 @@ class MyGUI:
                 notes += "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
                          "|KMAGSTD=" + str(round(B_mean_check, decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
-                         "|" + t_coefficient_tbv_for_report_only[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tbv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tbv_err[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv_err[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 
@@ -4858,6 +4872,7 @@ class MyGUI:
                          "|KMAGSTD=" + str(round(V_mean_check, decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
                          "|" + t_coefficient_tv_bv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tv_bv[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tv_bv_err[input_color] + "="  + str(round(float(aux_result[t_coefficient_tv_bv_err[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 # Add " " after notes, because TA clobbers last char
