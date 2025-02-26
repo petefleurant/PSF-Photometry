@@ -177,59 +177,60 @@ __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
 
 from ast import Assert
-from astropy.stats import SigmaClip
-from astropy.stats import sigma_clipped_stats
-from astropy.stats import gaussian_sigma_to_fwhm
-from astropy.table import Table, QTable
-from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
-from astropy.nddata import NDData
-from astropy.nddata import Cutout2D
-from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
-from astropy.coordinates import SkyCoord
-from astropy.wcs import WCS
 from astropy import units as u
-from astropy.time import Time, TimeDelta
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from photutils.background import Background2D
-from photutils.background import MedianBackground
-from photutils.background import MADStdBackgroundRMS
-from photutils.background import LocalBackground
-from photutils.background import MMMBackground
-from photutils.detection import find_peaks
-from photutils.detection import DAOStarFinder
-from photutils.psf import IterativePSFPhotometry, PSFPhotometry
-from photutils.psf import CircularGaussianPRF, SourceGrouper
-from photutils.detection import DAOStarFinder
-from photutils.psf import extract_stars
-from photutils.psf import EPSFBuilder,EPSFFitter
-from tkinter import filedialog as fd
-from tkinter import ttk
-import tkinter as tk
-from tkinter import simpledialog
-from tkinter.messagebox import askokcancel
-from mpl_toolkits.mplot3d import Axes3D
-import math
-from matplotlib import cm
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.ticker import ScalarFormatter
-import matplotlib.pyplot as plt
-import matplotlib
-from astroquery.vizier import Vizier
+from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFitter
+from astropy.nddata import Cutout2D
+from astropy.nddata import NDData
+from astropy.stats import gaussian_sigma_to_fwhm
+from astropy.stats import sigma_clipped_stats
+from astropy.stats import SigmaClip
+from astropy.table import Table, QTable
+from astropy.time import Time, TimeDelta
+from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_norm
+from astropy.wcs import WCS
 from astroquery.astrometry_net import AstrometryNet
-from tqdm import tqdm
+from astroquery.vizier import Vizier
+from matplotlib import cm
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from matplotlib.ticker import ScalarFormatter
+from mpl_toolkits.mplot3d import Axes3D
+from photutils.background import Background2D
+from photutils.background import LocalBackground
+from photutils.background import MADStdBackgroundRMS
+from photutils.background import MedianBackground
+from photutils.background import MMMBackground
+from photutils.detection import DAOStarFinder
+from photutils.detection import DAOStarFinder
+from photutils.detection import find_peaks
+from photutils.psf import CircularGaussianPRF, SourceGrouper
+from photutils.psf import EPSFBuilder,EPSFFitter
+from photutils.psf import extract_stars
+from photutils.psf import IterativePSFPhotometry, PSFPhotometry
 from PIL import Image, ImageTk, ImageMath
-import io
-import pandas as pd
-import logging
-import sys
-import requests
-import csv
-import os.path
-import numpy as np
-import warnings
-import datetime
 from time import gmtime, strftime
+from tkinter import filedialog as fd
+from tkinter import simpledialog
+from tkinter import ttk
+from tkinter.messagebox import askokcancel
+from tqdm import tqdm
+import csv
+import datetime
+import io
+import logging
+import math
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import os.path
+import pandas as pd
+import pickle
+import requests
+import sys
+import tkinter as tk
+import warnings
 
 #############################################################################
 #
@@ -617,10 +618,9 @@ class MyGUI:
         
         try:
             if file_name != None and len(str(file_name)) > 0:
-                self.console_msg("Saving FITS as " + str(file_name.name))
                 fits.writeto(file_name.name, image_data,
                              header, overwrite=True)
-                self.console_msg("Saved.")
+                self.console_msg("Saving FITS as " + str(file_name.name))
                 self.console_msg("Ready")
 
         except Exception as e:
@@ -923,7 +923,7 @@ class MyGUI:
 #
 ##########################################################################################
 
-    def plot_psf_model(self, data, plotting_gaussian=False):
+    def plot_psf_model(self, data, plotting_gaussian=False, plotting_loaded_psf=False, loaded_psf_file=None):
 
         model_length = len(data)
         x = np.arange(0, model_length, 1)
@@ -937,7 +937,7 @@ class MyGUI:
 
         #plot ePSF samples
         self.clear_epsf_plot()
-        if not plotting_gaussian:
+        if not plotting_gaussian and not plotting_loaded_psf:
             self.display_ePSF_samples()
 
         norm = simple_norm(data, 'log', percent=99.)
@@ -946,6 +946,12 @@ class MyGUI:
             self.ePSF_plot.set_title("Circular Gaussian")
         else:
             self.ePSF_plot.set_title("Effective PSF")
+
+        if plotting_loaded_psf:
+            self.ePSF_plotname_label.config(text="Effective PSF: " +loaded_psf_file)
+        else:
+            self.ePSF_plotname_label.config(text="Effective PSF")
+
 
         self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
 
@@ -997,8 +1003,76 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
 
+##########################################################################################
+#
+# load_ePSF
+#
+# Load Effective PSF from file system
+#
+#
+##########################################################################################
 
+    def load_ePSF(self):
+        try:
+            options = {}
+            options['defaultextension'] = '.epsf'
+            options['filetypes'] = [('ePSF', 'epsf')]
+            options['title'] = 'Load Effective PSF (ePSF)...'
 
+            file_name = fd.askopenfilename(**options)
+
+            if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+                self.console_msg("Loading ePSF from: " + str(file_name))
+                with open(file_name, "rb") as file:
+                    self.epsf_model = pickle.load(file)
+
+                self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
+
+                self.plot_psf_model(self.epsf_model.data, plotting_loaded_psf=True,
+                                     loaded_psf_file=os.path.basename(str(file_name)))
+        
+                self.ePSF_samples_plotted = True
+                
+            else:
+                return
+            
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
+
+##########################################################################################
+#
+# save_as_ePSF
+#
+# Save As... Effective PSF to the file system(Point Spread Function from peaks)
+#
+#
+##########################################################################################
+
+    def save_as_ePSF(self):
+        options = {}
+        options['defaultextension'] = '.epsf'
+        options['filetypes'] = [('ePSF', 'epsf')]
+        options['title'] = 'Save Current Effective PSF (ePSF) as...'
+
+        file_name = fd.asksaveasfile(**options)
+
+        try:
+            if len(str(file_name)) > 0:
+                self.console_msg("Saving current ePSF as " + str(file_name.name))
+                with open(str(file_name.name), 'wb') as file:
+                    pickle.dump(self.epsf_model, file)
+                self.ePSF_plotname_label.config(text="Effective PSF: "+os.path.basename(str(file_name.name)))
+                self.console_msg("Saving ePSF as " + str(file_name.name))
+                self.console_msg("Ready")
+        
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
 
 ##########################################################################################
 #
@@ -1773,6 +1847,7 @@ class MyGUI:
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
         self.ePSF_plot_canvas.draw()
+        self.ePSF_plotname_label.config(text="Effective PSF")
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
         self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
         self.ePSF_plot_canvas.draw()
@@ -2002,7 +2077,7 @@ class MyGUI:
 
             #Test to make sure csv file is ready                
             if "label" not in self.results_tab_df_colorB:
-                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' first.")
+                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' for "+first_filter[input_color]+" first.")
                 return
 
             options['title'] = 'Choose a file for filter ' + second_filter[input_color]
@@ -2015,7 +2090,7 @@ class MyGUI:
             
             #Test to make sure csv file is ready                
             if "label" not in self.results_tab_df_colorV:
-                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' first.")
+                self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' for "+second_filter[input_color]+" first.")
                 return
 
             self.console_msg("Performing Two Color Photometry...")
@@ -3128,7 +3203,7 @@ class MyGUI:
                 self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
                 self.console_msg("Saved.")
 
-                # Put back that filter_entry if auto_behavior on
+                # Put back that filter_entry if auto_behavior on (the From FITS checkbox in settings)
                 if self.auto_behavior.get():
                     self.filter_entry.config(state='normal')
                     self.set_entry_text(self.filter_entry, filter_entry)
@@ -5040,11 +5115,15 @@ class MyGUI:
 
         self.photometrymenu = tk.Menu(self.menubar, tearoff=0)
         self.photometrymenu.add_command(label="Find Peaks", command=self.find_peaks)
-        self.photometrymenu.add_command(label="Create Effective PSF", command=self.create_ePSF)
+        self.ePSF_sub_menu = tk.Menu(self.photometrymenu, tearoff=False)
+        self.ePSF_sub_menu.add_command(label="Create", command=self.create_ePSF)
+        self.ePSF_sub_menu.add_command(label="Load...", command=self.load_ePSF)
+        self.ePSF_sub_menu.add_command(label="Save As...", command=self.save_as_ePSF)
+        self.ePSF_sub_menu.add_command(label="Clear", command=self.clear_ePSF)
+        self.photometrymenu.add_cascade(label="Effective PSF", menu=self.ePSF_sub_menu)
         self.photometrymenu.add_separator()
         self.photometrymenu.add_command(label="Load Rejection List...", command=self.load_ePSF_rejection_list)
         self.photometrymenu.add_command(label="Save Rejection List As...", command=self.save_as_ePSF_rejection_list)
-        self.photometrymenu.add_command(label="Clear ePSF Data", command=self.clear_ePSF)
         self.photometrymenu.add_separator()
 
         self.photometrymenu.add_command(
