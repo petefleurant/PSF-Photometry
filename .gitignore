@@ -3,6 +3,7 @@
 *.fits
 *.log
 *.csv
+*.epsf
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 popupWindowExample.py
