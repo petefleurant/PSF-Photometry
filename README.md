@@ -1,9 +1,16 @@
 # PSF-Photometry
-Welcome to MAOPhot 1.1.5, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+Welcome to MAOPhot 1.1.6, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+
+1.1.6 Changes
+
+1)	Ensemble is supported in Single Image Photometry
+2)  Select comp stars input list is stripped of whitespace and uniquefied
+3)  Added Transformation Coefficients Error figures to AAVSO report
+4)  Added Effective PSF->Load... and --->Save As... 
 
 1.1.5 Changes
 
-1)	Image can be dragged by Shift+Left-moouse-button; 
+1)	Image can be dragged by Shift+Left-mouse-button; 
 2)  Image can be zoomed in, and zoomed out with mouse wheel
 
 1.1.4 Changes
