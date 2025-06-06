@@ -8,17 +8,17 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #        #####  
-  ##        ##       #     # 
- # #       # #       #       
-   #         #       ######  
-   #   ###   #   ### #     # 
-   #   ###   #   ### #     # 
- ##### ### ##### ###  #####  
-                                                          
-Welcome to MAOPhot 1.1.6, a PSF Photometry tool using Astropy and Photutils.psf
+   #         #       ####### 
+  ##        ##       #    #  
+ # #       # #           #   
+   #         #          #    
+   #   ###   #   ###   #     
+   #   ###   #   ###   #     
+ ##### ### ##### ###   #     
+                                                                                       
+Welcome to MAOPhot 1.1.7, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.6 Revision
+    1.1.7 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +171,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.6"
+__version__ = "1.1.7"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -4454,7 +4454,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4466,7 +4466,7 @@ class MyGUI:
                         
             #TYPE=EXTENDED
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4709,7 +4709,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.6 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
