@@ -358,6 +358,7 @@ class MyGUI:
     stars_tbl = None
     isolated_stars_tbl = None
     fits_header_filter = ""
+    is_inverted = False # Track if image is inverted
 
     # Parameter declaration  and init 
     find_peaks_npeaks_entry = None
@@ -445,6 +446,11 @@ class MyGUI:
                                     self.histogram_slider_high,
                                     self.zoom_level,
                                     self.stretching_stringvar.get())
+            
+            # Apply inversion if enabled
+            if self.is_inverted:
+                generated_image = ImageMath.eval("255 - a", a=generated_image)
+                
             self.image = ImageTk.PhotoImage(generated_image)
             self.image_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
             self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
@@ -1919,6 +1925,19 @@ class MyGUI:
         self.zoom_level = 1
         self.console_msg("Zoom: " + str(self.zoom_level))
         self.display_image()
+
+    def invert_image(self):
+        """Invert the displayed image and refresh the display"""
+        try:
+            global image_data
+            if len(image_data) > 0:
+                self.is_inverted = not self.is_inverted
+                self.display_image()
+                self.console_msg("Image display inverted" if self.is_inverted else "Image display restored")
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) + " " + str(e), level=logging.ERROR)
 
     ###############################################################
     #
@@ -5109,6 +5128,8 @@ class MyGUI:
         self.viewmenu.add_command(label="Zoom In", command=self.zoom_in)
         self.viewmenu.add_command(label="Zoom Out", command=self.zoom_out)
         self.viewmenu.add_command(label="100% Zoom", command=self.zoom_100)
+        self.viewmenu.add_separator()
+        self.viewmenu.add_command(label="Invert", command=self.invert_image)
         self.viewmenu.add_separator()
         self.viewmenu.add_command(label="Refresh", command=self.display_image)
         self.menubar.add_cascade(label="View", menu=self.viewmenu)
