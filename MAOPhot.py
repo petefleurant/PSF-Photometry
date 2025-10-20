@@ -1190,6 +1190,33 @@ class MyGUI:
                 self.console_msg("FWHM not numeric, using 3")
                 fwhm = 3.0
 
+
+            # Confirm use of Circular Gaussian before DAOStarFinder
+            # Why ask after finding stars if user then cancels...it wastes time
+            if self.epsf_model != None:
+                self.console_msg("Using derived Effective PSF Model")
+                psf_model = self.epsf_model
+            else:
+                #Ask if using Gausian OK
+                result = askokcancel(title="Use Circular Gaussian?", message="Is it OK to use Circular Gaussian for model?")
+
+                if result==False:
+                    self.console_msg("User canceling iterative PSF photometry")
+                    return
+
+                """
+                    Create a PSF image model from a Circular Gaussian PSF.
+                    In this case, we use the CircularGaussianPRF model 
+                    directly as a PSF model
+                """
+
+                self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
+                psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
+                yy, xx = np.mgrid[:45, :45]
+                psf_data = psf_model(xx, yy)
+                self.plot_psf_model(psf_data, plotting_gaussian=True)
+
+
             # test star_detection_threshold_factor
             if self.star_detection_threshold_factor_entry.get().isnumeric():
                 star_detection_threshold_factor = int(self.star_detection_threshold_factor_entry.get())
@@ -1293,29 +1320,6 @@ class MyGUI:
                 self.console_msg(
                     "Setting fitter to TRF and Least Squares Statistic")
                 selected_fitter = TRFLSQFitter()
-
-            if self.epsf_model != None:
-                self.console_msg("Using derived Effective PSF Model")
-                psf_model = self.epsf_model
-            else:
-                #Ask if using Gausian OK
-                result = askokcancel(title="Use Circular Gaussian?", message="Is it OK to use Circular Gaussian for model?")
-
-                if result==False:
-                    self.console_msg("User canceling iterative PSF photometry")
-                    return
-
-                """
-                    Create a PSF image model from a Circular Gaussian PSF.
-                    In this case, we use the CircularGaussianPRF model 
-                    directly as a PSF model
-                """
-
-                self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
-                psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
-                yy, xx = np.mgrid[:45, :45]
-                psf_data = psf_model(xx, yy)
-                self.plot_psf_model(psf_data, plotting_gaussian=True)
 
  
             photometry = IterativePSFPhotometry(
