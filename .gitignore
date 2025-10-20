@@ -4,6 +4,7 @@
 *.log
 *.csv
 *.epsf
+*.keep
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 __pycache__/VerticalScrolledFrame.cpython-311.pyc
 popupWindowExample.py
