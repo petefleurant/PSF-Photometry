@@ -32,3 +32,5 @@ build/MAOPhot/xref-MAOPhot.html
 dist/MAOPhot.exe
 Output/MAOPhot_SETUP.exe
 .config
+__pycache__/*
+
