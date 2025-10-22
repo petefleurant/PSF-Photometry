@@ -459,7 +459,7 @@ class MyGUI:
             #
             # For dragging
             #
-            self.canvas.tag_bind(self.image_id, "<Shift-Button-1>", self.on_drag_start)
+            self.canvas.tag_bind(self.image_id, "<Shift-Button-2>", self.on_drag_start)
             self.canvas.tag_bind(self.image_id, "<Shift-B1-Motion>", self.on_drag_move)
 
             #
@@ -467,6 +467,12 @@ class MyGUI:
             #
             self.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
             self.canvas.bind("<Shift-MouseWheel>", self.on_canvas_shift_mousewheel)
+
+            #
+            # For centering the image
+            #
+            self.canvas.bind("<Button-2>", self.on_button_2_click)
+
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
             self.plot_photometry(verbose=verbose)
@@ -1434,10 +1440,10 @@ class MyGUI:
     def display_ePSF_samples(self):
         try:
             """
-             Circle color
-             white: stars that from find_peak and not rejected for ePSF Generation (isolated_stars_tbl)
-             red: stars that rejected by user and in the isolated_stars_tbl (ePSF_rejection_list)
-             yellow: stars in a loaded rejection list file that is not in the isolated_stars_tbl, they 
+             Circle color (non inverted color/inverted color)
+             white/black: stars that from find_peak and not rejected for ePSF Generation (isolated_stars_tbl)
+             red/red: stars that rejected by user and in the isolated_stars_tbl (ePSF_rejection_list)
+             yellow/yellow: stars in a loaded rejection list file that is not in the isolated_stars_tbl, they 
              have already been removed (ePSF_rejection_list)
              
             """
@@ -1451,7 +1457,7 @@ class MyGUI:
 
                 #display the non-rejected stars as white, and rejected as red circles
                 for psf_x, psf_y in self.isolated_stars_tbl.iterrows('x', 'y'):
-                    color = 'white' # it is a white circle until a reject match is found
+                    color = ('white', "black")[self.is_inverted] # it is a white/black circle until a reject match is found
                     for index, row in self.ePSF_rejection_list.iterrows():
                         reject_x = row['x']
                         reject_y = row['y']
@@ -1520,14 +1526,14 @@ class MyGUI:
                         sel_comps.append(comp.strip())
 
                 for index, row in self.results_tab_df.iterrows():
-                    outline = "grey50"
+                    outline = ("grey50", "black")[self.is_inverted]
                     if labels_in_photometry_table:
                         if str(row["label"]) != __empty_cell__: 
                                if self.display_all_objects.get() == '1' or \
                                   str(row["label"])[len(__label_prefix__):] in sel_comps: #ignore label prefix
                                 # here if all comps are to be displayed or 
                                 # if only user's comps are being displayed 
-                                    outline = "pink"
+                                    outline = ("pink", "black")[self.is_inverted]
                                     self.create_circle(x=row["x_fit"] * self.zoom_level,
                                         y=row["y_fit"] * self.zoom_level,
                                         r=(self.fit_shape/2) * self.zoom_level,
@@ -1538,7 +1544,7 @@ class MyGUI:
                                         canvas_name=self.canvas,
                                         anchor=tk.CENTER,
                                         text=str(row["label"])[len(__label_prefix__):],
-                                        fill='pink')
+                                        fill=("pink", "black")[self.is_inverted])
                                     continue
 
                     if row["removed_from_ensemble"]:
@@ -1550,7 +1556,7 @@ class MyGUI:
                                str(row["vsx_id"]) == self.object_name_entry.get().strip():
                                 # here if all vsx objects to be displayed or 
                                 # if only user's "Object Name" object is being displayed 
-                                outline = "yellow"
+                                outline = ("yellow", "black")[self.is_inverted]
                                 self.create_circle(x=row["x_fit"] * self.zoom_level,
                                     y=row["y_fit"] * self.zoom_level,
                                     r=(self.fit_shape/2) * self.zoom_level,
@@ -1562,7 +1568,7 @@ class MyGUI:
                                     canvas_name=self.canvas,
                                     anchor=tk.CENTER,
                                     text=str(row["vsx_id"]).strip(),
-                                    fill='yellow')
+                                    fill=('yellow', "black")[self.is_inverted])
 
             if verbose:
                 self.console_msg("Plotting Photometry...complete")
@@ -1732,6 +1738,37 @@ class MyGUI:
         # Moves the image with the mouse while Shift + Button-1 is held.
         self.canvas.scan_dragto(event.x, event.y, gain=1)
         self.plot_photometry(verbose=False)
+
+    ###############################################################
+    #
+    #  on_button_2_click
+    #
+    #  center image
+    # 
+    ###############################################################
+    
+    def on_button_2_click(self, event):
+        """Center the view accounting for the visible portion"""
+        # For a canvas where scroll region is larger than visible area
+        # The visible fraction is what fraction of total content is visible
+        
+        # Get visible fraction (returns tuple: (left, right) for x, (top, bottom) for y)
+        x_view = self.canvas.xview()
+        y_view = self.canvas.yview()
+        
+        # Calculate how much is visible
+        x_visible_fraction = x_view[1] - x_view[0]
+        y_visible_fraction = y_view[1] - y_view[0]
+        
+        # Center position is 0.5 minus half the visible fraction
+        x_center = 0.5 - (x_visible_fraction / 2.0)
+        y_center = 0.5 - (y_visible_fraction / 2.0)
+        
+        # Move to center
+        self.canvas.xview_moveto(x_center)
+        self.canvas.yview_moveto(y_center)
+        self.plot_photometry(verbose=False)
+
 
     ###############################################################
     #
