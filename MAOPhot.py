@@ -4514,7 +4514,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
