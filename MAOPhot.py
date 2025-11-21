@@ -8,17 +8,18 @@
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
                                                      
-   #         #       ####### 
-  ##        ##       #    #  
- # #       # #           #   
-   #         #          #    
-   #   ###   #   ###   #     
-   #   ###   #   ###   #     
- ##### ### ##### ###   #     
+    #         #        #####  
+  ##        ##       #     # 
+ # #       # #       #     # 
+   #         #        #####  
+   #   ###   #   ### #     # 
+   #   ###   #   ### #     # 
+ ##### ### ##### ###  #####  
+                             
                                                                                        
-Welcome to MAOPhot 1.1.7, a PSF Photometry tool using Astropy and Photutils.psf
+Welcome to MAOPhot 1.1.8, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.7 Revision
+    1.1.8 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -171,7 +172,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.7"
+__version__ = "1.1.8"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -205,7 +206,7 @@ from photutils.background import MMMBackground
 from photutils.detection import DAOStarFinder
 from photutils.detection import DAOStarFinder
 from photutils.detection import find_peaks
-from photutils.psf import CircularGaussianPRF, SourceGrouper
+from photutils.psf import CircularGaussianPRF, MoffatPSF, SourceGrouper
 from photutils.psf import EPSFBuilder,EPSFFitter
 from photutils.psf import extract_stars
 from photutils.psf import IterativePSFPhotometry, PSFPhotometry
@@ -402,11 +403,14 @@ class MyGUI:
     object_name_delta_entry = None
     object_notes_entry = None
     display_all_objects = None
+    use_gaussian_prf_model = None
+    generate_residual_image = None
     candidate_stars = None
     settings_filename_entry = None # special case this is only place holder for filename
     auto_behavior = None
     filter_entry = None
     max_qfit_entry = None
+    moffat_beta_entry = None
     min_separation_factor_entry = None
     extinction_B_entry = None
     extinction_V_entry = None
@@ -954,7 +958,9 @@ class MyGUI:
 
         norm = simple_norm(data, 'log', percent=99.)
         im = self.ePSF_plot.imshow(data, norm=norm, origin='lower', cmap='viridis')
-        if plotting_gaussian:
+        if plotting_gaussian and self.use_gaussian_prf_model.get() != '1':
+            self.ePSF_plot.set_title("Moffat")
+        elif plotting_gaussian and self.use_gaussian_prf_model.get() != '0':
             self.ePSF_plot.set_title("Circular Gaussian")
         else:
             self.ePSF_plot.set_title("Effective PSF")
@@ -1003,6 +1009,7 @@ class MyGUI:
             self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
 
             self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
+            self.console_msg("self.epsf_model.data.sum()="+format(self.epsf_model.data.sum(), '.2f'))
 
             self.plot_psf_model(self.epsf_model.data)
     
@@ -1039,6 +1046,7 @@ class MyGUI:
                     self.epsf_model = pickle.load(file)
 
                 self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
+                self.console_msg("self.epsf_model.data.sum()="+format(self.epsf_model.data.sum(), '.2f'))
 
                 self.plot_psf_model(self.epsf_model.data, plotting_loaded_psf=True,
                                      loaded_psf_file=os.path.basename(str(file_name)))
@@ -1203,21 +1211,44 @@ class MyGUI:
                 self.console_msg("Using derived Effective PSF Model")
                 psf_model = self.epsf_model
             else:
-                #Ask if using Gausian OK
-                result = askokcancel(title="Use Circular Gaussian?", message="Is it OK to use Circular Gaussian for model?")
+                #Ask if using Gausian or Moffat OK
+                if self.use_gaussian_prf_model.get() != '1':
+                    # test moffat beta 
+                    if is_number(self.moffat_beta_entry.get().strip()):
+                        moffat_beta = abs(float(self.moffat_beta_entry.get()))
+                    else:
+                        moffat_beta = 1 # Lorentzian
+                    self.console_msg("Moffat \u03B2 set to: " + str(moffat_beta))
 
-                if result==False:
-                    self.console_msg("User canceling iterative PSF photometry")
-                    return
+                    result = askokcancel(title="Use Moffat Model?", message="Is it OK to use Moffat, \u03B2="+str(moffat_beta)+" model?")
 
-                """
-                    Create a PSF image model from a Circular Gaussian PSF.
-                    In this case, we use the CircularGaussianPRF model 
-                    directly as a PSF model
-                """
+                    if result==False:
+                        self.console_msg("User canceling iterative PSF photometry")
+                        return
 
-                self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
-                psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
+                    # Here user wants to use Moffat Model
+                    alpha=fwhm/2/math.sqrt((2**(1/moffat_beta))-1)
+                    self.console_msg("Using Moffat for model; fwhm = "+format(fwhm, '.1f')+"; alpha="+format(alpha, '.1f')+"; \u03B2="+str(moffat_beta))
+                    psf_model = MoffatPSF(x_0=22.0, y_0=22.0, alpha=fwhm/2, beta=moffat_beta)
+
+                else:
+                    result = askokcancel(title="Use Circular Gaussian Model?", message="Is it OK to use Circualr Gaussian model?")
+
+                    if result==False:
+                        self.console_msg("User canceling iterative PSF photometry")
+                        return
+                    
+                    # Here user wants to use CircularPRF model
+
+                    """
+                        Create a PRF image model from a Circular Gaussian PRF.
+                        In this case, we use the CircularGaussianPRF model 
+                        directly as a PSF model
+                    """
+                    self.console_msg("Using Circular Gaussian PRF for model; fwhm = "+format(fwhm, '.1f'))
+                    psf_model = CircularGaussianPRF(x_0=22.0, y_0=22.0, fwhm=fwhm)
+
+                # Plot either CircularGaussian or Moffat
                 yy, xx = np.mgrid[:45, :45]
                 psf_data = psf_model(xx, yy)
                 self.plot_psf_model(psf_data, plotting_gaussian=True)
@@ -1250,7 +1281,7 @@ class MyGUI:
                 grouper = SourceGrouper(min_separation)
                 self.console_msg("Min Separation for Gouper set to: " + str(min_separation))
             else:
-                self.console_msg("Min Separation: NaN; no grouping performed; each source fit independently")
+                self.console_msg("Min Separation: None; no grouping performed; each source fit independently")
                 grouper = None
 
             # test max qfit
@@ -1352,21 +1383,23 @@ class MyGUI:
                 self.console_msg("Done. PSF fitter; no message available")
 
             #get the residuals
-            """
-            # Needs to be changed: psf_shape is now an optional keyword 
-            # in the make_model_image and make_residual_image methods 
-            # of PSFPhotometry and IterativePSFPhotometry. 
-            # The value defaults to using the model bounding box to 
-            # define the shape and is required only if the PSF model 
-            # does not have a bounding box attribute.
-            residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
 
-            #append current time to residual filename
-            file_base_name_parts = self.image_file.split('.')
-            residual_file_name = file_base_name_parts[0] + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fits"
-            fits.writeto(residual_file_name, residual_image, header, overwrite=True)
-            self.console_msg("Residuals saved to: " + residual_file_name)
-            """
+            if self.generate_residual_image.get():
+                """
+                # Needs to be changed: psf_shape is now an optional keyword 
+                # in the make_model_image and make_residual_image methods 
+                # of PSFPhotometry and IterativePSFPhotometry. 
+                # The value defaults to using the model bounding box to 
+                # define the shape and is required only if the PSF model 
+                # does not have a bounding box attribute.
+                """
+
+                residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
+
+                #append current gm time to residual filename
+                residual_file_name = self.image_file + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fit"
+                fits.writeto(residual_file_name, residual_image, header, overwrite=True)
+                self.console_msg("Residuals saved to: " + residual_file_name)
 
             # Remove any multidimensional columns
             goodnames = [name for name in result_tab.colnames if len(result_tab[name].shape) <=1]
@@ -3472,36 +3505,61 @@ class MyGUI:
             max_ensemble_magnitude_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.max_ensemble_magnitude_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.max_ensemble_magnitude_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
+            separator_.grid(row=row, column=3, columnspan=2, pady=5, sticky=tk.EW)
             row += 1
 
             fwhm_label = tk.Label(settings_left_frame, text="FWHM, px:")
             fwhm_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.fwhm_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            default_model_label = tk.Label(settings_left_frame, text="Default PSF Model:")
+            default_model_label.grid(row=row, column=3, columnspan=2, sticky=tk.W)
             row += 1
 
             star_detection_threshold_factor_label = tk.Label(settings_left_frame, text="DAOStarFinder Threshold Factor (x std):")
             star_detection_threshold_factor_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.star_detection_threshold_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.star_detection_threshold_factor_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            use_gaussian_prf_model = ttk.Radiobutton(settings_left_frame, text="Circular Gaussian PRF",
+                                                         variable=self.use_gaussian_prf_model, value=1)
+            use_gaussian_prf_model.grid(row=row, column=3, columnspan=2, sticky=tk.W)
             row += 1
 
             photometry_iterations_label = tk.Label(settings_left_frame, text="Photometry Iterations:")
             photometry_iterations_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.photometry_iterations_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.photometry_iterations_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            use_moffat_model = ttk.Radiobutton(settings_left_frame, text="Moffat PSF",
+                                                  variable=self.use_gaussian_prf_model,  value=0)
+            use_moffat_model.grid(row=row, column=3, sticky=tk.W)
+
+            beta_label = tk.Label(settings_left_frame, text="\u03B2:") # β: 
+            beta_label.grid(row=row, column=3, sticky=tk.E)
+            self.moffat_beta_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
+            self.moffat_beta_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             sharplo_label = tk.Label(settings_left_frame, text="Lower Bound for Sharpness:")
             sharplo_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.sharplo_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.sharplo_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
+            separator_.grid(row=row, column=3, columnspan=2, pady=5, sticky=tk.EW)
             row += 1
 
             matching_radius_label = tk.Label(settings_left_frame, text="Matching Radius, arcsec:")
             matching_radius_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.matching_radius_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.matching_radius_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            
+            checkbox_ = tk.Checkbutton(settings_left_frame, text="Generate Residual Image", variable=self.generate_residual_image)
+            checkbox_.grid(row=row, column=3, columnspan=2, sticky=tk.W)
             row += 1
 
             fitter_label = tk.Label(settings_left_frame, text="PSF Fitter:")
@@ -3893,7 +3951,7 @@ class MyGUI:
                 settings_right_frame, width=extended_settings_entry_width, background='pink')
             self.object_sel_comp_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
-
+    
             display_users_objects_only = ttk.Radiobutton(settings_right_frame, text="Display selected objects only",
                                                          variable=self.display_all_objects, value=0)
             display_users_objects_only.grid(row=row, column=2, columnspan=2, sticky=tk.W)
@@ -4514,7 +4572,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4526,7 +4584,7 @@ class MyGUI:
                         
             #TYPE=EXTENDED
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
+            #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4769,7 +4827,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.7 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.8 using Photutils
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -5489,6 +5547,9 @@ class MyGUI:
         self.fitter_stringvar = tk.StringVar()
         self.fitter_stringvar.set("TRF LS")
         self.display_all_objects = tk.StringVar(None, 0) #init to display user objects only
+        self.use_gaussian_prf_model = tk.StringVar(None, 1) #init to gaussian prf  
+        self.generate_residual_image = tk.BooleanVar()
+        self.generate_residual_image.set(False) #init to not generate residual
         self.auto_behavior = tk.BooleanVar()
         self.auto_behavior.set(False)
 
@@ -5537,9 +5598,12 @@ class MyGUI:
             'object_name_delta_entry': self.object_name_delta_entry,
             'object_notes_entry': self.object_notes_entry,
             'display_all_objects': self.display_all_objects,
+            'use_gaussian_prf_model': self.use_gaussian_prf_model,
+            'generate_residual_image': self.generate_residual_image,
             'auto_behavior': self.auto_behavior,
             'filter_entry': self.filter_entry,
             'max_qfit_entry': self.max_qfit_entry,
+            'moffat_beta_entry': self.moffat_beta_entry,
             'min_separation_factor_entry': self.min_separation_factor_entry,
             'tbv_err_entry': self.tbv_err_entry,
             'tv_bv_err_entry': self.tv_bv_err_entry,
