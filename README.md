@@ -1,5 +1,24 @@
 # PSF-Photometry
-Welcome to MAOPhot 1.1.6, a PSF Photometry tool using Astropy 6.1.6 and Photutils 2.0.2
+Welcome to MAOPhot 1.1.8, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+
+1.1.8 Changes
+
+1)	Button-2 click centers image
+2)	Added View-->Invert; this inverts image
+3)	Added Effective PSF-->Load... and Effective PSF-->Save As...
+4)	ENSEMBLE calculated for Single Image Photometry
+5)	ENSEMBLE outliers displayed for Single Image Photometry
+6)	Button-1 + Shift drags image
+7)	Mouse wheel zooms image in and out
+8)	DAOStarFinder replaces find_peaks, replace IRAFStarFinder
+9)	SourceGrouper is used in IterativePSFPhotometry
+10)	In APASS DR10, remove any entries with Johnson (V) > maglimit until cgi-bin/apass_dr10_download.pl IS FIXED!!!!!!
+11)	In "Iterative PSF Photometry" remove rows with flags !=0, qfit > 0.07; APASS DR10 only keep lowest qfit match; Replave IRAFStarFinder with DAOStarFinder
+12) Added Moffat with beta paramter as option for PSF model
+13) Added option to generate residual image
+
+1.1.7 has been merged into 1.1.8
+
 
 1.1.6 Changes
 
@@ -38,11 +57,11 @@ MAOPhot is written in Python using Astropy (a common core package for astronomy)
 
 MAOPhot has been redesigned for AAVSO reporting only and includes, but is not limited to the following enhancements:
 
-o	uses Astropy 6.1.6 and Photutils 2.0.2 
+o	uses Astropy 7.7.1 and Photutils 2.3.0 
 
 o	generation of an Effective PSF model (EPSF model), and the ability to create a ‘rejection list’ of stars that the user can select that will not be part of the EPSF model generated 
 
-o	option to use a Gaussian PRF (Pixel Response Function) as model
+o	option to use a Gaussian PRF (Pixel Response Function) or Moffat as model
 
 o	Uses Iterative PSF Photometry, an iterative version of PSF Photometry where new sources are detected in the residual image after the fit sources are subtracted
 
