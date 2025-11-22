@@ -3362,11 +3362,13 @@ class MyGUI:
             options['title'] = 'Load MAOPhot settings...'
 
             file_name = fd.askopenfilename(**options)
+            if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+                self.open_settings(file_name)
 
-            self.open_settings(file_name)
-
-            self.console_msg("Loaded settings from " + str(file_name))
-            self.console_msg("Ready")
+                self.console_msg("Loaded settings from " + str(file_name))
+                self.console_msg("Ready")
+            else:
+                return
 
         except Exception as e:
             self.error_raised = True
@@ -4827,7 +4829,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.8 using Photutils
+        #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -5152,7 +5154,7 @@ class MyGUI:
         #Wie heißen Sie?
         self.program_name = "MAOPhot"
         self.program_version = __version__
-        self.program_name_note = "using Photutils"
+        self.program_name_note = "using photutils.psf"
         self.program_full_name = self.program_name + " " + self.program_version + " " + self.program_name_note
         self.config_file = os.getcwd() + "\\.config"
 
