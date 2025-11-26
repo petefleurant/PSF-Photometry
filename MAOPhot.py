@@ -3301,6 +3301,8 @@ class MyGUI:
                     self.filter_entry.config(state='normal')
                     self.set_entry_text(self.filter_entry, filter_entry)
                     self.filter_entry.config(state='disable')
+            else:
+                return
         
         except Exception as e:
             self.error_raised = True
