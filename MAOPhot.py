@@ -1088,6 +1088,8 @@ class MyGUI:
                 self.ePSF_plotname_label.config(text="Effective PSF: "+os.path.basename(str(file_name.name)))
                 self.console_msg("Saving ePSF as " + str(file_name.name))
                 self.console_msg("Ready")
+            else:   
+                return
         
         except Exception as e:
             self.error_raised = True
@@ -1391,10 +1393,10 @@ class MyGUI:
                 # of PSFPhotometry and IterativePSFPhotometry. 
                 # The value defaults to using the model bounding box to 
                 # define the shape and is required only if the PSF model 
-                # does not have a bounding box attribute.
+                # does not have a bounding box attribute.   
                 """
 
-                residual_image = photometry.make_residual_image(data=clean_image, psf_shape=(self.fit_shape, self.fit_shape))
+                residual_image = photometry.make_residual_image(data=clean_image)
 
                 #append current gm time to residual filename
                 residual_file_name = self.image_file + "_residuals_" + strftime("%Y_%m_%d %H_%M_%S", gmtime()) + ".fit"
