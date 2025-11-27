@@ -1274,16 +1274,16 @@ class MyGUI:
             if is_number(self.sharplo_entry.get().strip()):
                 sharplo = float(self.sharplo_entry.get())
             else:
-                self.console_msg("Lower Bound for Sharpness not numeric, using 0")
-                sharplo = 0
+                self.console_msg("Lower Bound for Sharpness not numeric, using 0.2 (DAOStarFinder default)")
+                sharplo = 0.2 # DAOStarFinder default
 
             # test min_separation_factor_entry
             if is_number(self.min_separation_factor_entry.get().strip()):
-                min_separation = float(self.min_separation_factor_entry.get()) * fwhm
+                min_separation = float(self.min_separation_factor_entry.get()) * (self.fit_shape-1)/2
                 grouper = SourceGrouper(min_separation)
-                self.console_msg("Min Separation for Gouper set to: " + str(min_separation))
+                self.console_msg("Min Separation for Grouper set to: " + format(min_separation, '4.2f'))
             else:
-                self.console_msg("Min Separation: None; no grouping performed; each source fit independently")
+                self.console_msg("Min Separation: None; no grouping performed; !!!!each source fit independently!!!!")
                 grouper = None
 
             # test max qfit
@@ -1321,10 +1321,11 @@ class MyGUI:
                 user_npeaks = int(user_npeaks)
 
             star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
-                                       fwhm=fwhm,
-                                        peakmax=float(linearity_limit),
-                                        brightest=user_npeaks
-                                       )
+                                      fwhm=fwhm,
+                                      sharplo=sharplo,
+                                      peakmax=float(linearity_limit),
+                                      brightest=user_npeaks
+                                      )
 
             # subtract background
             clean_image = image_data - median_val
@@ -3501,7 +3502,7 @@ class MyGUI:
             self.fit_width_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fit_width_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
-            min_separation_factor_label = tk.Label(settings_left_frame, text="Min Separation Factor, (x FWHM):")
+            min_separation_factor_label = tk.Label(settings_left_frame, text="Min Separation Factor, (x fitting radius):")
             min_separation_factor_label.grid(row=row, column=3, sticky=tk.E)
             self.min_separation_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.min_separation_factor_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
