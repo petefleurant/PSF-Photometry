@@ -1006,7 +1006,7 @@ class MyGUI:
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
             epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True) 
 
-            self.epsf_model, fitted_stars = epsf_builder(self.candidate_stars)  
+            self.epsf_model, fitted_stars = epsf_builder(stars=self.candidate_stars)  
 
             self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
             self.console_msg("self.epsf_model.data.sum()="+format(self.epsf_model.data.sum(), '.2f'))
@@ -3075,7 +3075,7 @@ class MyGUI:
                     if using_aavso_catalog or using_apass_dr9 or using_apass_dr10:
                         self.results_tab_df.loc[index, "check_star"] = match_is_check
                         #record comp stars used for console if AAVSO comp stars
-                        comp_stars_found.append((str(match_label), match_is_check))
+                        comp_stars_found.append((str(match_label), match_is_check, self.results_tab_df.loc[index, "qfit"]))
                     else:
                         self.results_tab_df.loc[index, "check_star"] = False
                     
@@ -3150,10 +3150,9 @@ class MyGUI:
                         self.results_tab_df.loc[index, "RAJ2000"] = str(match_ra)
                         self.results_tab_df.loc[index, "DEJ2000"] = str(match_dec)
                         self.results_tab_df.loc[index, "separation"] = str(separation)
-                        self.console_msg("Match VSX source: " + str(match_id) +\
-                                          "; RAJ2000:" + str(match_ra) +\
-                                          "; DEJ2000:" + str(match_dec) +\
-                                          "; separation:" + str(separation) )
+                        self.console_msg("Match VSX source:" +\
+                                          " (qfit:" + format(self.results_tab_df.loc[index, "qfit"], '0.4f') +") " +\
+                                          str(match_id))
                         #If there is a match, update Settings with alpha and delta
                         if object_name_exist and object_name == str(match_id):
                             self.set_entry_text(self.object_name_alpha_entry, alpha_delta[0])
@@ -3204,10 +3203,10 @@ class MyGUI:
                 #output comp_stars_found
                 found_check = False #init
                 for comp in comp_stars_found:
-                    (label, ischeck) = comp
+                    (label, ischeck, qfit) = comp
                     found_check |= ischeck == True
-                    comp_list += str(label) + ', ' 
-                self.console_msg("AAVSO comp stars found: " + comp_list)
+                    comp_list += str(label) + " (" + format(qfit, '0.4f') + "); " 
+                self.console_msg("AAVSO comp stars (qfit) found: " + comp_list)
                     
                 check_star = self.object_kref_entry.get().strip()
                 if not found_check and check_star != '':
@@ -4207,7 +4206,7 @@ class MyGUI:
                 "h", " ").replace("m", " ").replace("s", "")
             dec = frame_center.to_string("hmsdms").split()[1].replace(
                 "d", " ").replace("m", " ").replace("s", "").replace("+", "")
-
+    
             aavso_chartId_to_use = self.vizier_catalog_entry.get().strip()
             
             if aavso_chartId_to_use == "":
