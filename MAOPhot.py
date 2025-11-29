@@ -1225,7 +1225,7 @@ class MyGUI:
                     result = askokcancel(title="Use Moffat Model?", message="Is it OK to use Moffat, \u03B2="+str(moffat_beta)+" model?")
 
                     if result==False:
-                        self.console_msg("User canceling iterative PSF photometry")
+                        self.console_msg("User cancelling iterative PSF photometry")
                         return
 
                     # Here user wants to use Moffat Model
@@ -1237,7 +1237,7 @@ class MyGUI:
                     result = askokcancel(title="Use Circular Gaussian Model?", message="Is it OK to use Circualr Gaussian model?")
 
                     if result==False:
-                        self.console_msg("User canceling iterative PSF photometry")
+                        self.console_msg("User cancelling iterative PSF photometry")
                         return
                     
                     # Here user wants to use CircularPRF model
@@ -2032,12 +2032,27 @@ class MyGUI:
             self.console_msg("Ready")
             return
 
+        if self.wcs_header.has_celestial:
+            #file is already plate solved
+            result = askokcancel(title="Image already Plate Solved.", message="Is it OK to Plate Solve this Plate Solved image?")
+            if result==False:
+                self.console_msg("User cancelling Plate Solving")
+                self.console_msg("Ready")
+                return
+
         self.console_msg("Solving via Astrometry.Net...")
         try:
-            # First check if a photometry table exists.
+            # key must exist
+            if len(self.astrometrynet_key_entry.get()) == 0:
+                self.console_msg("Astrometry.net API Key required")
+                self.console_msg("Ready")
+                return
 
+            # check if a photometry table exists.
             ast = AstrometryNet()
             ast.api_key = self.astrometrynet_key_entry.get()
+
+
             #ast.URL = "http://" + self.astrometrynet_entry.get()
             #ast.API_URL = "http://" + self.astrometrynet_entry.get() + "/api"
 
