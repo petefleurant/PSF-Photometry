@@ -54,7 +54,7 @@ Name: "{app}\2022 12 21 Z Tau (Example)"; Permissions: users-modify
 [Files]
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\2022 8 1 V1117 Her (Example)\*"; DestDir: "{app}\2022 8 1 V1117 Her (Example)"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
-Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\2022 12 21 Z Tau (Example)\*"; DestDir: "{app}\2022 12 21 Z Tau (Example)"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
+Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\2025 10 16 Z Tau (Example)\*"; DestDir: "{app}\2025 10 16 Z Tau (Example)"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\HelpFile.pdf"; DestDir: "{app}"; Flags: ignoreversion
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\README.md"; DestDir: "{app}"; Flags: ignoreversion
