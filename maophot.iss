@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "MAOPhot"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.8"
 #define MyAppPublisher "Pete Fleurant"
 #define MyAppURL "https://github.com/petefleurant/PSF-Photometry"
 #define MyAppExeName "MAOPhot.exe"
@@ -49,7 +49,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Dirs]
 Name: "{app}\logs"; Permissions: users-modify
 Name: "{app}\2022 8 1 V1117 Her (Example)"; Permissions: users-modify
-Name: "{app}\2022 12 21 Z Tau (Example)"; Permissions: users-modify
+Name: "{app}\2025 10 16 Z Tau (Example)"; Permissions: users-modify
 
 [Files]
 Source: "E:\Astronomy\AAVSO\PSF-Photometry\PSF-Photometry\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
