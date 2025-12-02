@@ -33,4 +33,6 @@ dist/MAOPhot.exe
 Output/MAOPhot_SETUP.exe
 .config
 __pycache__/*
-
+*residuals*.fit
+*_residuals.fit
+residuals_*.fit
