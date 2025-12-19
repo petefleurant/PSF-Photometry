@@ -7,19 +7,19 @@
  #     # ####### #     # #       #    # #    #   #   
  #     # #     # #     # #       #    # #    #   #   
  #     # #     # ####### #       #    #  ####    #   
-                                                     
+
+
     #         #        #####  
   ##        ##       #     # 
  # #       # #       #     # 
-   #         #        #####  
-   #   ###   #   ### #     # 
+   #         #        ###### 
+   #   ###   #   ###       # 
    #   ###   #   ### #     # 
  ##### ### ##### ###  #####  
-                             
                                                                                        
-Welcome to MAOPhot 1.1.8, a PSF Photometry tool using Astropy and Photutils.psf
+Welcome to MAOPhot 1.1.9, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.8 Revision
+    1.1.9 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -172,7 +172,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.8"
+__version__ = "1.1.9"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -203,7 +203,6 @@ from photutils.background import LocalBackground
 from photutils.background import MADStdBackgroundRMS
 from photutils.background import MedianBackground
 from photutils.background import MMMBackground
-from photutils.detection import DAOStarFinder
 from photutils.detection import DAOStarFinder
 from photutils.detection import find_peaks
 from photutils.psf import CircularGaussianPRF, MoffatPSF, SourceGrouper
@@ -1674,7 +1673,7 @@ class MyGUI:
         self.selstars_plot[selected_index].imshow(self.candidate_stars[candidate_stars_selected_index],
                      norm=norm, origin='lower', cmap='viridis')
         #Check if "Reject" is already there. If it is then remove it from Ax and removed from ePSF_pending_rejection_list
-        (cand_x, cand_y) = self.candidate_stars[candidate_stars_selected_index].origin
+        (cand_x, cand_y) = self.candidate_stars[candidate_stars_selected_index].center
         if not ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
             # No reject, 
             # Add it in 
@@ -1950,8 +1949,9 @@ class MyGUI:
         self.fig_selstars.clear()
         #plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
         #self.selstars_plot_canvas.draw()
-        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
-                                                              figsize=(10, 10), squeeze=False)
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows,
+                                                              ncols=self.ncols,
+                                                              squeeze=False)
         self.selstars_plot = self.selstars_plot.ravel()
         self.selstars_plot_canvas = FigureCanvasTkAgg(self.fig_selstars, self.right_frame)
         plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
@@ -4081,7 +4081,7 @@ class MyGUI:
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
                 # check if this has already been rejected
-                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].center
                 if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
                     self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
                 selstars_plot_index += 1
@@ -4141,13 +4141,13 @@ class MyGUI:
                 self.selstars_plot[selstars_plot_index].imshow(self.candidate_stars[self.candidate_stars_index],
                         norm=norm, origin='lower', cmap='viridis')
                 # check if this has already been rejected
-                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].origin
+                (cand_x, cand_y) = self.candidate_stars[self.candidate_stars_index].center
                 if ((self.ePSF_pending_rejection_list['x'] == cand_x) & (self.ePSF_pending_rejection_list['y'] == cand_y)).any():
                     self.selstars_plot[selstars_plot_index].text(x=0,y=5, s="Reject")
                 selstars_plot_index += 1
             plt.subplots_adjust(hspace=self.selstars_hspace, wspace=self.selstars_wspace)
             self.selstars_plot_canvas.draw()
-            # need to resolve index so that when we forward agin we dont skip current index
+            # need to resolve index so that when we forward again we dont skip current index
             self.candidate_stars_index -= 1
             # update label with page (n of x) display E.g., Page: 1 of 6
             new_page_number = math.ceil(self.candidate_stars_index/(self.nrows*self.ncols))
@@ -4593,7 +4593,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4605,7 +4605,7 @@ class MyGUI:
                         
             #TYPE=EXTENDED
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4848,7 +4848,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.8 using photutils.psf
+        #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -5467,8 +5467,9 @@ class MyGUI:
         self.ncols = 5
         self.selstars_hspace = .55
         self.selstars_wspace = .55
-        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows, ncols=self.ncols,
-                                                              figsize=(10, 10), squeeze=False)
+        self.fig_selstars, self.selstars_plot = plt.subplots(nrows=self.nrows,
+                                                              ncols=self.ncols,
+                                                              squeeze=False)
         self.fig_selstars.canvas.mpl_connect('button_press_event', self.mouse_selstars_canvas_click)
         
         self.selstars_plot = self.selstars_plot.ravel()
