@@ -697,6 +697,12 @@ class MyGUI:
                 self.console_msg("Find Peaks: fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
                 self.console_msg("Ready")
                 return
+            else:
+                self.fit_shape = int(_shape)
+                #if not odd (which IterativePSFPhotometry requires) make it so
+                if self.fit_shape % 2 == 0:
+                    self.fit_shape += 1
+
 
             # test fwhm
             if is_number(self.fwhm_entry.get().strip()):
@@ -773,7 +779,7 @@ class MyGUI:
             # mask out peaks near the edge
             #
         
-            self.fit_shape = int(_shape) # Eg., 5
+            
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 
             x = peaks_tbl['xcentroid']  
@@ -1483,7 +1489,19 @@ class MyGUI:
              
             """
             ## make all the circles same as fit_shape; derive hsize (halfsize or radius)
-            self.fit_shape = int(self.fit_width_entry.get())
+
+            # test fit_width
+            _shape = self.fit_width_entry.get().strip()
+            if not _shape or not _shape.isnumeric():
+                self.console_msg("Find Peaks: fitting Width not set (correctly); Set Fitting Width and Height in Setting Window")
+                self.console_msg("Ready")
+                return
+            else:
+                self.fit_shape = int(_shape)
+                #if not odd (which IterativePSFPhotometry requires) make it so
+                if self.fit_shape % 2 == 0:
+                    self.fit_shape += 1
+
             size = 2*self.fit_shape + 1
             hsize = (size - 1)/2
 
@@ -1526,15 +1544,20 @@ class MyGUI:
             vsx_ids_in_photometry_table = "vsx_id" in self.results_tab_df
 
             if os.path.isfile(self.image_file+".csv"):
-                fit_shape = self.fit_width_entry.get().strip()
-                if not fit_shape.isnumeric():
+                _shape = self.fit_width_entry.get().strip()
+                if not _shape or not _shape.isnumeric():
                     self.console_msg("Cannot Plot Photometry with existing... ")
                     self.console_msg("...\"" + self.image_file + ".csv\"")
                     self.console_msg("...because fitting width is not recognized")
                     self.console_msg("Ready")
                     return
+                else:
+                    fit_shape = int(_shape)
+                    #if not odd (which IterativePSFPhotometry requires) make it so
+                    if fit_shape % 2 == 0:
+                        fit_shape += 1
 
-                self.fit_shape = int(self.fit_width_entry.get())
+                self.fit_shape = fit_shape
                 self.results_tab_df = pd.read_csv(self.image_file + ".csv")
                 if "removed_from_ensemble" not in self.results_tab_df:
                     # This prefilling is required for backwards compatibility to read .phot
@@ -1967,23 +1990,6 @@ class MyGUI:
         self.plotname_label['text'] = "Plot: "
         self.psf_plot.clear()
         self.psf_plot_canvas.draw()
-
-    def update_PSF_canvas_2d(self, x, y):
-        global image_data
-        global FITS_minimum
-        global FITS_maximum
-        image_crop = Image.fromarray(image_data)
-        self.fit_shape = int(self.fit_width_entry.get())
-        x0 = int(x - (self.fit_shape-1)/2)
-        y0 = int(y - (self.fit_shape-1)/2)
-        x1 = int(x + (self.fit_shape-1)/2)
-        y1 = int(y + (self.fit_shape-1)/2)
-        image_crop = image_crop.crop((x0, y0, x1, y1))
-        image_crop = image_crop.resize((300, 300), resample=0)
-        image_crop = ImageMath.eval(
-            "a * 255 / " + str(self.histogram_slider_high / 100 * FITS_maximum), a=image_crop)
-        self.image_crop = ImageTk.PhotoImage(image_crop)
-        self.psf_canvas.create_image(0, 0, anchor=tk.NW, image=self.image_crop)
 
     def zoom_in(self):
         self.zoom_level *= 1.1
@@ -3511,7 +3517,7 @@ class MyGUI:
             self.max_qfit_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
-            fit_width_label = tk.Label(settings_left_frame, text="Fitting Width/Height, px (odd only):")
+            fit_width_label = tk.Label(settings_left_frame, text="Fitting Width/Height, px:")
             fit_width_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.fit_width_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fit_width_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
