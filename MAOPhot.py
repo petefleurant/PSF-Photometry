@@ -973,7 +973,7 @@ class MyGUI:
         if plotting_loaded_psf:
             self.ePSF_plotname_label.config(text="Effective PSF: " +loaded_psf_file)
         else:
-            self.ePSF_plotname_label.config(text="Effective PSF")
+            self.ePSF_plotname_label.config(text="PSF")
 
 
         self.fig_ePSF.colorbar(im, ax=self.ePSF_plot)
@@ -1952,7 +1952,7 @@ class MyGUI:
         self.ePSF_plot.clear()
         self.fig_ePSF.clear()
         self.ePSF_plot_canvas.draw()
-        self.ePSF_plotname_label.config(text="Effective PSF")
+        self.ePSF_plotname_label.config(text="PSF")
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
         self.ePSF_plot_canvas = FigureCanvasTkAgg(self.fig_ePSF, self.right_frame)
         self.ePSF_plot_canvas.draw()
@@ -5449,7 +5449,7 @@ class MyGUI:
         #
         # Place label
         row += 1
-        self.ePSF_plotname_label = tk.Label(self.right_frame, text="Effective PSF:")
+        self.ePSF_plotname_label = tk.Label(self.right_frame, text="PSF:")
         self.ePSF_plotname_label.grid(row=row, column=0)  #row=2
 
         row += 1
