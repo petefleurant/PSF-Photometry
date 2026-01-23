@@ -466,7 +466,7 @@ class MyGUI:
             self.canvas.tag_bind(self.image_id, "<Shift-B1-Motion>", self.on_drag_move)
 
             #
-            # For zooming 
+            # For zooming & scrolling
             #
             self.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
             self.canvas.bind("<Shift-MouseWheel>", self.on_canvas_shift_mousewheel)
@@ -474,7 +474,7 @@ class MyGUI:
             #
             # For centering the image
             #
-            self.canvas.bind("<Button-2>", self.on_button_2_click)
+            self.canvas.bind("<Button-3>", self.on_button_3_click)
 
             if self.ePSF_samples_plotted:
                 self.display_ePSF_samples()
@@ -1799,13 +1799,13 @@ class MyGUI:
 
     ###############################################################
     #
-    #  on_button_2_click
+    #  on_button_3_click
     #
     #  center image
     # 
     ###############################################################
     
-    def on_button_2_click(self, event):
+    def on_button_3_click(self, event):
         """Center the view accounting for the visible portion"""
         # For a canvas where scroll region is larger than visible area
         # The visible fraction is what fraction of total content is visible
