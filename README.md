@@ -1,6 +1,11 @@
 # PSF-Photometry
 
-Welcome to MAOPhot 1.1.8, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+Welcome to MAOPhot 1.1.9, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+
+## Version 1.1.9 Changes
+
+1)	Fixed problem with yellow circles after star is rejected
+2)	"Fitting width/height, px” need not be odd
 
 ## Version 1.1.8 Changes
 
