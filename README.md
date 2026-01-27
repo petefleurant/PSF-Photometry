@@ -1,6 +1,12 @@
 # PSF-Photometry
 
-Welcome to MAOPhot 1.1.9, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+
+## Version 1.1.10 Changes
+
+1)	Corrected problem with Moffat alpha value
+2)  Corrected "Shift+Button-1" which drags drags inmage on screeen
+3)  Added qfit metrics to console output after Two Color Photometry
 
 ## Version 1.1.9 Changes
 

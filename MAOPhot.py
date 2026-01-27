@@ -9,17 +9,17 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-    #         #        #####  
-  ##        ##       #     # 
- # #       # #       #     # 
-   #         #        ###### 
-   #   ###   #   ###       # 
-   #   ###   #   ### #     # 
- ##### ### ##### ###  #####  
-                                                                                       
-Welcome to MAOPhot 1.1.9, a PSF Photometry tool using Astropy and Photutils.psf
+   #         #         #     ###   
+  ##        ##        ##    #   #  
+ # #       # #       # #   #     # 
+   #         #         #   #     # 
+   #   ###   #   ###   #   #     # 
+   #   ###   #   ###   #    #   #  
+ ##### ### ##### ### #####   ###   
+                                                                                                                          
+Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.9 Revision
+    1.1.10 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -172,7 +172,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.9"
+__version__ = "1.1.10"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -462,7 +462,7 @@ class MyGUI:
             #
             # For dragging
             #
-            self.canvas.tag_bind(self.image_id, "<Shift-Button-2>", self.on_drag_start)
+            self.canvas.tag_bind(self.image_id, "<Shift-Button-1>", self.on_drag_start)
             self.canvas.tag_bind(self.image_id, "<Shift-B1-Motion>", self.on_drag_move)
 
             #
@@ -1236,10 +1236,10 @@ class MyGUI:
                     # Here user wants to use Moffat Model
                     alpha=fwhm/2/math.sqrt((2**(1/moffat_beta))-1)
                     self.console_msg("Using Moffat for model; fwhm = "+format(fwhm, '.1f')+"; alpha="+format(alpha, '.1f')+"; \u03B2="+str(moffat_beta))
-                    psf_model = MoffatPSF(x_0=22.0, y_0=22.0, alpha=fwhm/2, beta=moffat_beta)
+                    psf_model = MoffatPSF(x_0=22.0, y_0=22.0, alpha=alpha, beta=moffat_beta)
 
                 else:
-                    result = askokcancel(title="Use Circular Gaussian Model?", message="Is it OK to use Circualr Gaussian model?")
+                    result = askokcancel(title="Use Circular Gaussian Model?", message="Is it OK to use Circular Gaussian model?")
 
                     if result==False:
                         self.console_msg("User cancelling iterative PSF photometry")
@@ -2649,8 +2649,12 @@ class MyGUI:
                     }
             
                 self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
-                                  " (B: " + format(float(check_B), ' >6.3f') +")" +
-                                    " (V: " + format(float(check_V), ' >6.3f') +")" "\n" +
+                                  " (B: " + format(float(check_B), ' >6.3f') + ")" +
+                                    " (V: " + format(float(check_V), ' >6.3f') + ")" +
+                                 ";    (qfit--->"
+                                 " B: " + format(check_star_B["qfit"], ' >5.3f') + 
+                                 "; V: " + format(check_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("B* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2663,7 +2667,11 @@ class MyGUI:
                 self.console_msg(("Check Star IQR limit for V*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
                 self.console_msg('\n')
 
-                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
+                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + 
+                                 ";    (qfit--->"
+                                 " B: " + format(var_star_B["qfit"], ' >5.3f') + 
+                                 "; V: " + format(var_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                 result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("B* Ave: " + format(B_mean_var, ' >6.3f') +
@@ -2712,8 +2720,12 @@ class MyGUI:
                     }
             
                 self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
-                                  " (V: " + format(float(check_B), ' >6.3f') +")" +
-                                    " (R: " + format(float(check_V), ' >6.3f') +")" "\n" +
+                                  " (V: " + format(float(check_B), ' >6.3f') + ")" +
+                                    " (R: " + format(float(check_V), ' >6.3f') + ")" +
+                                 ";    (qfit--->"
+                                 " V: " + format(check_star_B["qfit"], ' >5.3f') + 
+                                 "; R: " + format(check_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                       result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2726,7 +2738,11 @@ class MyGUI:
                 self.console_msg(("Check Star IQR limit for R*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
                 self.console_msg('\n')
 
-                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
+                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + 
+                                 ";    (qfit--->"
+                                 " V: " + format(var_star_B["qfit"], ' >5.3f') + 
+                                 "; R: " + format(var_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                 result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("V* Ave: " + format(B_mean_var, ' >6.3f') +
@@ -2775,8 +2791,12 @@ class MyGUI:
                     }
             
                 self.console_msg("Check Star Estimates using check star: " + str(check_star_label) +
-                                  " (V: " + format(check_B, ' >6.3f') +")" +
-                                    " (I: " + format(check_V, ' >6.3f') +")" "\n" +
+                                  " (V: " + format(check_B, ' >6.3f') + ")" +
+                                    " (I: " + format(check_V, ' >6.3f') + ")" +
+                                 ";    (qfit--->"
+                                 " V: " + format(check_star_B["qfit"], ' >5.3f') + 
+                                 "; I: " + format(check_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                 result_check_star.sort_values(by="name").to_string() +
                                 '\n' +
                                 ("V* Ave: " + format(B_mean_check, ' >6.3f') +
@@ -2789,7 +2809,11 @@ class MyGUI:
                 self.console_msg(("Check Star IQR limit for I*: " + format(v_lower_limit, ' >6.3f') + ';' + format(v_upper_limit, ' >6.3f')).rjust(123))
                 self.console_msg('\n')
 
-                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + "\n" +
+                self.console_msg("Variable Star Estimates of Var: " + var_star_B["vsx_id"] + 
+                                 ";    (qfit--->"
+                                 " V: " + format(var_star_B["qfit"], ' >5.3f') + 
+                                 "; I: " + format(var_star_V["qfit"], ' >5.3f') + ')' +
+                                '\n' +
                                 result_var_star.sort_values(by="name").to_string() +
                                 '\n' + 
                                 ("V* Ave: " + format(B_mean_var, ' >6.3f') +
@@ -4599,7 +4623,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4611,7 +4635,7 @@ class MyGUI:
                         
             #TYPE=EXTENDED
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -4854,7 +4878,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.9 using photutils.psf
+        #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
