@@ -3141,15 +3141,15 @@ class MyGUI:
             vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center,
                                                                                  radius=frame_radius)
 
+
+            # Prep object_name
+            object_name = self.object_name_entry.get().strip()
+            object_name_exist =  object_name != None and len(object_name) > 0
+
             #Look for any and all VSX stars
             #first init this flag 
             found_user_object = False
             if len(vsx_result) > 0:
-                # See if user has specified an Object Name and if so, then 
-                # if there is a match and (separation < matching_radius), then 
-                # insert aplph and delta into Settings.
-                object_name = self.object_name_entry.get().strip()
-                object_name_exist =  object_name != None and len(object_name) > 0
 
                 vsx_stars = vsx_result[0]
                 self.console_msg(
@@ -3198,7 +3198,9 @@ class MyGUI:
                         self.console_msg("Match VSX source:" +\
                                           " (qfit:" + format(self.results_tab_df.loc[index, "qfit"], '0.4f') +") " +\
                                           str(match_id))
-                        #If there is a match, update Settings with alpha and delta
+                        # See if user has specified an Object Name and if so, then 
+                        # if there is a match and (separation < matching_radius), then 
+                        # insert alpha and delta into Settings.
                         if object_name_exist and object_name == str(match_id):
                             self.set_entry_text(self.object_name_alpha_entry, alpha_delta[0])
                             self.set_entry_text(self.object_name_delta_entry, alpha_delta[1])
