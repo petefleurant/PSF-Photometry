@@ -750,7 +750,8 @@ class MyGUI:
             star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
                                        fwhm=fwhm,
                                         peakmax=float(linearity_limit),
-                                        brightest=user_npeaks
+                                        brightest=user_npeaks,
+                                        exclude_border=True
                                        )
 
             peaks_tbl = QTable(star_find(data=image_data - median))
@@ -1329,7 +1330,8 @@ class MyGUI:
                                       fwhm=fwhm,
                                       sharplo=sharplo,
                                       peakmax=float(linearity_limit),
-                                      brightest=user_npeaks
+                                      brightest=user_npeaks,
+                                      exclude_border=True
                                       )
 
             # subtract background
@@ -3227,6 +3229,7 @@ class MyGUI:
                         self.results_tab_df.loc[index, "RAJ2000"] = user_object.ra.deg
                         self.results_tab_df.loc[index, "DEJ2000"] = user_object.dec.deg
                         found_user_object = True
+                        self.console_msg("Found Object using α:" +  object_alpha + "; δ:" + object_delta)
                         break
 
             if object_name_exist and not found_user_object:
