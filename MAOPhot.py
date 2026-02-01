@@ -232,6 +232,9 @@ import sys
 import tkinter as tk
 import warnings
 
+from astropy.modeling import models as astropy_models
+from astropy.modeling import fitting as astropy_fitting
+
 #############################################################################
 #
 #  My Utilities
@@ -247,6 +250,136 @@ def is_number(s):
         return True
     except ValueError:
         return False
+
+
+#############################################################################
+#
+#  PSF Parameter Estimation Functions
+#
+#  Based on estimate_psf_params.py - estimates FWHM and Moffat beta from
+#  stars in an image by fitting 2D Moffat profiles.
+#
+#############################################################################
+
+def extract_star_cutout(data, x, y, size=25):
+    """Extract a square cutout centered on (x, y)."""
+    half = size // 2
+    y_int, x_int = int(round(y)), int(round(x))
+    
+    y_min = max(0, y_int - half)
+    y_max = min(data.shape[0], y_int + half + 1)
+    x_min = max(0, x_int - half)
+    x_max = min(data.shape[1], x_int + half + 1)
+    
+    cutout = data[y_min:y_max, x_min:x_max].copy()
+    
+    # Only return if we got a full cutout
+    if cutout.shape[0] == size and cutout.shape[1] == size:
+        return cutout, x_int - x_min, y_int - y_min
+    return None, None, None
+
+
+def fit_moffat_2d(cutout, x_center, y_center):
+    """
+    Fit a 2D Moffat function to a background-subtracted star cutout.
+    
+    Parameters
+    ----------
+    cutout : 2D array
+        Background-subtracted star cutout
+    x_center : float
+        Initial x position of star center in cutout coordinates
+    y_center : float
+        Initial y position of star center in cutout coordinates
+    
+    Returns
+    -------
+    dict with fitted parameters or None if fit fails
+    """
+    size = cutout.shape[0]
+    y, x = np.mgrid[0:size, 0:size]
+    
+    # Data is already background-subtracted
+    data_sub = cutout
+    
+    # Initial estimates
+    amplitude = np.max(data_sub)
+    if amplitude <= 0:
+        return None
+    
+    # Initial FWHM estimate from second moments
+    total = np.sum(data_sub[data_sub > 0])
+    if total <= 0:
+        return None
+    
+    # Estimate gamma (related to FWHM) - start with ~2 pixels
+    gamma_init = 2.0
+    alpha_init = 2.5  # Typical Moffat beta
+    
+    # Create Moffat2D model
+    moffat_init = astropy_models.Moffat2D(
+        amplitude=amplitude,
+        x_0=x_center,
+        y_0=y_center,
+        gamma=gamma_init,
+        alpha=alpha_init
+    )
+    
+    # Set bounds to keep parameters physical
+    moffat_init.amplitude.bounds = (0, amplitude * 2)
+    moffat_init.x_0.bounds = (x_center - 3, x_center + 3)
+    moffat_init.y_0.bounds = (y_center - 3, y_center + 3)
+    moffat_init.gamma.bounds = (0.5, 10.0)
+    moffat_init.alpha.bounds = (1.0, 10.0)
+    
+    # Fit
+    fitter = astropy_fitting.LevMarLSQFitter()
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        try:
+            moffat_fit = fitter(moffat_init, x, y, data_sub, maxiter=500)
+        except Exception:
+            return None
+    
+    # Extract parameters
+    gamma = moffat_fit.gamma.value
+    alpha = moffat_fit.alpha.value  # This is beta in the Moffat literature
+    amplitude_fit = moffat_fit.amplitude.value
+    
+    # Calculate FWHM from gamma and alpha (beta)
+    # FWHM = 2 * gamma * sqrt(2^(1/alpha) - 1)
+    fwhm = 2.0 * gamma * np.sqrt(2.0**(1.0/alpha) - 1.0)
+    
+    # Calculate fit quality (normalized residual)
+    model_image = moffat_fit(x, y)
+    residual = data_sub - model_image
+    
+    # Use pixels within FWHM for residual calculation
+    mask = ((x - moffat_fit.x_0.value)**2 + (y - moffat_fit.y_0.value)**2) < (fwhm * 1.5)**2
+    if np.sum(mask) > 0:
+        fit_quality = np.sqrt(np.mean(residual[mask]**2)) / amplitude_fit
+    else:
+        fit_quality = np.sqrt(np.mean(residual**2)) / amplitude_fit
+    
+    # Sanity checks
+    if fwhm < 0.5 or fwhm > 20:
+        return None
+    if alpha < 1.0 or alpha > 10:
+        return None
+    if fit_quality > 0.5:  # Very poor fit
+        return None
+    
+    return {
+        'fwhm': fwhm,
+        'beta': alpha,
+        'gamma': gamma,
+        'amplitude': amplitude_fit,
+        'x_fit': moffat_fit.x_0.value,
+        'y_fit': moffat_fit.y_0.value,
+        'fit_quality': fit_quality,
+        'model': moffat_fit  # Store the fitted model for plotting
+    }
 
 
 
@@ -410,7 +543,7 @@ class MyGUI:
     filter_entry = None
     max_qfit_entry = None
     moffat_beta_entry = None
-    min_separation_factor_entry = None
+    min_separation_bias_entry = None
     extinction_B_entry = None
     extinction_V_entry = None
     extinction_I_entry = None
@@ -434,7 +567,386 @@ class MyGUI:
         self.console.see(tk.END)
         self.window.update_idletasks()
         self.our_logger.log(level=level, msg=MAOPhot_message)
+
+#######################################################################################
+#
+# check_image_parameters
+#
+# Validates and returns image analysis parameters from settings entries.
+# Returns a dictionary of validated parameters or None if critical parameters invalid.
+#
+#######################################################################################
+
+    def check_image_parameters(self):
+        """
+        Validates and returns image analysis parameters from settings entries.
         
+        Returns
+        -------
+        dict or None
+            Dictionary containing validated parameters:
+            - fwhm: float, FWHM estimate in pixels
+            - threshold_factor: int, star detection threshold factor
+            - linearity_limit: int, saturation/linearity limit
+            - n_peaks: int or None, maximum number of peaks
+            Returns None if critical parameters are invalid.
+        """
+        params = {}
+        
+        # Test fwhm
+        if self.fwhm_entry is not None and is_number(self.fwhm_entry.get().strip()):
+            params['fwhm'] = float(self.fwhm_entry.get())
+        else:
+            self.console_msg("FWHM not numeric, using 3.0")
+            params['fwhm'] = 3.0
+
+        # Test star_detection_threshold_factor
+        if self.star_detection_threshold_factor_entry is not None:
+            thresh_val = self.star_detection_threshold_factor_entry.get().strip()
+            if thresh_val.isnumeric():
+                params['threshold_factor'] = int(thresh_val)
+            else:
+                self.console_msg("Detection threshold factor not numeric, using 10")
+                params['threshold_factor'] = 10
+        else:
+            params['threshold_factor'] = 10
+
+        # Test linearity_limit_entry 
+        if self.linearity_limit_entry is not None:
+            linearity_val = self.linearity_limit_entry.get().strip()
+            if linearity_val and linearity_val.isnumeric():
+                params['linearity_limit'] = int(linearity_val)
+            else:
+                self.console_msg("Linearity limit not valid, using 60000")
+                params['linearity_limit'] = 60000
+        else:
+            params['linearity_limit'] = 60000
+
+        # Test find_peaks_npeaks_entry (can be None for unlimited)
+        if self.find_peaks_npeaks_entry is not None:
+            npeaks_val = self.find_peaks_npeaks_entry.get().strip()
+            if npeaks_val and npeaks_val.isnumeric():
+                params['n_peaks'] = int(npeaks_val)
+            else:
+                params['n_peaks'] = None  # Unlimited
+        else:
+            params['n_peaks'] = None
+            
+        return params
+
+#######################################################################################
+#
+# estimate_and_update_psf_params
+#
+# Estimates FWHM and Moffat beta from stars in the loaded image and updates
+# the corresponding settings entries.
+#
+#######################################################################################
+
+    def estimate_and_update_psf_params(self):
+        """
+        Estimates FWHM and Moffat beta from stars in the loaded image.
+        Updates self.fwhm_entry and self.moffat_beta_entry with the results.
+        Also generates a diagnostic plot.
+        """
+        global image_data
+        
+        try:
+            self.console_msg("PSF Estimation: starting...")
+            
+            # Check that image is loaded
+            if len(image_data) == 0:
+                self.console_msg("PSF Estimation: no image loaded, skipping")
+                return
+            
+            # Get validated parameters
+            params = self.check_image_parameters()
+            if params is None:
+                self.console_msg("PSF Estimation: invalid parameters, skipping")
+                return
+            
+            fwhm_estimate = params['fwhm']
+            threshold_factor = params['threshold_factor']
+            saturation_limit = params['linearity_limit']
+            n_stars = params['n_peaks'] if params['n_peaks'] is not None else 30
+            
+            # Limit n_stars for PSF estimation (don't need hundreds)
+            n_stars = min(n_stars, 100)
+            if n_stars < 10:
+                n_stars = 30
+            
+            cutout_size = 25  # Hardcoded as specified
+            
+            self.console_msg(f"PSF Estimation: using n_stars={n_stars}, fwhm_estimate={fwhm_estimate:.1f}, threshold_factor={threshold_factor}, saturation={saturation_limit}")
+            
+            # Estimate background
+            mean, median, std = sigma_clipped_stats(image_data, sigma=2.0)
+            threshold = threshold_factor * std
+            
+            self.console_msg(f"PSF Estimation: background median={median:.1f}, std={std:.1f}, threshold={threshold:.1f}")
+            
+            # Background-subtracted data
+            data_sub = image_data - median
+            
+            # Detect stars using DAOStarFinder
+            daofind = DAOStarFinder(
+                fwhm=fwhm_estimate,
+                threshold=threshold,
+                sharplo=0.2,
+                sharphi=1.0,
+                roundlo=-1.0,
+                roundhi=1.0,
+                peakmax=float(saturation_limit) * 0.9,  # Stay below saturation
+                exclude_border=True
+            )
+            
+            sources = daofind(data_sub)
+            
+            if sources is None or len(sources) == 0:
+                self.console_msg("PSF Estimation: no stars detected, skipping")
+                return
+            
+            self.console_msg(f"PSF Estimation: detected {len(sources)} sources")
+            
+            # Compute minimum separation to avoid overlapping cutouts
+            min_separation = cutout_size + fwhm_estimate
+            
+            # Sort by flux (descending) and select isolated stars
+            sources.sort('flux', reverse=True)
+            
+            selected_sources = []
+            for row in sources:
+                x, y = row['xcentroid'], row['ycentroid']
+                
+                # Check isolation
+                is_isolated = True
+                for selected in selected_sources:
+                    sx, sy = selected['xcentroid'], selected['ycentroid']
+                    dist = np.sqrt((x - sx)**2 + (y - sy)**2)
+                    if dist < min_separation:
+                        is_isolated = False
+                        break
+                
+                if is_isolated:
+                    selected_sources.append(row)
+                    if len(selected_sources) >= n_stars * 2:  # Get extra in case some fits fail
+                        break
+            
+            self.console_msg(f"PSF Estimation: selected {len(selected_sources)} isolated stars for fitting")
+            
+            # Fit Moffat to each star
+            results = []
+            for row in selected_sources:
+                x, y = row['xcentroid'], row['ycentroid']
+                
+                # Extract cutout from background-subtracted data
+                cutout, x_local, y_local = extract_star_cutout(data_sub, x, y, size=cutout_size)
+                if cutout is None:
+                    continue
+                
+                fit_result = fit_moffat_2d(cutout, x_local, y_local)
+                if fit_result is not None:
+                    fit_result['x_image'] = x
+                    fit_result['y_image'] = y
+                    results.append(fit_result)
+                
+                if len(results) >= n_stars:
+                    break
+            
+            if len(results) < 3:
+                self.console_msg(f"PSF Estimation: only {len(results)} stars fit successfully, need at least 3")
+                return
+            
+            self.console_msg(f"PSF Estimation: successfully fit {len(results)} stars")
+            
+            # Calculate statistics using sigma clipping
+            fwhms = np.array([r['fwhm'] for r in results])
+            betas = np.array([r['beta'] for r in results])
+            qualities = np.array([r['fit_quality'] for r in results])
+            
+            fwhm_mean, fwhm_median, fwhm_std = sigma_clipped_stats(fwhms, sigma=2.5)
+            beta_mean, beta_median, beta_std = sigma_clipped_stats(betas, sigma=2.5)
+            
+            self.console_msg(f"PSF Estimation Results:")
+            self.console_msg(f"  FWHM: median={fwhm_median:.3f}, mean={fwhm_mean:.3f}, std={fwhm_std:.3f} pixels")
+            self.console_msg(f"  Beta: median={beta_median:.3f}, mean={beta_mean:.3f}, std={beta_std:.3f}")
+            self.console_msg(f"  Median fit quality: {np.median(qualities):.4f}")
+            
+            # Update the settings entries
+            if self.fwhm_entry is not None:
+                self.set_entry_text(self.fwhm_entry, f"{fwhm_median:.2f}")
+                self.console_msg(f"PSF Estimation: updated FWHM entry to {fwhm_median:.2f}")
+            
+            if self.moffat_beta_entry is not None:
+                self.set_entry_text(self.moffat_beta_entry, f"{beta_median:.2f}")
+                self.console_msg(f"PSF Estimation: updated Moffat \u03B2 entry to {beta_median:.2f}")
+            
+            # Generate diagnostic plot (pass data_sub for example star profile)
+            self.plot_psf_estimation_results(results, fwhm_median, beta_median, 
+                                             fwhm_std, beta_std, np.median(qualities),
+                                             data_sub)
+            
+            self.console_msg("PSF Estimation: complete")
+            self.console_msg("Ready")
+            
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg(f"PSF Estimation Exception at line {exc_tb.tb_lineno}: {str(e)}", level=logging.ERROR)
+
+#######################################################################################
+#
+# plot_psf_estimation_results
+#
+# Generates diagnostic plots for PSF estimation results
+#
+#######################################################################################
+
+    def plot_psf_estimation_results(self, results, fwhm_median, beta_median, 
+                                     fwhm_std, beta_std, median_quality, data_sub):
+        """
+        Generate diagnostic plots for PSF estimation results.
+        
+        Parameters
+        ----------
+        results : list of dict
+            List of fit results for each star
+        fwhm_median : float
+            Median FWHM value
+        beta_median : float
+            Median Moffat beta value
+        fwhm_std : float
+            Standard deviation of FWHM
+        beta_std : float
+            Standard deviation of beta
+        median_quality : float
+            Median fit quality
+        data_sub : 2D array
+            Background-subtracted image data for extracting example cutout
+        """
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Create a new figure with a specific number to avoid interfering 
+            # with MAOPhot's embedded canvases
+            fig = plt.figure(num='PSF Estimation Results', figsize=(14, 9), clear=True)
+            axes = fig.subplots(2, 3)
+            fig.suptitle('PSF Parameter Estimation Results', fontsize=12)
+            
+            fwhms = [r['fwhm'] for r in results]
+            betas = [r['beta'] for r in results]
+            qualities = [r['fit_quality'] for r in results]
+            
+            # 1. FWHM histogram
+            ax = axes[0, 0]
+            ax.hist(fwhms, bins=15, edgecolor='black', alpha=0.7)
+            ax.axvline(fwhm_median, color='red', linestyle='--', 
+                       label=f"Median: {fwhm_median:.2f}")
+            ax.set_xlabel('FWHM (pixels)')
+            ax.set_ylabel('Count')
+            ax.set_title('FWHM Distribution')
+            ax.legend()
+            
+            # 2. Beta histogram
+            ax = axes[0, 1]
+            ax.hist(betas, bins=15, edgecolor='black', alpha=0.7, color='orange')
+            ax.axvline(beta_median, color='red', linestyle='--',
+                       label=f"Median: {beta_median:.2f}")
+            ax.set_xlabel('Moffat Beta')
+            ax.set_ylabel('Count')
+            ax.set_title('Beta Distribution')
+            ax.legend()
+            
+            # 3. FWHM vs Beta scatter
+            ax = axes[0, 2]
+            ax.scatter(fwhms, betas, alpha=0.6, edgecolors='black', linewidths=0.5)
+            ax.axhline(beta_median, color='red', linestyle='--', alpha=0.5)
+            ax.axvline(fwhm_median, color='red', linestyle='--', alpha=0.5)
+            ax.set_xlabel('FWHM (pixels)')
+            ax.set_ylabel('Moffat Beta')
+            ax.set_title('FWHM vs Beta')
+            
+            # 4. Fit quality histogram
+            ax = axes[1, 0]
+            ax.hist(qualities, bins=15, edgecolor='black', alpha=0.7, color='green')
+            ax.axvline(median_quality, color='red', linestyle='--',
+                       label=f"Median: {median_quality:.3f}")
+            ax.set_xlabel('Fit Quality (lower is better)')
+            ax.set_ylabel('Count')
+            ax.set_title('Fit Quality Distribution')
+            ax.legend()
+            
+            # 5. Example star profile
+            ax = axes[1, 1]
+            # Find the star with FWHM closest to median
+            closest_idx = np.argmin([abs(r['fwhm'] - fwhm_median) for r in results])
+            example = results[closest_idx]
+            
+            # Extract cutout for this star from background-subtracted data
+            cutout_size = 21
+            cutout, x_local, y_local = extract_star_cutout(
+                data_sub, example['x_image'], example['y_image'], size=cutout_size)
+            
+            if cutout is not None:
+                size = cutout.shape[0]
+                center = size // 2
+                
+                # Extract profile along the central row of the cutout
+                profile_data = cutout[center, :]
+                
+                # X positions relative to cutout center
+                x_plot = np.arange(size) - center
+                ax.plot(x_plot, profile_data, 'ko', markersize=4, label='Data')
+                
+                # Use the stored model to evaluate along the central row
+                # The model expects coordinates in cutout space
+                x_fine = np.linspace(-center, center, 100)
+                model = example['model']
+                # Evaluate model at (x + x_fit, y_fit) to get profile through star center
+                y_model = model(x_fine + example['x_fit'], 
+                               np.full_like(x_fine, example['y_fit']))
+                ax.plot(x_fine, y_model, 'r-', linewidth=2, label='Moffat fit')
+                
+                ax.set_xlabel('Offset from center (pixels)')
+                ax.set_ylabel('Counts (background subtracted)')
+                ax.set_title(f'Example Star Profile\nFWHM={example["fwhm"]:.2f}, β={example["beta"]:.2f}')
+                ax.legend()
+                ax.set_xlim(-8, 8)
+            else:
+                ax.text(0.5, 0.5, 'Could not extract example star', 
+                        transform=ax.transAxes, ha='center', va='center')
+                ax.set_title('Example Star Profile')
+            
+            # 6. Star positions on image
+            ax = axes[1, 2]
+            # Show image with stars marked
+            norm = simple_norm(data_sub, 'sqrt', percent=99)
+            ax.imshow(data_sub, origin='lower', cmap='gray', norm=norm)
+            
+            xs = [r['x_image'] for r in results]
+            ys = [r['y_image'] for r in results]
+            ax.scatter(xs, ys, s=50, facecolors='none', edgecolors='cyan', linewidths=1.5)
+            ax.set_title(f'Stars Used ({len(results)} total)')
+            ax.set_xlabel('X (pixels)')
+            ax.set_ylabel('Y (pixels)')
+            
+            plt.tight_layout()
+            
+            # Save the figure
+            if self.image_file:
+                plot_file = self.image_file + "_psf_estimation.png"
+            else:
+                plot_file = "psf_estimation.png"
+            
+            plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+            self.console_msg(f"PSF Estimation: diagnostic plot saved to {plot_file}")
+            
+            # Show only this specific figure
+            fig.show()
+            
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg(f"PSF Estimation Plot Exception at line {exc_tb.tb_lineno}: {str(e)}", level=logging.ERROR)
+
 #######################################################################################
 #
 # display_image
@@ -612,6 +1124,10 @@ class MyGUI:
             try:
                 self.load_FITS(image_file)
                 self.clear_ePSF()
+                
+                # Estimate PSF parameters (FWHM and Moffat beta) from the image
+                # and update the corresponding settings entries
+                self.estimate_and_update_psf_params()
                 
             except Exception as e:
                 self.error_raised = True
@@ -1283,14 +1799,17 @@ class MyGUI:
                 self.console_msg("Lower Bound for Sharpness not numeric, using 0.2 (DAOStarFinder default)")
                 sharplo = 0.2 # DAOStarFinder default
 
-            # test min_separation_factor_entry
-            if is_number(self.min_separation_factor_entry.get().strip()):
-                min_separation = float(self.min_separation_factor_entry.get()) * (self.fit_shape-1)/2
-                grouper = SourceGrouper(min_separation)
-                self.console_msg("Min Separation for Grouper set to: " + format(min_separation, '4.2f'))
+            # test min_separation_bias_entry
+            if is_number(self.min_separation_bias_entry.get().strip()):
+                min_separation_bias = float(self.min_separation_bias_entry.get().strip())
             else:
-                self.console_msg("Min Separation: None; no grouping performed; !!!!each source fit independently!!!!")
-                grouper = None
+                self.console_msg("Min Separation: NaN; setting to 0")
+                min_separation_bias = 0
+
+            self.console_msg("Min Separation bias set to: " + format(min_separation_bias, '4.2f'))
+            min_separation = fwhm/2 + (self.fit_shape-1)/2 + min_separation_bias
+            grouper = SourceGrouper(min_separation)
+            self.console_msg("Min Separation for Grouper set to: " + format(min_separation, '4.2f'))
 
             # test max qfit
             if is_number(self.max_qfit_entry.get().strip()):
@@ -3551,10 +4070,10 @@ class MyGUI:
             self.fit_width_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fit_width_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
-            min_separation_factor_label = tk.Label(settings_left_frame, text="Min Separation Factor, (x fitting radius):")
-            min_separation_factor_label.grid(row=row, column=3, sticky=tk.E)
-            self.min_separation_factor_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
-            self.min_separation_factor_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
+            min_separation_bias_label = tk.Label(settings_left_frame, text="Min Separation Bias,(added to FWHM/2+Fitting Width/2):")
+            min_separation_bias_label.grid(row=row, column=3, sticky=tk.E)
+            self.min_separation_bias_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
+            self.min_separation_bias_entry.grid(row=row, column=4, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
             max_ensemble_magnitude_label = tk.Label(settings_left_frame, text="Maximum Ensemble Magnitude:")
@@ -5661,7 +6180,7 @@ class MyGUI:
             'filter_entry': self.filter_entry,
             'max_qfit_entry': self.max_qfit_entry,
             'moffat_beta_entry': self.moffat_beta_entry,
-            'min_separation_factor_entry': self.min_separation_factor_entry,
+            'min_separation_bias_entry': self.min_separation_bias_entry,
             'tbv_err_entry': self.tbv_err_entry,
             'tv_bv_err_entry': self.tv_bv_err_entry,
             'tb_bv_err_entry': self.tb_bv_err_entry,
