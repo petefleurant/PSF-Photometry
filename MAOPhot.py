@@ -214,7 +214,7 @@ from time import gmtime, strftime
 from tkinter import filedialog as fd
 from tkinter import simpledialog
 from tkinter import ttk
-from tkinter.messagebox import askokcancel
+from tkinter.messagebox import askokcancel, askyesno
 from tqdm import tqdm
 import csv
 import datetime
@@ -1261,9 +1261,15 @@ class MyGUI:
                 self.load_FITS(image_file)
                 self.clear_ePSF()
                 
-                # Estimate PSF parameters (FWHM and Moffat beta) from the image
-                # and update the corresponding settings entries
-                self.estimate_and_update_psf_params()
+                result = askyesno(title="Option to Estimate PSF Parameters", message="Do you want to estimate FWHM and Moffat \u03B2?")
+
+                if result==True:
+                    # Estimate PSF parameters (FWHM and Moffat beta) from the image
+                    # and update the corresponding settings entries
+                    self.estimate_and_update_psf_params()
+                else:
+                    self.console_msg("User not estimating and updating PSF parameters")
+                    self.console_msg("Ready")
                 
             except Exception as e:
                 self.error_raised = True
