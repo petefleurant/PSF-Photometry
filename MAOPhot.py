@@ -185,7 +185,7 @@ from astropy.modeling.fitting import TRFLSQFitter, SLSQPLSQFitter, SimplexLSQFit
 from astropy.nddata import Cutout2D
 from astropy.nddata import NDData
 from astropy.stats import gaussian_sigma_to_fwhm
-from astropy.stats import sigma_clipped_stats
+from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.stats import SigmaClip
 from astropy.table import Table, QTable
 from astropy.time import Time, TimeDelta
@@ -763,10 +763,58 @@ class MyGUI:
             fwhms = np.array([r['fwhm'] for r in results])
             betas = np.array([r['beta'] for r in results])
             qualities = np.array([r['fit_quality'] for r in results])
+
+            # First pass: sigma clip to remove extreme outliers
+            fwhm_clipped, fwhm_low, fwhm_high = sigma_clip(fwhms, sigma=2.5, masked=False, return_bounds=True)
+            beta_clipped, beta_low, beta_high = sigma_clip(betas, sigma=2.5, masked=False, return_bounds=True)
             
-            fwhm_mean, fwhm_median, fwhm_std = sigma_clipped_stats(fwhms, sigma=2.5)
-            beta_mean, beta_median, beta_std = sigma_clipped_stats(betas, sigma=2.5)
+            # Create mask for values that survived clipping
+            fwhm_mask = (fwhms >= fwhm_low) & (fwhms <= fwhm_high)
+            beta_mask = (betas >= beta_low) & (betas <= beta_high)
+            combined_mask = fwhm_mask & beta_mask
             
+            # Also exclude fits that hit parameter bounds (beta=1 is suspicious)
+            bound_mask = betas > 1.05  # Exclude fits that landed near lower bound
+            combined_mask = combined_mask & bound_mask
+            
+            # Apply mask
+            fwhms_good = fwhms[combined_mask]
+            betas_good = betas[combined_mask]
+            qualities_good = qualities[combined_mask]
+            
+            if len(fwhms_good) < 5:
+                # Fall back to simple sigma-clipped stats if too few good fits
+                self.console_msg("Warning: Few high-quality fits (<5), using sigma-clipped stats")
+                fwhm_mean, fwhm_median, fwhm_std = sigma_clipped_stats(fwhms, sigma=2.5)
+                beta_mean, beta_median, beta_std = sigma_clipped_stats(betas, sigma=2.5)
+            else:
+                # Convert quality to weights (lower residual = higher weight)
+                # Use inverse quality, normalized
+                weights = 1.0 / (qualities_good + 0.001)  # Add small value to avoid div by zero
+                weights = weights / np.sum(weights)  # Normalize to sum to 1
+                
+                # Weighted statistics
+                fwhm_mean = np.average(fwhms_good, weights=weights)
+                beta_mean = np.average(betas_good, weights=weights)
+                
+                # For weighted median, use weighted percentile approach
+                def weighted_median(values, weights):
+                    """Calculate weighted median."""
+                    sorted_indices = np.argsort(values)
+                    sorted_values = values[sorted_indices]
+                    sorted_weights = weights[sorted_indices]
+                    cumsum = np.cumsum(sorted_weights)
+                    median_idx = np.searchsorted(cumsum, 0.5)
+                    return sorted_values[min(median_idx, len(sorted_values)-1)]
+                
+                fwhm_median = weighted_median(fwhms_good, weights)
+                beta_median = weighted_median(betas_good, weights)
+                
+                # Weighted standard deviation
+                fwhm_std = np.sqrt(np.average((fwhms_good - fwhm_mean)**2, weights=weights))
+                beta_std = np.sqrt(np.average((betas_good - beta_mean)**2, weights=weights))
+            
+
             self.console_msg(f"PSF Estimation Results:")
             self.console_msg(f"  FWHM: median={fwhm_median:.3f}, mean={fwhm_mean:.3f}, std={fwhm_std:.3f} pixels")
             self.console_msg(f"  Beta: median={beta_median:.3f}, mean={beta_mean:.3f}, std={beta_std:.3f}")
@@ -777,15 +825,21 @@ class MyGUI:
                 self.set_entry_text(self.fwhm_entry, f"{fwhm_median:.2f}")
                 self.console_msg(f"PSF Estimation: updated FWHM entry to {fwhm_median:.2f}")
             
+            #Keep beta_median, resonable
+            beta_median = max(beta_median, 1.5)
+
             if self.moffat_beta_entry is not None:
                 self.set_entry_text(self.moffat_beta_entry, f"{beta_median:.2f}")
                 self.console_msg(f"PSF Estimation: updated Moffat \u03B2 entry to {beta_median:.2f}")
             
+            raw_fwhm_median = np.median(fwhms)
+            raw_beta_median = np.median(betas)
+
             # Generate diagnostic plot (pass data_sub for example star profile)
-            self.plot_psf_estimation_results(results, fwhm_median, beta_median, 
-                                             fwhm_std, beta_std, np.median(qualities),
-                                             data_sub)
-            
+            self.plot_psf_estimation_results(results, fwhm_median, beta_median,
+                                            fwhm_std, beta_std, median_quality=None, data_sub=data_sub,
+                                            raw_fwhm_median=raw_fwhm_median, raw_beta_median=raw_beta_median)
+
             self.console_msg("PSF Estimation: complete")
             self.console_msg("Ready")
             
@@ -802,7 +856,8 @@ class MyGUI:
 #######################################################################################
 
     def plot_psf_estimation_results(self, results, fwhm_median, beta_median, 
-                                     fwhm_std, beta_std, median_quality, data_sub):
+                                     fwhm_std, beta_std, median_quality, data_sub,
+                                     raw_fwhm_median=None, raw_beta_median=None):
         """
         Generate diagnostic plots for PSF estimation results.
         
@@ -811,9 +866,9 @@ class MyGUI:
         results : list of dict
             List of fit results for each star
         fwhm_median : float
-            Median FWHM value
+            Median FWHM value (quality-weighted if weighting was applied)
         beta_median : float
-            Median Moffat beta value
+            Median Moffat beta value (quality-weighted if weighting was applied)
         fwhm_std : float
             Standard deviation of FWHM
         beta_std : float
@@ -822,6 +877,10 @@ class MyGUI:
             Median fit quality
         data_sub : 2D array
             Background-subtracted image data for extracting example cutout
+        raw_fwhm_median : float, optional
+            Unweighted median FWHM (for comparison, if weighting was applied)
+        raw_beta_median : float, optional
+            Unweighted median beta (for comparison, if weighting was applied)
         """
         try:
             import matplotlib.pyplot as plt
@@ -832,54 +891,119 @@ class MyGUI:
             axes = fig.subplots(2, 3)
             fig.suptitle('PSF Parameter Estimation Results', fontsize=12)
             
-            fwhms = [r['fwhm'] for r in results]
-            betas = [r['beta'] for r in results]
-            qualities = [r['fit_quality'] for r in results]
+            fwhms = np.array([r['fwhm'] for r in results])
+            betas = np.array([r['beta'] for r in results])
+            qualities = np.array([r['fit_quality'] for r in results])
+            
+            # Identify boundary hits (beta near lower bound of 1.0)
+            boundary_mask = betas < 1.05
+            n_boundary = np.sum(boundary_mask)
             
             # 1. FWHM histogram
             ax = axes[0, 0]
             ax.hist(fwhms, bins=15, edgecolor='black', alpha=0.7)
-            ax.axvline(fwhm_median, color='red', linestyle='--', 
+            ax.axvline(fwhm_median, color='red', linestyle='--', linewidth=2,
                        label=f"Median: {fwhm_median:.2f}")
+            if raw_fwhm_median is not None and abs(raw_fwhm_median - fwhm_median) > 0.05:
+                ax.axvline(raw_fwhm_median, color='orange', linestyle=':', linewidth=2,
+                           label=f"Raw median: {raw_fwhm_median:.2f}")
             ax.set_xlabel('FWHM (pixels)')
             ax.set_ylabel('Count')
             ax.set_title('FWHM Distribution')
             ax.legend()
             
-            # 2. Beta histogram
+            # 2. Beta histogram - enhanced to show boundary hits
             ax = axes[0, 1]
-            ax.hist(betas, bins=15, edgecolor='black', alpha=0.7, color='orange')
-            ax.axvline(beta_median, color='red', linestyle='--',
-                       label=f"Median: {beta_median:.2f}")
-            ax.set_xlabel('Moffat Beta')
-            ax.set_ylabel('Count')
-            ax.set_title('Beta Distribution')
-            ax.legend()
             
-            # 3. FWHM vs Beta scatter
+            # Create histogram with custom coloring for boundary hits
+            bin_edges = np.linspace(max(0.5, betas.min() - 0.2), min(8, betas.max() + 0.2), 16)
+            n, bins, patches = ax.hist(betas, bins=bin_edges, edgecolor='black', alpha=0.7)
+            
+            # Color bars red if they contain boundary hits (beta < 1.05)
+            for i, patch in enumerate(patches):
+                bin_left = bins[i]
+                bin_right = bins[i + 1]
+                if bin_right <= 1.05:  # Bin entirely in boundary region
+                    patch.set_facecolor('red')
+                elif bin_left < 1.05:  # Bin partially in boundary region
+                    patch.set_facecolor('salmon')
+                else:
+                    patch.set_facecolor('steelblue')
+            
+            ax.axvline(beta_median, color='green', linestyle='-', linewidth=2,
+                       label=f"Weighted median: {beta_median:.2f}")
+            if raw_beta_median is not None and abs(raw_beta_median - beta_median) > 0.1:
+                ax.axvline(raw_beta_median, color='red', linestyle=':', linewidth=2,
+                           label=f"Raw median: {raw_beta_median:.2f}")
+            
+            ax.set_xlabel('Moffat β')
+            ax.set_ylabel('Count')
+            ax.set_title('β Distribution')
+            ax.legend(loc='upper right', fontsize=9)
+            
+            # Add warning text if boundary hits detected
+            if n_boundary > 0:
+                ax.text(0.05, 0.95, f'{n_boundary} fits hit bound (β≈1)',
+                        transform=ax.transAxes, fontsize=9,
+                        verticalalignment='top', color='red',
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
+            
+            # 3. FWHM vs Beta scatter - color by fit quality
             ax = axes[0, 2]
-            ax.scatter(fwhms, betas, alpha=0.6, edgecolors='black', linewidths=0.5)
-            ax.axhline(beta_median, color='red', linestyle='--', alpha=0.5)
-            ax.axvline(fwhm_median, color='red', linestyle='--', alpha=0.5)
+            
+            # Color points: red for boundary hits, otherwise by quality
+            colors = np.where(boundary_mask, 'red', 'steelblue')
+            scatter = ax.scatter(fwhms[~boundary_mask], betas[~boundary_mask], 
+                                c=qualities[~boundary_mask], cmap='viridis_r',
+                                alpha=0.7, edgecolors='black', linewidths=0.5,
+                                label='Good fits')
+            if n_boundary > 0:
+                ax.scatter(fwhms[boundary_mask], betas[boundary_mask], 
+                          c='red', marker='x', s=60, linewidths=2,
+                          label=f'Boundary hits ({n_boundary})')
+            
+            ax.axhline(beta_median, color='green', linestyle='-', alpha=0.7, linewidth=1.5)
+            ax.axvline(fwhm_median, color='green', linestyle='-', alpha=0.7, linewidth=1.5)
             ax.set_xlabel('FWHM (pixels)')
-            ax.set_ylabel('Moffat Beta')
-            ax.set_title('FWHM vs Beta')
+            ax.set_ylabel('Moffat β')
+            ax.set_title('FWHM vs β (color = fit quality)')
+            ax.legend(loc='upper right', fontsize=8)
             
-            # 4. Fit quality histogram
+            # Add colorbar for quality
+            cbar = plt.colorbar(scatter, ax=ax, shrink=0.8)
+            cbar.set_label('Fit quality', fontsize=8)
+            
+            # 4. Beta vs Fit quality scatter - key diagnostic
             ax = axes[1, 0]
-            ax.hist(qualities, bins=15, edgecolor='black', alpha=0.7, color='green')
-            ax.axvline(median_quality, color='red', linestyle='--',
-                       label=f"Median: {median_quality:.3f}")
-            ax.set_xlabel('Fit Quality (lower is better)')
-            ax.set_ylabel('Count')
-            ax.set_title('Fit Quality Distribution')
-            ax.legend()
             
-            # 5. Example star profile
+            colors = np.where(boundary_mask, 'red', 'steelblue')
+            ax.scatter(betas[~boundary_mask], qualities[~boundary_mask], 
+                      c='steelblue', alpha=0.6, edgecolors='black', linewidths=0.5,
+                      label='Used in statistics')
+            if n_boundary > 0:
+                ax.scatter(betas[boundary_mask], qualities[boundary_mask], 
+                          c='red', marker='x', s=60, linewidths=2,
+                          label=f'Excluded ({n_boundary})')
+            
+            ax.axvline(1.05, color='red', linestyle=':', alpha=0.5, 
+                       label='Boundary threshold')
+            ax.set_xlabel('Moffat β')
+            ax.set_ylabel('Fit Quality (lower is better)')
+            ax.set_title('β vs Fit Quality')
+            ax.legend(loc='upper right', fontsize=8)
+            
+            # 5. Example star profile - choose from GOOD fits only
             ax = axes[1, 1]
-            # Find the star with FWHM closest to median
-            closest_idx = np.argmin([abs(r['fwhm'] - fwhm_median) for r in results])
-            example = results[closest_idx]
+            
+            # Find the star with FWHM closest to median, excluding boundary hits
+            good_results = [r for r in results if r['beta'] >= 1.05]
+            if good_results:
+                closest_idx = np.argmin([abs(r['fwhm'] - fwhm_median) for r in good_results])
+                example = good_results[closest_idx]
+            else:
+                # Fall back to closest overall if no good fits
+                closest_idx = np.argmin([abs(r['fwhm'] - fwhm_median) for r in results])
+                example = results[closest_idx]
             
             # Extract cutout for this star from background-subtracted data
             cutout_size = 21
@@ -908,7 +1032,7 @@ class MyGUI:
                 
                 ax.set_xlabel('Offset from center (pixels)')
                 ax.set_ylabel('Counts (background subtracted)')
-                ax.set_title(f'Example Star Profile\nFWHM={example["fwhm"]:.2f}, β={example["beta"]:.2f}')
+                ax.set_title(f'Example Star Profile\nFWHM={example["fwhm"]:.2f}, β={example["beta"]:.2f}, qual={example["fit_quality"]:.4f}')
                 ax.legend()
                 ax.set_xlim(-8, 8)
             else:
@@ -916,18 +1040,28 @@ class MyGUI:
                         transform=ax.transAxes, ha='center', va='center')
                 ax.set_title('Example Star Profile')
             
-            # 6. Star positions on image
+            # 6. Star positions on image - mark boundary hits differently
             ax = axes[1, 2]
             # Show image with stars marked
             norm = simple_norm(data_sub, 'sqrt', percent=99)
             ax.imshow(data_sub, origin='lower', cmap='gray', norm=norm)
             
-            xs = [r['x_image'] for r in results]
-            ys = [r['y_image'] for r in results]
-            ax.scatter(xs, ys, s=50, facecolors='none', edgecolors='cyan', linewidths=1.5)
+            xs = np.array([r['x_image'] for r in results])
+            ys = np.array([r['y_image'] for r in results])
+            
+            # Plot good fits in cyan, boundary hits in red
+            ax.scatter(xs[~boundary_mask], ys[~boundary_mask], s=50, 
+                      facecolors='none', edgecolors='cyan', linewidths=1.5,
+                      label=f'Good fits ({np.sum(~boundary_mask)})')
+            if n_boundary > 0:
+                ax.scatter(xs[boundary_mask], ys[boundary_mask], s=50, 
+                          facecolors='none', edgecolors='red', linewidths=2,
+                          marker='s', label=f'Boundary hits ({n_boundary})')
+            
             ax.set_title(f'Stars Used ({len(results)} total)')
             ax.set_xlabel('X (pixels)')
             ax.set_ylabel('Y (pixels)')
+            ax.legend(loc='upper right', fontsize=8)
             
             plt.tight_layout()
             
@@ -946,6 +1080,7 @@ class MyGUI:
         except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg(f"PSF Estimation Plot Exception at line {exc_tb.tb_lineno}: {str(e)}", level=logging.ERROR)
+
 
 #######################################################################################
 #
