@@ -697,7 +697,8 @@ class MyGUI:
                 roundlo=-1.0,
                 roundhi=1.0,
                 peakmax=float(saturation_limit) * 0.9,  # Stay below saturation
-                exclude_border=True
+                exclude_border=True,
+                min_separation=fwhm_estimate
             )
             
             sources = daofind(data_sub)
@@ -1402,7 +1403,8 @@ class MyGUI:
                                        fwhm=fwhm,
                                         peakmax=float(linearity_limit),
                                         brightest=user_npeaks,
-                                        exclude_border=True
+                                        exclude_border=True,
+                                        min_separation=fwhm
                                        )
 
             peaks_tbl = QTable(star_find(data=image_data - median))
@@ -1985,7 +1987,8 @@ class MyGUI:
                                       sharplo=sharplo,
                                       peakmax=float(linearity_limit),
                                       brightest=user_npeaks,
-                                      exclude_border=True
+                                      exclude_border=True,  
+                                      min_separation=fwhm  
                                       )
 
             # subtract background
