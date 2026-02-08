@@ -9,7 +9,7 @@ Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy 7.1.1 and Photuti
 3)  Added qfit metrics to console output after Two Color Photometry
 4)	Corrected problem with Object Name’s alpha and delta values
 5)	Replace Min Separation Factor with Min Separation Bias
-6)	Added PSF Estimation and it is executed after a FITS file is opened. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot displaying the work is popped up
+6)	Added PSF Estimation and it is optionally executed after a FITS file is opened. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot displaying the work is popped up
 
 ## Version 1.1.9 Changes
 
