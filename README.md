@@ -2,6 +2,8 @@
 
 Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
 
+NEW FEATURE: PSF Estimation of FITS image file. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot is displayed.
+
 ## Version 1.1.10 Changes
 
 1)	Corrected problem with Moffat alpha value
@@ -10,6 +12,8 @@ Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy 7.1.1 and Photuti
 4)	Corrected problem with Object Name’s alpha and delta values
 5)	Replace Min Separation Factor with Min Separation Bias
 6)	Added PSF Estimation and it is optionally executed after a FITS file is opened. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot displaying the work is popped up
+7)  In all DAOStarFinder calls, set min_separation to fwhm parameter value (fwhm or fwhm_estimate)
+8)  Updated V1117 Her and Z Tau example settings 
 
 ## Version 1.1.9 Changes
 
