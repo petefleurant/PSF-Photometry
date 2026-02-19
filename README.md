@@ -1,6 +1,11 @@
 # PSF-Photometry
 
-Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+Welcome to MAOPhot 1.1.11, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+
+## Version 1.1.11 Changes
+
+1)	Corrected problem with VSX catalog entries overriding comparison star entries in photometry table
+
 
 NEW FEATURE: PSF Estimation of FITS image file. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot is displayed.
 

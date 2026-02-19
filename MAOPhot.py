@@ -9,17 +9,17 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-   #         #         #     ###   
-  ##        ##        ##    #   #  
- # #       # #       # #   #     # 
-   #         #         #   #     # 
-   #   ###   #   ###   #   #     # 
-   #   ###   #   ###   #    #   #  
- ##### ### ##### ### #####   ###   
-                                                                                                                          
-Welcome to MAOPhot 1.1.10, a PSF Photometry tool using Astropy and Photutils.psf
+   #         #         #     #   
+  ##        ##        ##    ##   
+ # #       # #       # #   # #   
+   #         #         #     #   
+   #   ###   #   ###   #     #   
+   #   ###   #   ###   #     #   
+ ##### ### ##### ### ##### ##### 
+                                                                                                                                                           
+Welcome to MAOPhot 1.1.11, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.10 Revision
+    1.1.11 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -172,7 +172,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.10"
+__version__ = "1.1.11"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -3822,11 +3822,16 @@ class MyGUI:
                 catalog_vsx = SkyCoord(
                     vsx_stars["RAJ2000"], vsx_stars["DEJ2000"])
                 for index, row in self.results_tab_df.iterrows():
+                    # First check if this entry is a comp star. Comp stars have higher 
+                    # priority over any vsx names ( a comp could also be a GAIA entry ).
+                    # So ignore any vsx matching to a comp star entry
+                    if self.results_tab_df.loc[index, "label"] != __empty_cell__:
+                        continue
                     photometry_star_coordinates = SkyCoord(
                         ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
                     match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
                         catalog_vsx)
-                    
+                  
                     match_id = vsx_stars[match_index]["Name"]
                     match_ra = vsx_stars[match_index]["RAJ2000"]
                     match_dec = vsx_stars[match_index]["DEJ2000"]
@@ -5291,7 +5296,7 @@ class MyGUI:
             
             #TYPE=Extended
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -5303,7 +5308,7 @@ class MyGUI:
                         
             #TYPE=EXTENDED
             #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
+            #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
             #DELIM=,
             #DATE=JD
             #OBSTYPE=CCD
@@ -5546,7 +5551,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.10 using photutils.psf
+        #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
