@@ -4952,7 +4952,10 @@ class MyGUI:
             sel_comps_to_use = list(set(sel_comps_to_use))
                 
             for comp in sel_comps_to_use:
-                if is_number(comp):
+                # ignore comp numbers that are not numbers like '#120' or '-120'
+                # this way you can 'remove' comp stars from list by just prepending 
+                # them with a '-' or some non-numeric char
+                if is_number(comp) and int(comp.strip()) > 0: 
                     sel_comps.append(int(comp.strip()))
                 
             check_star_to_use = self.object_kref_entry.get().strip()
