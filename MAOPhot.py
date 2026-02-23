@@ -1147,6 +1147,17 @@ class MyGUI:
         try:
             self.console_msg("Loading FITS: " + image_file)
             with fits.open(image_file) as image:
+                # Detect compressed FITS: primary HDU has no data, 
+                # and there's a CompImageHDU in extension 1
+                if image[0].data is None and len(image) > 1 and \
+                    isinstance(image[1], fits.CompImageHDU):
+                    self.console_msg("Detected CFITSIO compressed FITS image, using extension 1")
+                    hdu_index = 1
+                else:
+                    hdu_index = 0
+
+                header = image[hdu_index].header
+                image_data = image[hdu_index].data
                 self.image_file = image_file
                 self.filename_label['text'] = "FITS: " + image_file
                 self.canvas.delete("all")
@@ -1158,11 +1169,9 @@ class MyGUI:
                     self.results_tab_df = pd.read_csv(self.image_file + ".csv")
                 else:
                     self.results_tab_df = pd.DataFrame()
-                header = image[0].header
-                image_data = fits.getdata(image_file)
                 image_width = image_data.shape[1]
                 image_height = image_data.shape[0]
-                self.wcs_header = WCS(image[0].header)
+                self.wcs_header = WCS(image[hdu_index].header)
 
                 if not self.wcs_header.has_celestial:
                     self.console_msg(
@@ -1251,8 +1260,8 @@ class MyGUI:
 
         options = {}
         options['defaultextension'] = '.fit'
-        options['filetypes'] = [('FIT', '.fit'),('FITS', '.fits'), ('FTS', '.fts')]
-        options['title'] = 'Open FIT image file...'
+        options['filetypes'] = [('FIT', '.fit'),('FITS', '.fits'), ('FTS', '.fts'), ('ZIP', '.zip')]
+        options['title'] = 'Open FIT image file (compressed or not)...'
 
         image_file = fd.askopenfilename(**options)
         
@@ -2106,11 +2115,20 @@ class MyGUI:
             self.results_tab_df.drop(self.results_tab_df[self.results_tab_df['qfit'] > max_qfit].index, inplace=True)
 
             self.results_tab_df["removed_from_ensemble"] = False
-            self.results_tab_df["date-obs"] = float(self.date_obs_entry.get())
-            if len(self.airmass_entry.get()) > 0:
-                self.results_tab_df["AMASS"] = float(self.airmass_entry.get())
+
+            _date_obs = self.date_obs_entry.get().strip()
+            if not _date_obs or not is_number(_date_obs):
+                self.console_msg("DATE-OBS not valid setting to 1 (4712 B.C.)")
+                self.results_tab_df["date-obs"] = float(1)
             else:
+                self.results_tab_df["date-obs"] = float(_date_obs)
+
+            _airmass = self.airmass_entry.get().strip()
+            if not _airmass or not is_number(_airmass):
+                self.console_msg("AIRMASS not valid setting to na")
                 self.results_tab_df["AMASS"] = "na"
+            else:
+                self.results_tab_df["AMASS"] = float(_airmass)
 
             # Calculate instrumental magnitudes
             # Following added for "True" inst mag used in AAVSO report
@@ -3874,6 +3892,7 @@ class MyGUI:
                         if object_name_exist and object_name == str(match_id):
                             self.set_entry_text(self.object_name_alpha_entry, alpha_delta[0])
                             self.set_entry_text(self.object_name_delta_entry, alpha_delta[1])
+                            found_user_object_qfit = self.results_tab_df.loc[index, "qfit"]
                             found_user_object = True
 
                     else:
@@ -3902,7 +3921,10 @@ class MyGUI:
 
             if object_name_exist and not found_user_object:
                 self.console_msg("DID NOT FIND Object Name:" + object_name + "!!!!")
-
+            else:
+                # Reprint at the bottom of list for convenience
+                self.console_msg("Match VSX source:" +\
+                                " (qfit:" + format(found_user_object_qfit, '0.4f') +") " + object_name)
 
             if "label" in self.results_tab_df:
                 # Now clean up results_tab_df pf rows that were never accessed. 
