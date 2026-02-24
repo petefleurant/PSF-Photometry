@@ -231,6 +231,8 @@ import requests
 import sys
 import tkinter as tk
 import warnings
+import zipfile
+import tempfile
 
 from astropy.modeling import models as astropy_models
 from astropy.modeling import fitting as astropy_fitting
@@ -480,6 +482,7 @@ class MyGUI:
     ensemble_size = 0
     jd = 0
     image_file = ""
+    inner_fits_name = None
     image_id = None
     settings_filename = ""
     photometry_circles = {}
@@ -1132,6 +1135,8 @@ class MyGUI:
 #
 # load_FITS
 #
+# 
+#
 #######################################################################################
 
     def load_FITS(self, image_file):
@@ -1147,6 +1152,15 @@ class MyGUI:
         try:
             self.console_msg("Loading FITS: " + image_file)
             with fits.open(image_file) as image:
+                # check if this is a zip file
+                # We need to get the inner_fits_name of the zip file
+                # and use it later in case use want to execute a plain save.
+                if image_file.endswith('.zip'):
+                    with zipfile.ZipFile(image_file, 'r') as zf:
+                        self.inner_fits_name = zf.namelist()[0]
+                else:
+                    self.inner_fits_name = None
+
                 # Detect compressed FITS: primary HDU has no data, 
                 # and there's a CompImageHDU in extension 1
                 if image[0].data is None and len(image) > 1 and \
@@ -1296,40 +1310,114 @@ class MyGUI:
                 self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
             
 
+    ###############################################################
+    #
+    #
+    #  save_FITS_file_as
+    # 
+    #  If a .gz or .zip file extension has been chosen, then the uncompressed
+    #  file is compressed accordingly before saving.
+    #
+    ###############################################################
     def save_FITS_file_as(self):
         global image
         global image_data
         global header
 
+        file_name = self.image_file
+
         options = {}
-        options['defaultextension'] = '.fit'
-        options['filetypes'] = [('FIT', '.fit'),('FITS', '.fits'), ('FTS', '.fts')]
         options['title'] = 'Save FIT image file as...'
 
-        file_name = fd.asksaveasfile(**options)
-        
-        try:
-            if file_name != None and len(str(file_name)) > 0:
-                fits.writeto(file_name.name, image_data,
-                             header, overwrite=True)
-                self.console_msg("Saving FITS as " + str(file_name.name))
-                self.console_msg("Ready")
+        # Build save dialog with compression options
+        base, ext = os.path.splitext(file_name)  # .gz already stripped
 
-        except Exception as e:
-            self.error_raised = True
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+        fits_exts = '.fit .fits .fts'
 
+        options = {
+            'defaultextension': ext,
+            'filetypes': [
+                (f'FITS ({ext})', ext),
+                ('FITS (uncompressed)', fits_exts),
+                (f'FITS gzipped ({ext}.gz)', f'{ext}.gz'),
+                ('ZIP archive', '.zip'),
+                ('All files', '*'),
+            ],
+            'initialfile': os.path.basename(file_name),
+        }
+
+        file_name = fd.asksaveasfilename(**options)
+
+        if file_name != None and len(str(file_name)) > 0:
+            if file_name.endswith('.zip'):
+                # Save FITS first, then zip it
+                fits_name = os.path.basename(base + ext)
+
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                    temp_fits = tmp.name
+                try:
+                    self.console_msg("Saving FITS as " + str(file_name))
+                    fits.writeto(temp_fits, image_data, header, overwrite=True)
+                    with zipfile.ZipFile(file_name, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        zf.write(temp_fits, fits_name)  # archive name keeps the nice filename inside the zip
+                except Exception as e:
+                    self.error_raised = True
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+                finally:
+                    os.remove(temp_fits)
+
+            else: #  .gz or .fits
+                self.console_msg("Saving FITS as " + str(file_name))
+                try:
+                    fits.writeto(file_name, image_data, header, overwrite=True)
+                except Exception as e:
+                    self.error_raised = True
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
+            self.console_msg("Ready")
+
+
+    ###############################################################
+    #
+    #
+    #  save_FITS_file
+    # 
+    #  If file has a .gz or .zip file extension, then the uncompressed
+    #  file is compressed accordingly before saving.
+    #
+    ###############################################################
     def save_FITS_file(self):
         global image
         global image_data
         global header
         file_name = self.image_file
+
         try:
-            if len(str(file_name)) > 0:
-                self.console_msg("Saving FITS as " + str(file_name))
-                fits.writeto(file_name, image_data, header, overwrite=True)
+            if file_name != None and len(str(file_name)) > 0:
+                if file_name.endswith('.zip'):
+                    fits_name = self.inner_fits_name or 'image.fits'
+                    temp_fits = os.path.join(tempfile.gettempdir(), fits_name)
+                    try:
+                        self.console_msg("Saving FITS " + str(file_name))
+                        fits.writeto(temp_fits, image_data, header, overwrite=True)
+                        with zipfile.ZipFile(file_name, 'w', zipfile.ZIP_DEFLATED) as zf:
+                            zf.write(temp_fits, fits_name)
+                    finally:
+                        if os.path.exists(temp_fits):
+                            os.remove(temp_fits)
+                else: #  .gz or .fits
+                    self.console_msg("Saving FITS " + str(file_name))
+                    try:
+                        fits.writeto(file_name, image_data, header, overwrite=True)
+                    except Exception as e:
+                        self.error_raised = True
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  +" "+str(e), level=logging.ERROR)
+
                 self.console_msg("Saved.")
+
         except Exception as e:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
