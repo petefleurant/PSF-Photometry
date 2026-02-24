@@ -1260,8 +1260,18 @@ class MyGUI:
 
         options = {}
         options['defaultextension'] = '.fit'
-        options['filetypes'] = [('FIT', '.fit'),('FITS', '.fits'), ('FTS', '.fts'), ('ZIP', '.zip')]
         options['title'] = 'Open FIT image file (compressed or not)...'
+
+        fits_exts = '.fit .fits .fts'
+        gz_exts = '.fit.gz .fits.gz .fts.gz'
+
+        options['filetypes'] = [
+            ('All FITS', f'{fits_exts} {gz_exts}'),
+            ('FITS (uncompressed)', fits_exts),
+            ('FITS (gzipped)', gz_exts),
+            ('ZIP archives', '.zip'),
+            ('All files', '*'),
+        ]
 
         image_file = fd.askopenfilename(**options)
         
