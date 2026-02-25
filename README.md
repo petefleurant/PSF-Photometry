@@ -1,6 +1,33 @@
 # PSF-Photometry
 
-Welcome to MAOPhot 1.1.8, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+Welcome to MAOPhot 1.1.11, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+
+NEW FEATURE: Support for compressed FITS files: CFITSIO, ZIP and GZIP files. 
+ZIP, and GZIP files are now supported; files of any type (FITS, GZIP, or ZIP) can be saved, and can be saved as any other type (FITS, GZIP or ZIP)
+
+## Version 1.1.11 Changes
+
+1)	Corrected problem with VSX catalog entries overriding comparison star entries in photometry table
+2)  Check for valid AIRMASS and DATE-OBS; print user object's qfit at end of VSX list
+3)	FITS file format selection has been improved
+
+## Version 1.1.10 Changes
+
+NEW FEATURE introduced in 1.1.10: PSF Estimation of FITS image file. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot is displayed.
+
+1)	Corrected problem with Moffat alpha value
+2)  Corrected "Shift+Button-1" which drags drags inmage on screeen
+3)  Added qfit metrics to console output after Two Color Photometry
+4)	Corrected problem with Object Name’s alpha and delta values
+5)	Replace Min Separation Factor with Min Separation Bias
+6)	Added PSF Estimation and it is optionally executed after a FITS file is opened. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot displaying the work is popped up
+7)  In all DAOStarFinder calls, set min_separation to fwhm parameter value (fwhm or fwhm_estimate)
+8)  Updated V1117 Her and Z Tau example settings 
+
+## Version 1.1.9 Changes
+
+1)	Fixed problem with yellow circles after star is rejected
+2)	"Fitting width/height, px” need not be odd
 
 ## Version 1.1.8 Changes
 
@@ -47,3 +74,4 @@ MAOPhot has been redesigned for AAVSO reporting only and includes, but is not li
 •	Optionally enter an AAVSO Chart ID when retrieving comparison star data
 ## Documentation
 See HelpFile.pdf for more information.
+
