@@ -1,9 +1,9 @@
-astropy==7.1.1
+astropy==7.2
 astroquery==0.4.11
 matplotlib==3.10.7
-numpy==2.3.4
-pandas==2.3.3
+numpy==2.4
+pandas==3.0.1
 photutils==2.3.0
-pillow==11.0.0
-scipy==1.16.2
-tqdm==4.67.1
+pillow==12.1.1
+scipy==1.17.1
+tqdm==4.67.3
