@@ -9,17 +9,17 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-   #         #         #     #   
-  ##        ##        ##    ##   
- # #       # #       # #   # #   
-   #         #         #     #   
-   #   ###   #   ###   #     #   
-   #   ###   #   ###   #     #   
- ##### ### ##### ### ##### ##### 
-                                                                                                                                                           
-Welcome to MAOPhot 1.1.11, a PSF Photometry tool using Astropy and Photutils.psf
+   #        #####        ###   
+  ##       #     #      #   #  
+ # #             #     #     # 
+   #        #####      #     # 
+   #   ### #       ### #     # 
+   #   ### #       ###  #   #  
+ ##### ### ####### ###   ###   
+                                                                                                                                                                                          
+Welcome to MAOPhot 1.2.0, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.1.11 Revision
+    1.2.0 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -172,7 +172,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.1.11"
+__version__ = "1.2.0"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -501,30 +501,47 @@ class MyGUI:
     fit_width_entry = None
     max_ensemble_magnitude_entry = None
     fwhm_entry = None
+    oversampling_entry = None
     star_detection_threshold_factor_entry = None
     photometry_iterations_entry = None
     sharplo_entry = None
     matching_radius_entry = None
     aavso_obscode_entry = None
     telescope_entry = None
-    tbv_entry = None
-    tv_bv_entry = None
     tb_bv_entry = None
-    tvr_entry = None
+    tb_br_entry = None
+    tb_bi_entry = None
+    tv_bv_entry = None
     tv_vr_entry = None
     tr_vr_entry = None
-    tvi_entry = None
+    tr_ri_entry = None
+    ti_ri_entry = None
     tv_vi_entry = None
     ti_vi_entry = None
-    tbv_err_entry = None
-    tv_bv_err_entry = None
+    tr_vi_entry = None
+    tbv_entry = None
+    tbr_entry = None
+    tbi_entry = None
+    tvr_entry = None
+    tri_entry = None
+    tvi_entry = None
     tb_bv_err_entry = None
-    tvr_err_entry = None
+    tb_br_err_entry = None
+    tb_bi_err_entry = None
+    tv_bv_err_entry = None
     tv_vr_err_entry = None
     tr_vr_err_entry = None
-    tvi_err_entry = None
+    tr_ri_err_entry = None
+    ti_ri_err_entry = None
     tv_vi_err_entry = None
     ti_vi_err_entry = None
+    tr_vi_err_entry = None
+    tbv_err_entry = None
+    tbr_err_entry = None
+    tbi_err_entry = None
+    tvr_err_entry = None
+    tri_err_entry = None
+    tvi_err_entry = None
     linearity_limit_entry = None
     catalog_stringvar = None
     vizier_catalog_entry = None
@@ -541,7 +558,8 @@ class MyGUI:
     use_gaussian_prf_model = None
     generate_residual_image = None
     candidate_stars = None
-    settings_filename_entry = None # special case this is only place holder for filename
+    settings_filename_entry = None
+    user_note_entry = None
     auto_behavior = None
     filter_entry = None
     max_qfit_entry = None
@@ -602,6 +620,13 @@ class MyGUI:
         else:
             self.console_msg("FWHM not numeric, using 3.0")
             params['fwhm'] = 3.0
+
+        # Test oversampling
+        if self.oversampling_entry is not None and is_number(self.oversampling_entry.get().strip()):
+            params['oversampling'] = int(abs(float(self.oversampling_entry.get())))
+        else:
+            self.console_msg("oversampling not numeric, using 2, (most common)")
+            params['oversampling'] = 2
 
         # Test star_detection_threshold_factor
         if self.star_detection_threshold_factor_entry is not None:
@@ -1775,8 +1800,16 @@ class MyGUI:
             return
 
         try:
+            # test oversampling
+            if is_number(self.oversampling_entry.get().strip()):
+                oversampling = int(abs(float(self.oversampling_entry.get())))
+            else:
+                self.console_msg("oversampling not numeric, using 2, (most common)")
+                oversampling = 2
+
+
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            epsf_builder = EPSFBuilder(oversampling=4, maxiters=50, progress_bar=True) 
+            epsf_builder = EPSFBuilder(oversampling=oversampling, maxiters=50, progress_bar=True) 
 
             self.epsf_model, fitted_stars = epsf_builder(stars=self.candidate_stars)  
 
@@ -3703,12 +3736,13 @@ class MyGUI:
                 comparison_stars = \
                     self.aavso_get_comparison_stars(frame_center, filter_band=str(
                     self.filter_entry.get()),
-                    field_of_view=fov_horizontal,  # divide by 2?
+                    field_of_view=fov_horizontal,  
                     maglimit=self.max_ensemble_magnitude_entry.get())
                 
                 ra_column_name = "RA"
                 dec_column_name = "Dec"
                 mag_column_name = "Mag"
+                mag_error_column_name = "Mag Error"
             
             elif catalog_selection == "APASS DR10":
                 using_apass_dr10 = True
@@ -3729,12 +3763,14 @@ class MyGUI:
                 ra_column_name = "RA"
                 dec_column_name = "Dec"
                 mag_column_name = "Mag"
+                mag_error_column_name = "Mag Error"
             
             else:
 
                 # Default value
                 # Changes for some catalogs
                 mag_column_name = self.filter + "mag"
+                mag_error_column_name = self.filter + "mag error"  #<--- needs to be verified/fixed
 
                 #Use VizierR catalog
                 if catalog_selection == "APASS DR9":
@@ -3749,6 +3785,7 @@ class MyGUI:
                         "I" : "i_mag", # Sloan
                         }
                     mag_column_name = DR9_Mag_name[self.filter]
+                    #mag_error_column_name = DR9_Mag_Error_name[self.filter]   #<--- needs to be fixed
                     using_apass_dr9 = True
     
                 elif catalog_selection == "URAT1":
@@ -3844,6 +3881,7 @@ class MyGUI:
                     match_ra = catalog_comparison[match_index].ra.degree
                     match_dec= catalog_comparison[match_index].dec.degree
                     match_mag = comparison_stars.iloc[match_index][mag_column_name]
+                    match_mag_error = comparison_stars.iloc[match_index][mag_error_column_name]
                     match_is_check = comparison_stars.iloc[match_index]["Check Star"]
 
                 elif using_apass_dr9:
@@ -3856,6 +3894,7 @@ class MyGUI:
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
+                    match_mag_error = comparison_stars[match_index][mag_error_column_name]
                     match_is_check = (match_label == check_star_to_use)
 
                 else:
@@ -3864,6 +3903,7 @@ class MyGUI:
                     match_ra = comparison_stars[match_index][ra_column_name]
                     match_dec = comparison_stars[match_index][dec_column_name]
                     match_mag = comparison_stars[match_index][mag_column_name]
+                    match_mag_error = comparison_stars[match_index][mag_error_column_name]
                     
                 match_coordinates = SkyCoord(ra=match_ra * u.deg, dec=match_dec * u.deg)
                 separation = photometry_star_coordinates.separation(match_coordinates)
@@ -3887,6 +3927,7 @@ class MyGUI:
                                 self.results_tab_df.loc[already_gotten.index, "match_ra"] = ""
                                 self.results_tab_df.loc[already_gotten.index, "match_dec"] = ""
                                 self.results_tab_df.loc[already_gotten.index, "match_mag"] = ""
+                                self.results_tab_df.loc[already_gotten.index, "match_mag_error"] = ""
                                 self.results_tab_df.loc[already_gotten.index, "check_star"] = False 
 
                     #Found a match within matching_radius
@@ -3897,6 +3938,7 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_ra"] = match_ra
                     self.results_tab_df.loc[index, "match_dec"] = match_dec
                     self.results_tab_df.loc[index, "match_mag"] = match_mag
+                    self.results_tab_df.loc[index, "match_mag_error"] = match_mag_error
 
                     if using_aavso_catalog or using_apass_dr9 or using_apass_dr10:
                         self.results_tab_df.loc[index, "check_star"] = match_is_check
@@ -4358,6 +4400,12 @@ class MyGUI:
             fwhm_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.fwhm_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
             self.fwhm_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            oversampling_label = tk.Label(settings_left_frame, text="oversampling:")
+            oversampling_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.oversampling_entry = tk.Entry(settings_left_frame, width=settings_entry_width)
+            self.oversampling_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
             default_model_label = tk.Label(settings_left_frame, text="Default PSF Model:")
             default_model_label.grid(row=row, column=3, columnspan=2, sticky=tk.W)
@@ -4418,31 +4466,37 @@ class MyGUI:
             row += 1
 
             #
-            #        Telescope Name and Parameters
+            #        Telescope Name and Parameters (only used for convenience)
             #
 
             telescope_label = tk.Label(settings_left_frame, text="Telescope:")
             telescope_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.telescope_entry = tk.Entry(settings_left_frame, width=extended_settings_entry_width)
             self.telescope_entry.grid(row=row, column=2, sticky=tk.W)
-
-            row += 1
-
-            separator_ = ttk.Separator(settings_left_frame, orient='horizontal')
-            separator_.grid(row=row, columnspan=4, pady=5, sticky=tk.EW)
             row += 1
             
             #
             # Filter Band Coefficients
             #
             # 
-            # Tb_bv, Tb_br, Tb_bi, 
-            # Tv_bv, Tv_vr, 
-            # Tr_vr, Tr_ri
+            # Tb_bv,
+            # Tb_br,
+            # Tb_bi, 
+            # Tv_bv,
+            # Tv_vr, 
+            # Tr_vr,
+            # Tr_ri
             # Ti_ri, 
             # Tv_vi,
             # Ti_vi, 
-            # Tr_ri
+            # Tr_ri,
+            # Tbv,
+            # Tbr,
+            # Tbi,
+            # Tvr,
+            # Tri,
+            # Tvi,
+            # 
             #   ... same order as seen in VPhot Telescope Profiles
             #
 
@@ -4453,15 +4507,14 @@ class MyGUI:
             #
             #
 
-
             _label = tk.Label(settings_left_frame, text="Transformation Coefficients:")
             _label.grid(row=row, column=0, columnspan=3, sticky=tk.W)
-
             _label = tk.Label(settings_left_frame, text="Extinction Coefficients:")
             _label.grid(row=row, column=2, sticky=tk.E)
 
             row += 1
 
+            """/* Tb_bv */"""
             tb_bv_label = tk.Label(settings_left_frame, text="Tb_bv:")
             tb_bv_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4481,9 +4534,53 @@ class MyGUI:
             _extinction_label.grid(row=0, column=0, sticky=tk.E)
             self.extinction_B_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.extinction_B_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
+            """/* Tb_br */"""
+            tb_br_label = tk.Label(settings_left_frame, text="Tb_br:")
+            tb_br_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tb_br_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_br_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tb_br_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_br_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # V extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="V:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_V_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_V_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Tb_bi */"""
+            tb_bi_label = tk.Label(settings_left_frame, text="Tb_bi:")
+            tb_bi_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tb_bi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_bi_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tb_bi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tb_bi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+
+            # R extinction
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=2, sticky=tk.E)
+            _extinction_label = tk.Label(f_helper, text="R:")
+            _extinction_label.grid(row=0, column=0, sticky=tk.E)
+            self.extinction_R_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_R_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Tv_bv */"""
             tv_bv_label = tk.Label(settings_left_frame, text="Tv_bv:")
             tv_bv_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4496,16 +4593,16 @@ class MyGUI:
             self.tv_bv_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tv_bv_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
-            # V extinction
+            # I extinction
             f_helper = tk.Frame(settings_left_frame)
             f_helper.grid(row=row, column=2, sticky=tk.E)
-            _extinction_label = tk.Label(f_helper, text="V:")
+            _extinction_label = tk.Label(f_helper, text="I:")
             _extinction_label.grid(row=0, column=0, sticky=tk.E)
-            self.extinction_V_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
-            self.extinction_V_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-
+            self.extinction_I_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_I_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
+            """/* Tv_vr */"""
             tv_vr_label = tk.Label(settings_left_frame, text="Tv_vr:")
             tv_vr_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4518,16 +4615,16 @@ class MyGUI:
             self.tv_vr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tv_vr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
 
-            # R extinction
+            # C extinction
             f_helper = tk.Frame(settings_left_frame)
             f_helper.grid(row=row, column=2, sticky=tk.E)
-            _extinction_label = tk.Label(f_helper, text="R:")
+            _extinction_label = tk.Label(f_helper, text="C:")
             _extinction_label.grid(row=0, column=0, sticky=tk.E)
-            self.extinction_R_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
-            self.extinction_R_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-
+            self.extinction_C_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.extinction_C_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
+            """/* Tr_vr */"""
             tr_vr_label = tk.Label(settings_left_frame, text="Tr_vr:")
             tr_vr_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4539,20 +4636,37 @@ class MyGUI:
             _err_label.grid(row=0, column=1, sticky=tk.W)
             self.tr_vr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tr_vr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-
-            # I extinction
-            f_helper = tk.Frame(settings_left_frame)
-            f_helper.grid(row=row, column=2, sticky=tk.E)
-            _extinction_label = tk.Label(f_helper, text="I:")
-            _extinction_label.grid(row=0, column=0, sticky=tk.E)
-            self.extinction_I_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
-            self.extinction_I_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
-            #
-            # Tvi, Ti_vi, Ti_vi
-            #
+            """/* Tr_ri */"""
+            tr_ri_label = tk.Label(settings_left_frame, text="Tr_ri:")
+            tr_ri_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tr_ri_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_ri_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tr_ri_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_ri_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Ti_ri */"""
+            ti_ri_label = tk.Label(settings_left_frame, text="Ti_ri:")
+            ti_ri_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.ti_ri_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.ti_ri_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.ti_ri_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.ti_ri_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Tv_vi */"""
             tv_vi_label = tk.Label(settings_left_frame, text="Tv_vi:")
             tv_vi_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4564,17 +4678,9 @@ class MyGUI:
             _err_label.grid(row=0, column=1, sticky=tk.W)
             self.tv_vi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tv_vi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-
-            # C extinction
-            f_helper = tk.Frame(settings_left_frame)
-            f_helper.grid(row=row, column=2, sticky=tk.E)
-            _extinction_label = tk.Label(f_helper, text="C:")
-            _extinction_label.grid(row=0, column=0, sticky=tk.E)
-            self.extinction_C_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
-            self.extinction_C_entry.grid(row=0, column=1, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
+            """/* Ti_vi */"""
             ti_vi_label = tk.Label(settings_left_frame, text="Ti_vi:")
             ti_vi_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4586,20 +4692,23 @@ class MyGUI:
             _err_label.grid(row=0, column=1, sticky=tk.W)
             self.ti_vi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.ti_vi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
+            """/* Tr_vi */"""
+            tr_vi_label = tk.Label(settings_left_frame, text="Tr_vi:")
+            tr_vi_label.grid(row=row, column=0, sticky=tk.E)
 
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tr_vi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_vi_entry.grid(row=0, column=0, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tr_vi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tr_vi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
 
-            #
-            # Colorindex Coefficients
-            #
-            # 
-            # Tbv, Tbr, Tbi, 
-            # Tvr, Tri, Tvi 
-            #   ... same order as seen in VPhot Telescope Profiles
-            #
-
+            """/* Tbv */"""
             tbv_label = tk.Label(settings_left_frame, text="Tbv:")
             tbv_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4611,9 +4720,37 @@ class MyGUI:
             _err_label.grid(row=0, column=1, sticky=tk.W)
             self.tbv_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tbv_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
+            """/* Tbr */"""
+            tbr_label = tk.Label(settings_left_frame, text="Tbr:")
+            tbr_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tbr_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbr_entry.grid(row=0, column=0, ipadx=settings_entry_pad, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tbr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Tbi */"""
+            tbi_label = tk.Label(settings_left_frame, text="Tbi:")
+            tbi_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tbi_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbi_entry.grid(row=0, column=0, ipadx=settings_entry_pad, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tbi_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tbi_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+            """/* Tvr */"""
             tvr_label = tk.Label(settings_left_frame, text="Tvr:")
             tvr_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4625,9 +4762,24 @@ class MyGUI:
             _err_label.grid(row=0, column=1, sticky=tk.W)
             self.tvr_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
             self.tvr_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
-
             row += 1
 
+            """/* Tri */"""
+            tri_label = tk.Label(settings_left_frame, text="Tri:")
+            tri_label.grid(row=row, column=0, sticky=tk.E)
+
+            f_helper = tk.Frame(settings_left_frame)
+            f_helper.grid(row=row, column=1, sticky=tk.W)
+            self.tri_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tri_entry.grid(row=0, column=0, ipadx=settings_entry_pad, sticky=tk.W)
+            _err_label = tk.Label(f_helper, text="+/-")
+            _err_label.grid(row=0, column=1, sticky=tk.W)
+            self.tri_err_entry = tk.Entry(f_helper, width=settings_entry_width, background='pink')
+            self.tri_err_entry.grid(row=0, column=2, ipadx=settings_entry_pad, sticky=tk.W)
+            row += 1
+
+
+            """/* Tvi */"""
             tvi_label = tk.Label(settings_left_frame, text="Tvi:")
             tvi_label.grid(row=row, column=0, sticky=tk.E)
 
@@ -4644,7 +4796,6 @@ class MyGUI:
             linearity_limit_label.grid(row=row, column=2, sticky=tk.E)
             self.linearity_limit_entry = tk.Entry(settings_left_frame, width=settings_entry_width, background='pink')
             self.linearity_limit_entry.grid(row=row, column=3, sticky=tk.W)
-
             row += 1
 
             #
@@ -4827,15 +4978,24 @@ class MyGUI:
             separator_.grid(row=row, columnspan=3, pady=5, sticky=tk.EW)
             row += 1
 
-            settingsfile_key_label = tk.Label(
-                settings_right_frame, text="Settings Filename:")
+            settingsfile_key_label = tk.Label(settings_right_frame, text="Settings Filename:")
             settingsfile_key_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
-            self.settings_filename_entry = tk.Entry(
-                settings_right_frame, width=extended_settings_entry_width)
+            self.settings_filename_entry = tk.Entry(settings_right_frame, width=extended_settings_entry_width)
             self.settings_filename_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
             self.set_entry_text(self.settings_filename_entry, self.settings_filename)
-            self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
+            #self.settings_filename_entry.xview_scroll(len(self.settings_filename), tk.UNITS)
             row += 1
+
+            #
+            #        User Note (only used for convenience)
+            #
+
+            user_note_label = tk.Label(settings_right_frame, text="User Note:")
+            user_note_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.user_note_entry = tk.Entry(settings_right_frame, width=extended_settings_entry_width)
+            self.user_note_entry.grid(row=row, column=2, ipadx=extended_settings_entry_pad)
+            row += 1
+
 
 
             # Separator and Buttons across the bottom
@@ -5093,7 +5253,7 @@ class MyGUI:
             self.console_msg(
                 'Downloaded AAVSO Comparison Star Chart ID ' + str(chart_id))
             
-            result = pd.DataFrame(columns=["AUID", "RA", "Dec", "Mag", "Label", "Chart ID", "Check Star"])
+            result = pd.DataFrame(columns=["AUID", "RA", "Dec", "Mag", "Mag Error", "Label", "Chart ID", "Check Star"])
 
             for star in r.json()['photometry']:
                 auid = star['auid']
@@ -5114,6 +5274,7 @@ class MyGUI:
                 for band in star['bands']:
                     if band['band'] == filter_band:
                         mag = band['mag']
+                        mag_error = band['error']
 
                 if mag == None:
                     self.console_msg("label: " + str(label) + " has no mag for " + filter_band + "..skipping")
@@ -5123,6 +5284,7 @@ class MyGUI:
                     "RA": ra,
                     "Dec": dec,
                     "Mag": mag,
+                    "Mag Error": mag_error,
                     "Label": label,
                     "Chart ID": chart_id,
                     "Check Star": is_check_star}
@@ -5323,9 +5485,51 @@ class MyGUI:
 
     #####################################################################################
     #
-    #    generate_aavso_report_1image
+    #   generate_aavso_report_1image
     # 
-    #    Generates a AAVSO report in extended format for a single filter
+    #   Generates a AAVSO report in extended format for a single filter.
+    #   This is done for a single comp or an ensemble.
+    #   In the ensemble case, CMAGINS and CREFMAG are calculated for use by 
+    #   VPhot's Transform Applier (TA). 
+    #
+    #   For single comp:
+    #       CDEC: dec of comp star in degrees
+    #       CRA:  ra of comp star in degrees
+    #       CMAGINS: the comp star instrumental magnitude
+    #       CREFMAG: the reference magnitudes of comp  (from chart)
+    #       CREFERR: the error of the comp reference magnitude (from chart)
+    #
+    #       KDEC: dec of check star in degrees
+    #       KRA:  ra of check star in degrees
+    #       KMAGINS: the check star instrumental magnitude
+    #       KREFMAG: the reference magnitudes of check star (from chart)
+    #       KREFERR: the error of the check reference magnitude (from chart)
+    #       KMAGSTD: the calculated check star standard mag 
+    #
+    #       CREFMAG - CMAGINS = KMAGSTD - KMAGINS   
+    #
+    #
+    #   For ensemble:
+    #       CMAGINS: the average of the ensemble comp star instrumental magnitudes
+    #       CREFMAG: the average of the ensemble comp star reference magnitudes
+    #       CRA: average comp's RAs  (Unknown definition)
+    #       CDEC: average comp's DECs
+    #
+    #       KDEC: dec of check star in degrees
+    #       KRA:  ra of check star in degrees
+    #       KMAGINS: the check star instrumental magnitude
+    #       KREFMAG: the reference magnitudes of check star (from chart)
+    #       KREFERR: the error of the check reference magnitude (from chart)
+    #       KMAGSTD: the calculated check star standard mag 
+    #
+    #       CREFMAG - CMAGINS = KMAGSTD - KMAGINS   
+    #
+    #       ENSTYPE = 1 (Unknown definition)
+    #
+    #
+    #   For single comp and ensemble:
+    #       VMAGINS: the target star instrumental magnitude
+    #       
     #
     #####################################################################################
 
@@ -5414,35 +5618,6 @@ class MyGUI:
             return
 
         try:
-            """
-            Typical Single Image Report (Single comp example)
-            
-            #TYPE=Extended
-            #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
-            #DELIM=,
-            #DATE=JD
-            #OBSTYPE=CCD
-            #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-            V1117 Her,2459793.58430,12.547,0.002,V,NO,STD,145,-7.117,123,-9.244,na,na,X27876MZ,Mittelman ATMoB Observatory
-            |CMAGINS=-7.117|CREFERR=0.009|CREFMAG=14.469|KMAG=12.341|KMAGINS=-9.244|KREFERR=0.001|KREFMAG=12.287|VMAGINS=-9.039 
-            
-            Typical Single Image Report (Ensemble example)
-                        
-            #TYPE=EXTENDED
-            #OBSCODE=Zzzz
-            #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
-            #DELIM=,
-            #DATE=JD
-            #OBSTYPE=CCD
-            #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-            RV Cen,2460721.28623,11.773,0.055,B,NO,STD,100,-7.492,83_1,-9.642,1.0663,na,250219,TEST ONLY TEST
-            |OBSERVAT=BSM_S|PROJNAME=AAVSO_P385_FPIA_AUTO|CDEC=-56.497943|CMAGINS=-7.492|CRA=205.021418
-            |CREFERR=0.076|CREFMAG=11.020|KDEC=-56.731108|KMAGINS=-9.642|KMAGSTD=8.870|KRA=204.63803|KREFERR=0.049|KREFMAG=8.819|VMAGINS=-6.739                        
-            
-
-            """
-
             #Check if the Var to report on has been measured
             if not var_star_name in self.results_tab_df_color["vsx_id"].values:
                 self.console_msg("Var not found in table; "+ str(var_star_name) + " not found!", level=logging.ERROR)
@@ -5482,14 +5657,31 @@ class MyGUI:
                 check_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + check_star_name)].iloc[0]
                 check_IM = check_star["inst_mag"]
                 check_star_mag_ref = check_star["match_mag"]
+                check_star_mag_ref_error = check_star["match_mag_error"]
 
                 check_ra = float(check_star["match_ra"])
                 check_dec = float(check_star["match_dec"])
 
                 if not ensemble:
+                    """
+                    Example Single Image Report (Single comp example)
+                    
+                    #TYPE=Extended
+                    #OBSCODE=Zzzz
+                    #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
+                    #DELIM=,
+                    #DATE=JD
+                    #OBSTYPE=CCD
+                    #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+                    RV Cen,2461097.244907,7.686,0.005,V,NO,STD,100,-9.854,83_1,-11.601,1.0630,na,260301,Test Only|OBSERVAT=BSM_S|CDEC=-56.498001
+                    |CMAGINS=-9.854|CRA=205.021293|CREFERR=0.015|CREFMAG=10.030|KDEC=-56.731081|KMAGINS=-11.601|KMAGSTD=8.283|KRA=204.638101|KREFERR=0.032|KREFMAG=8.287|VMAGINS=-12.198
+                    
+                    """
+
                     #comp_star_name was determined above
                     comp_star = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)].iloc[0]
                     comp_star_mag = float(comp_star["match_mag"])
+                    comp_star_mag_error = float(comp_star["match_mag_error"])
                     comp_star_ra = float(comp_star["match_ra"])
                     comp_star_dec = float(comp_star["match_dec"])
                     comp_IM = comp_star["inst_mag"]
@@ -5504,15 +5696,12 @@ class MyGUI:
                     if not self.bkg2D == None:
                         snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
                         snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
-                        snr_comp_star = comp_star['flux_fit']/self.bkg2D.background_median
                     else:
                         snr_var_star = var_star['flux_fit']/self.image_bkg_value
                         snr_check_star = check_star['flux_fit']/self.image_bkg_value
-                        snr_comp_star = comp_star['flux_fit']/self.image_bkg_value
 
                     var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
                     check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
-                    comp_star_err = 2.5*np.log10(1 + 1/snr_comp_star)
 
                     err_in_quadrature = math.sqrt(var_star_err**2 + check_star_err**2)
 
@@ -5534,11 +5723,11 @@ class MyGUI:
                     notes += "|CMAGINS=" + cmag + \
                             "|CRA=" + str(round(comp_star_ra, decimal_places_for_ra_dec)) +\
                             "|CDEC=" + str(round(comp_star_dec, decimal_places_for_ra_dec)) +\
-                            "|CREFERR=" + str(round(comp_star_err, decimal_places)) +\
+                            "|CREFERR=" + str(round(comp_star_mag_error, decimal_places)) +\
                             "|CREFMAG=" + str(round(comp_star_mag, decimal_places)) +\
                             "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
                             "|KMAGSTD=" + str(round(check_star_mag, decimal_places)) +\
-                            "|KREFERR=" + str(round(check_star_err, decimal_places)) +\
+                            "|KREFERR=" + str(round(check_star_mag_ref_error, decimal_places)) +\
                             "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
                             "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
                             "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
@@ -5558,6 +5747,20 @@ class MyGUI:
                 else:
                     # ENSEMBLE case
 
+                    """
+                    Example Single Image Report (Ensemble example)
+                                
+                    #TYPE=EXTENDED
+                    #OBSCODE=Zzzz
+                    #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
+                    #DELIM=,
+                    #DATE=JD
+                    #OBSTYPE=CCD
+                    #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+                    RV Cen,2461097.244907,7.652,0.002,V,NO,STD,ENSEMBLE,na,83_1,8.189,1.0630,0,260301,TEST Only|CDEC=-56.44629|CMAGINS=-10.253
+                    |CRA=204.52111|CREFMAG=9.250|ENSTYPE=1|KDEC=-56.73115|KMAGINS=-11.313|KMAGSTD=8.189|KRA=204.63808|KREFERR=0.032|KREFMAG=8.287|OBSERVAT=BSM_S|VMAGINS=-11.851
+
+                    """
                     comp_data = self.results_tab_df_color[self.results_tab_df_color["label"].isin(comp_star_list_with_prefix)]
 
                     check_star_mag = [check_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
@@ -5566,6 +5769,10 @@ class MyGUI:
 
                     var_star_mag = [var_IM - comp_data["inst_mag"] + comp_data["match_mag"] for _, row in comp_data.iterrows()]
                     ave_var_star_mag = np.mean(var_star_mag)
+                    ave_comp_match_mag = np.mean(comp_data["match_mag"])
+                    ave_comp_inst_mag = np.mean(comp_data["inst_mag"])
+                    ave_comp_ra = np.mean(comp_data["match_ra"])
+                    ave_comp_dec = np.mean(comp_data["match_dec"])
 
                     starid = var_star_name
                     date = format(float(self.date_obs_entry.get()), '.5f') 
@@ -5582,12 +5789,20 @@ class MyGUI:
                     group = "na"
                     chart = self.vizier_catalog_entry.get().strip()
                     notes = self.object_notes_entry.get().strip()
-                    notes += "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
-                            "|KMAGSTD=" + str(round(ave_check_star_mag, decimal_places)) +\
-                            "|KREFERR=" + str(round(stdev_check_star_mag, decimal_places)) +\
-                            "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
-                            "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
+                    # Unknown def (ave DEC?)
+                    # Unknown def (ave RA?)
+                    notes += \
+                            "|CDEC=" + str(round(ave_comp_dec, decimal_places)) +\
+                            "|CMAGINS=" + str(round(ave_comp_inst_mag, decimal_places)) +\
+                            "|CRA=" + str(round(ave_comp_ra, decimal_places)) +\
+                            "|CREFMAG=" + str(round(ave_comp_match_mag, decimal_places)) +\
+                            "|ENSTYPE=1" +\
                             "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
+                            "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
+                            "|KMAGSTD=" + str(round(ave_check_star_mag, decimal_places)) +\
+                            "|KRA=" + str(round(check_ra, decimal_places_for_ra_dec)) +\
+                            "|KREFERR=" + str(round(float(check_star_mag_ref_error), decimal_places)) +\
+                            "|KREFMAG=" + str(round(float(check_star_mag_ref), decimal_places)) +\
                             "|VMAGINS=" + str(round(var_IM, decimal_places))
                 
                     # make a table for "pretty" (for printing) Comparison Stars data
@@ -5674,7 +5889,7 @@ class MyGUI:
             
         #TYPE=EXTENDED
         #OBSCODE=FPIA
-        #SOFTWARE=Self-developed; MAOPhot 1.1.11 using photutils.psf
+        #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
         #DELIM=,
         #DATE=JD
         #OBSTYPE=CCD
@@ -6418,21 +6633,48 @@ class MyGUI:
             'fit_width_entry': self.fit_width_entry,
             'max_ensemble_magnitude_entry': self.max_ensemble_magnitude_entry,
             'fwhm_entry': self.fwhm_entry,
+            'oversampling_entry': self.oversampling_entry,
             'star_detection_threshold_factor_entry': self.star_detection_threshold_factor_entry,
             'photometry_iterations_entry': self.photometry_iterations_entry,
             'sharplo_entry': self.sharplo_entry,
             'matching_radius_entry': self.matching_radius_entry,
             'aavso_obscode_entry': self.aavso_obscode_entry,
             'telescope_entry': self.telescope_entry,
-            'tbv_entry': self.tbv_entry,
-            'tv_bv_entry': self.tv_bv_entry,
+            'user_note_entry': self.user_note_entry,
             'tb_bv_entry': self.tb_bv_entry,
-            'tvr_entry': self.tvr_entry,
+            'tb_br_entry': self.tb_br_entry,
+            'tb_bi_entry': self.tb_bi_entry,
+            'tv_bv_entry': self.tv_bv_entry,
             'tv_vr_entry': self.tv_vr_entry,
             'tr_vr_entry': self.tr_vr_entry,
-            'tvi_entry': self.tvi_entry,
+            'tr_ri_entry': self.tr_ri_entry,
+            'ti_ri_entry': self.ti_ri_entry,
             'tv_vi_entry': self.tv_vi_entry,
             'ti_vi_entry': self.ti_vi_entry,
+            'tr_vi_entry': self.tr_vi_entry,
+            'tbv_entry': self.tbv_entry,
+            'tbr_entry': self.tbr_entry,
+            'tbi_entry': self.tbi_entry,
+            'tvr_entry': self.tvr_entry,
+            'tri_entry': self.tri_entry,
+            'tvi_entry': self.tvi_entry,
+            'tb_bv_err_entry': self.tb_bv_err_entry,
+            'tb_br_err_entry': self.tb_br_err_entry,
+            'tb_bi_err_entry': self.tb_bi_err_entry,
+            'tv_bv_err_entry': self.tv_bv_err_entry,
+            'tv_vr_err_entry': self.tv_vr_err_entry,
+            'tr_vr_err_entry': self.tr_vr_err_entry,
+            'tr_ri_err_entry': self.tr_ri_err_entry,
+            'ti_ri_err_entry': self.ti_ri_err_entry,
+            'tv_vi_err_entry': self.tv_vi_err_entry,
+            'ti_vi_err_entry': self.ti_vi_err_entry,
+            'tr_vi_err_entry': self.tr_vi_err_entry,
+            'tbv_err_entry': self.tbv_err_entry,
+            'tbr_err_entry': self.tbr_err_entry,
+            'tbi_err_entry': self.tbi_err_entry,
+            'tvr_err_entry': self.tvr_err_entry,
+            'tri_err_entry': self.tri_err_entry,
+            'tvi_err_entry': self.tvi_err_entry,
             'linearity_limit_entry': self.linearity_limit_entry,
             'catalog_stringvar': self.catalog_stringvar,
             'vizier_catalog_entry': self.vizier_catalog_entry,
@@ -6453,15 +6695,6 @@ class MyGUI:
             'max_qfit_entry': self.max_qfit_entry,
             'moffat_beta_entry': self.moffat_beta_entry,
             'min_separation_bias_entry': self.min_separation_bias_entry,
-            'tbv_err_entry': self.tbv_err_entry,
-            'tv_bv_err_entry': self.tv_bv_err_entry,
-            'tb_bv_err_entry': self.tb_bv_err_entry,
-            'tvr_err_entry': self.tvr_err_entry,
-            'tv_vr_err_entry': self.tv_vr_err_entry,
-            'tr_vr_err_entry': self.tr_vr_err_entry,
-            'tvi_err_entry': self.tvi_err_entry,
-            'tv_vi_err_entry': self.tv_vi_err_entry,
-            'ti_vi_err_entry': self.ti_vi_err_entry,
             'extinction_B_entry': self.extinction_B_entry,
             'extinction_V_entry': self.extinction_V_entry,
             'extinction_I_entry': self.extinction_I_entry,
