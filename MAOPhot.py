@@ -495,6 +495,7 @@ class MyGUI:
     isolated_stars_tbl = None
     fits_header_filter = ""
     is_inverted = False # Track if image is inverted
+    current_oversampling = 2
 
     # Parameter declaration  and init 
     find_peaks_npeaks_entry = None
@@ -1261,7 +1262,13 @@ class MyGUI:
                         date_obs = Time(header['date-obs'])
                         self.jd = Time(date_obs, format='jd')
                         self.console_msg("DATE-OBS: " + str(self.jd.to_value('iso')) + " UTC; JD: " + str(self.jd))
+                        self.date_obs_entry.config(state='normal')
                         self.set_entry_text(self.date_obs_entry, str(self.jd))
+                        self.date_obs_entry.config(state='readonly')
+                        self.date_utc_entry.config(state='normal')
+                        self.set_entry_text(self.date_utc_entry, str(Time(self.jd, format='jd', scale='utc').iso))
+                        self.date_utc_entry.config(state='readonly')
+
                         
                     except Exception as e:
                         self.error_raised = True
@@ -1273,8 +1280,14 @@ class MyGUI:
                     self.console_msg(
                         "Julian date at the start of exposure (from JD): " + str(jd))
                     self.jd = jd
+                    self.date_obs_entry.config(state='normal')
                     self.date_obs_entry.delete(0, tk.END)
                     self.date_obs_entry.insert(0, str(self.jd))
+                    self.date_obs_entry.config(state='readonly')
+                    self.date_utc_entry.config(state='normal')
+                    self.date_utc_entry.delete(0, tk.END)
+                    self.date_utc_entry.insert(0, str(Time(self.jd, format='jd', scale='utc').iso))
+                    self.date_utc_entry.config(state='readonly')
 
                 self.image_bkg_value = np.median(image_data)
                 self.console_msg("Median background level, ADU: " + str(round(self.image_bkg_value, 2)))
@@ -1802,19 +1815,19 @@ class MyGUI:
         try:
             # test oversampling
             if is_number(self.oversampling_entry.get().strip()):
-                oversampling = int(abs(float(self.oversampling_entry.get())))
+                self.current_oversampling = int(abs(float(self.oversampling_entry.get())))
             else:
                 self.console_msg("oversampling not numeric, using 2, (most common)")
-                oversampling = 2
+                self.current_oversampling = 2
 
 
             self.console_msg("Starting ePSF Builder...(check console progress bar)")
-            epsf_builder = EPSFBuilder(oversampling=oversampling, maxiters=50, progress_bar=True) 
+            epsf_builder = EPSFBuilder(oversampling=self.current_oversampling, maxiters=50, progress_bar=True) 
 
             self.epsf_model, fitted_stars = epsf_builder(stars=self.candidate_stars)  
 
             self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
-            self.console_msg("self.epsf_model.data.sum()="+format(self.epsf_model.data.sum(), '.2f'))
+            self.console_msg("ePSF Normalization Index = "+format(self.epsf_model.data.sum()/self.current_oversampling**2, '.2f'))
 
             self.plot_psf_model(self.epsf_model.data)
     
@@ -1848,10 +1861,19 @@ class MyGUI:
             if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
                 self.console_msg("Loading ePSF from: " + str(file_name))
                 with open(file_name, "rb") as file:
-                    self.epsf_model = pickle.load(file)
+                    bundle = pickle.load(file)
 
+                # check for old files
+                if isinstance(bundle, dict):
+                    self.epsf_model = bundle['epsf_model']
+                    self.current_oversample = bundle['oversampling']
+                else:
+                    self.epsf_model = bundle
+                    self.console_msg("WARNING: " + str(file_name) + " does not contain oversampling info")
+        
+                self.console_msg("Current oversampling = "+format(self.current_oversampling, 'd'))
                 self.console_msg("self.epsf_model.data.shape="+str(self.epsf_model.data.shape))
-                self.console_msg("self.epsf_model.data.sum()="+format(self.epsf_model.data.sum(), '.2f'))
+                self.console_msg("ePSF Normalization Index = "+format(self.epsf_model.data.sum()/self.current_oversampling**2, '.4f'))
 
                 self.plot_psf_model(self.epsf_model.data, plotting_loaded_psf=True,
                                      loaded_psf_file=os.path.basename(str(file_name)))
@@ -1887,9 +1909,14 @@ class MyGUI:
 
         try:
             if len(str(file_name)) > 0:
+                # bumdle current_oversampling along with the data
+                bundle = {
+                    'epsf_model': self.epsf_model,
+                    'oversampling': self.current_oversampling
+                }
                 self.console_msg("Saving current ePSF as " + str(file_name.name))
                 with open(str(file_name.name), 'wb') as file:
-                    pickle.dump(self.epsf_model, file)
+                    pickle.dump(bundle, file)
                 self.ePSF_plotname_label.config(text="Effective PSF: "+os.path.basename(str(file_name.name)))
                 self.console_msg("Saving ePSF as " + str(file_name.name))
                 self.console_msg("Ready")
@@ -4844,7 +4871,7 @@ class MyGUI:
             airmass_label = tk.Label(settings_right_frame, text="Airmass:")
             airmass_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.airmass_entry = tk.Entry(
-                settings_right_frame, width=extended_settings_entry_width, background='pink')
+                settings_right_frame, width=extended_settings_entry_width)
             self.airmass_entry.grid(row=row, column=2, ipadx=settings_entry_pad, sticky=tk.W)
             row += 1
 
@@ -4852,14 +4879,24 @@ class MyGUI:
                 settings_right_frame, text="Date-Obs (JD):")
             date_obs_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.date_obs_entry = tk.Entry(
-                settings_right_frame, width=extended_settings_entry_width, background='pink')
+                settings_right_frame, width=extended_settings_entry_width)
+            self.date_obs_entry.config(state='readonly')
             self.date_obs_entry.grid(row=row, column=2, sticky=tk.EW)
+            row += 1
+
+            date_utc_label = tk.Label(
+                settings_right_frame, text="Date-Obs (UTC):")
+            date_utc_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
+            self.date_utc_entry = tk.Entry(
+                settings_right_frame, width=extended_settings_entry_width)
+            self.date_utc_entry.config(state='readonly')
+            self.date_utc_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
             object_notes_label = tk.Label(settings_right_frame, text="Notes:")
             object_notes_label.grid(row=row, column=0, columnspan=2, sticky=tk.E)
             self.object_notes_entry = tk.Entry(
-                settings_right_frame, width=extended_settings_entry_width, background='pink')
+                settings_right_frame, width=extended_settings_entry_width)
             self.object_notes_entry.grid(row=row, column=2, sticky=tk.EW)
             row += 1
 
@@ -6485,7 +6522,7 @@ class MyGUI:
         # Place label
         row += 1
         self.ePSF_plotname_label = tk.Label(self.right_frame, text="PSF:")
-        self.ePSF_plotname_label.grid(row=row, column=0)  #row=2
+        self.ePSF_plotname_label.grid(row=row, column=0)
 
         row += 1
         self.fig_ePSF, self.ePSF_plot = plt.subplots()
