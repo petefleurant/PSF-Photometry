@@ -51,9 +51,9 @@ to the following enhancements:
 - PSF Photometry using an iterative algorithm to perform point spread function 
 photometry in crowded fields
 - Photometry using an ensemble of comparison stars or a single comp star
-- Generation of Two-Color Photometry (B, V), (V, R) or (V, I), and Single Image
+- Generation of Multi Color Photometry (B,V), (V,R), (V, I), etc., and Single Image
  Photometry reports in AAVSO extended format 
-- Use of telescope Transformation Coefficients (needed for Two Color Photometry)
+- Use of telescope Transformation Coefficients (needed for Multi Color Photometry)
 - Image display shows comp star AAVSO label number and name of any found VSX 
 objects in image field
 - Intermediate results are saved as .csv files 
@@ -78,62 +78,23 @@ objects in image field
 
         
 
-    More about Two Color Photometry
+    Multi Color Photometry 
+        The process uses the AAVSO Reommended iterative method
+        that matches AAVSO TransformApplier (TA v2.7.1). E.g., Tbv is not used
+        only Tb_bv and Tv_bv are used in the (B,V) case.
 
-        MAOPhot mimics VPhot's "Two Color Photometry" (Usually B and V)
-            
-        See spreadsheet: ProcessingMaoImages_202281V1117Her.xlsx 
-
-        It includes formulas to generate "two color photometry". 
-        The method generate_aavso_report_2color() uses the same formula which
-		uses the telescope Transformation Coefficients.
-
-        The following coefficients are used and are added to the list of "pink"
-        fields. (Pink fields required for report generation)
-            Tbv
-            Tv_bv
-            Tb_bv
-            
-        These are associated with a particular telescope, eg. MAO
+        For more information see functions two_color_photometry, three_color_photometry,
+        and four_color_photometry. 
+        To calculate then generate a report, the correct sets of results_tab_df in csv
+        format must exist, one for each color, and must have been derived from the 
+        B and V images of the Var under analysis.
         
-        Required data (Pink fields):
-            Tbv
-            Tv_bv
-            Tb_bv
-            "Select Comp Stars (AAVSO Label)"
-            "Use Check star (AAVSO Label)"
-            ...
-            etc.
-                       
-            
-        The following formulas are calculated for each comp star and 
-		var = check star;
-        then calculated again for each comp star and var = "Object Name". 
-		E.g. V1117 Her
-        
-        Δv = vvar - vcomp
-        Δ(B-V) = Tbv * Δ(b-v)
-        Vvar = Δv + Tv_bv * Δ(B-V) + Vcomp
-        
-        where:
-        Δv  = IM of variable  - IM comp
-        Vcomp = published V-magnitude of comp
-        Δ(B-V) = Tbv * difference between standard color of var and standard 
-		color of comp
-        
-        To calculate these formulas and then generate a report, two (2) sets
-        of results_tab_df in csv format must exist, one for B and one for V and
-        must have been derived from the B and V images of the Var under 
-		analysis.
-        
-        When generate_aavso_report_2color is called, by the menu item,
-        'Two Color Photometry->Two Color Photometry (B,V)', the user will 
-        be asked to specify the 2 aformentioned csv files.
+        E.g., when generate_aavso_report_2color is called, by the menu item,
+        'Multi Color Photometry->(B,V)', the user will 
+        be asked to specify the B and then the V csv files.
         
         From these files/Panda databases, the formulas are calculated, and 
 		results are displayed. 
-
-
         
         Error Estimation :
         MAOPhot mimics VPhot when calculating error estimation. 
@@ -2930,30 +2891,110 @@ class MyGUI:
             
 
     #
-    #   BV_two_color_photometry: called from Menu selection  Two Color Photometry->(B-V)
+    #   BV_multi_color_photometry: called from Menu selection  Two Color Photometry->(B-V)
     #
-    def BV_two_color_photometry(self):
+    def BV_multi_color_photometry(self):
         self.two_color_photometry('B-V')
 
     #
-    #   VR_two_color_photometry: called from Menu selection  Two Color Photometry->(V-R)
+    #   VR_multi_color_photometry: called from Menu selection  Two Color Photometry->(V-R)
     #
-    def VR_two_color_photometry(self):
+    def VR_multi_color_photometry(self):
         self.two_color_photometry('V-R')
 
     #
-    #   VI_two_color_photometry: called from Menu selection  Two Color Photometry->(V-I)
+    #   VI_multi_color_photometry: called from Menu selection  Two Color Photometry->(V-I)
     #
-    def VI_two_color_photometry(self):
+    def VI_multi_color_photometry(self):
         self.two_color_photometry('V-I')
 
     #######################################################################################
     #
+    # _iterative_transform  (NEW — helper for two_color_photometry)
+    #
+    # Performs the AAVSO Recommended iterative transformation for a two-filter pair.
+    # This matches the algorithm used by George Silvis's TransformApplier (TA).
+    #
+    # Instead of computing delta_color = Tbv * delta(b-v) and then applying magnitude
+    # coefficients (the "Classic" sequential method), this method uses only the two
+    # magnitude coefficients (e.g., Tb_bv and Tv_bv) and iterates until convergence.
+    #
+    # Parameters:
+    #   star_IM1     - instrumental mag of star (check or variable) in first filter
+    #   star_IM2     - instrumental mag of star in second filter
+    #   comp_IM1     - instrumental mag of comp star in first filter
+    #   comp_IM2     - instrumental mag of comp star in second filter
+    #   comp_cat1    - catalog magnitude of comp star in first filter
+    #   comp_cat2    - catalog magnitude of comp star in second filter
+    #   t1_coeff     - magnitude coefficient for first filter  (e.g., Tb_bv)
+    #   t2_coeff     - magnitude coefficient for second filter (e.g., Tv_bv)
+    #
+    # Returns:
+    #   (mag1_star, mag2_star, iterations)
+    #   where mag1_star and mag2_star are the transformed magnitudes and
+    #   iterations is the number of iterations used.
+    #
+    #######################################################################################
+    MAX_TRANSFORM_ITER = 20
+    TRANSFORM_PRECISION = 1e-6
+
+    def _iterative_transform(self, star_IM1, star_IM2, comp_IM1, comp_IM2,
+                             comp_cat1, comp_cat2, t1_coeff, t2_coeff):
+        """AAVSO Recommended iterative two-filter transformation."""
+        
+        
+        # Instrumental differentials
+        delta_1 = star_IM1 - comp_IM1
+        delta_2 = star_IM2 - comp_IM2
+        
+        # Catalog color index of comp star
+        comp_color = comp_cat1 - comp_cat2
+        
+        # Initial guess: untransformed differential magnitudes
+        est_1 = delta_1 + comp_cat1
+        est_2 = delta_2 + comp_cat2
+        
+        iterations = 0
+        for iterations in range(1, self.MAX_TRANSFORM_ITER + 1):
+            prev_1, prev_2 = est_1, est_2
+            
+            # Color index from current estimates
+            delta_color = (est_1 - est_2) - comp_color
+            
+            # Apply magnitude coefficients
+            est_1 = delta_1 + t1_coeff * delta_color + comp_cat1
+            est_2 = delta_2 + t2_coeff * delta_color + comp_cat2
+            
+            # Check convergence
+            if abs(est_1 - prev_1) < self.TRANSFORM_PRECISION and \
+               abs(est_2 - prev_2) < self.TRANSFORM_PRECISION:
+                break
+        
+        return est_1, est_2, iterations
+    
+    #######################################################################################
+    #
     # two_color_photometry
     # 
-    # This calculates the two color photometry process as executed in AAVSO VPhot
-    # TwoColorPhotometry. 
-    # The parameter input_color is either 'B-V','V-R', or 'V-I' The formulae are the same/
+    # This calculates the two color photometry process using the AAVSO Recommended
+    # iterative method, matching AAVSO TransformApplier (TA v2.71).
+    #
+    # The parameter input_color is either 'B-V','V-R', or 'V-I'. The iterative
+    # algorithm is the same for all three pairs.
+    #
+    # AAVSO Recommended method:
+    #   For a filter pair (e.g., B and V), there are two magnitude equations:
+    #     Bs = delta_b + Tb_bv * Δ(B-V) + B_comp
+    #     Vs = delta_v + Tv_bv * Δ(B-V) + V_comp
+    #   where Δ(B-V) = (Bs - Vs) - (B_comp - V_comp).
+    #   Since Bs and Vs appear on both sides, we iterate:
+    #     1. Guess Bs = delta_b + B_comp, Vs = delta_v + V_comp (untransformed)
+    #     2. Compute Δ(B-V) from the guess
+    #     3. Update Bs and Vs from the magnitude equations
+    #     4. Repeat until convergence (typically 4-11 iterations)
+    #
+    #   This uses only two magnitude coefficients (Tb_bv, Tv_bv) — the color
+    #   coefficient (Tbv) is not used in the computation.
     #
     ########################################################################################
     
@@ -2962,7 +3003,7 @@ class MyGUI:
             """
             #
             # NOTE! Since B-V was implemented first, the B-V filternames are
-            # still used even though imput_color may be V-R or V-I; 
+            # still used internally even though input_color may be V-R or V-I; 
             # Only when it counts does the B-V change to the real V-R or V-I
             #
             Two Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'
@@ -2972,15 +3013,18 @@ class MyGUI:
             The following formulas are calculated for each comp star and var = check star;
             then calculated again for each comp star and var = "Object Name". Eg. V1117 Her
             
-            Δv = vvar - vcomp
-            Δ(B-V) = Tbv * Δ(b-v)
-            Vvar = Δv + Tv_bv * Δ(B-V) + Vcomp
-            
-            where:
-            Δv  = IM of variable  - IM comp
-            Vcomp = published V-magnitude of comp
-            Δ(B-V) = Tbv * difference between standard color of var and standard color of comp
-
+            AAVSO Recommended iterative method:
+              delta_b = b_var - b_comp                     (instrumental differential)
+              delta_v = v_var - v_comp
+              
+              Initial guess:
+                B_est = delta_b + B_comp
+                V_est = delta_v + V_comp
+              
+              Iterate until convergence:
+                Δ(B-V) = (B_est - V_est) - (B_comp - V_comp)
+                B_est  = delta_b + Tb_bv x Δ(B-V) + B_comp
+                V_est  = delta_v + Tv_bv x Δ(B-V) + V_comp
 
             Build 2 tables, "check" and "var", with the following columns (see 
             E:\\Astronomy\\AAVSO\\Reports\\AAVSO Reports\\MAO\\2022 6 4 V1117 Her/
@@ -2993,16 +3037,17 @@ class MyGUI:
             IMV                      instrumental mag of comp (V)
             B                        published B mag
             V                        published V mag
-            delta_b_minus_v          var(b-v) - comp_b_minus_v
-            delta_B_minus_V          Tbv *  delta_b_minus_v
+            delta_b_minus_v          instrumental color difference (diagnostic)
+            delta_B_minus_V          converged standard color correction (diagnostic)
             delta_v                  var_IMV - IMV
             delta_b                  var_IMB - IMB
             comp_b_minus_v           IMB - IMV
-            B_star                   Bvar = Δb + Tv_bv * Δ(B-V) + Bcomp
-            V_star                   Vvar = Δv + Tv_bv * Δ(B-V) + Vcomp
+            B_star                   transformed B magnitude
+            V_star                   transformed V magnitude
+            iterations               number of iterations to converge
 
             """
-            # use first_filter, amd second_filter dict to index into appropriate filter
+            # use first_filter, and second_filter dict to index into appropriate filter
             first_filter = {'B-V': 'B', 'V-R': 'V', 'V-I': 'V'}
             second_filter = {'B-V': 'V', 'V-R': 'R', 'V-I': 'I'}
 
@@ -3051,13 +3096,21 @@ class MyGUI:
                 self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' for "+second_filter[input_color]+" first.")
                 return
 
-            self.console_msg("Performing Two Color Photometry...")
+            self.console_msg("Performing Two Color Photometry (AAVSO Recommended iterative method)...")
             
             # Get the transformation coefficients
             #
             # NOTE! Since B-V was implemented first, the B-V filternames are
             # still used even though imput_color may be V-R; 
             # Only when it counts does the B-V change to the real V-R or V-I
+            #
+            # tbv_coefficient is the color coefficient (Tbv, Tvr, or Tvi).
+            # It is NOT used in the iterative transformation computation, but is
+            # still loaded for recording in the aux report / AAVSO notes.
+            #
+            # tb_bv_coefficient is the first-filter magnitude coefficient (Tb_bv, Tv_vr, Tv_vi)
+            # tv_bv_coefficient is the second-filter magnitude coefficient (Tv_bv, Tr_vr, Ti_vi)
+            # These two are used in the iterative transformation.
             #
             # Also get the error (+/-) figures; these are only used in the notes section of
             # the AAVSO report; they are only treated as str
@@ -3180,7 +3233,7 @@ class MyGUI:
             half_exposure_B = (self.results_tab_df_colorB[self.results_tab_df_colorB["check_star"] == True].iloc[0]["exposure"])/2
             half_exposure_V = (self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["exposure"])/2
 
-            #use Julian Datw
+            #use Julian Date
             _obs_B = Time(date_obs_B, format='jd') + TimeDelta(half_exposure_B, format='sec')
             _obs_V = Time(date_obs_V, format='jd') + TimeDelta(half_exposure_V, format='sec')
 
@@ -3192,28 +3245,27 @@ class MyGUI:
             amass_V = self.results_tab_df_colorV[self.results_tab_df_colorV["check_star"] == True].iloc[0]["AMASS"]
 
             """
-            Build the result_check_star and result_var_table which are similar to the aforementioed 
-            spreadsheet ProcessingMaoImages_202281V1117Her.xlsx
+            Build the result_check_star and result_var_table
             """
             
             if input_color == 'B-V':
                 result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
-                                                      "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star", "outlier"])
+                                                      "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star", "iterations", "outlier"])
             
                 result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMB", "IMV", "B", "V", "delta_b_minus_v", "delta_B_minus_V",
-                                                    "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star"])
+                                                    "delta_b", "delta_v", "comp_b_minus_v", "B_star", "V_star", "iterations"])
             elif input_color == 'V-R':
                 result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
-                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star", "outlier"])
+                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star", "iterations", "outlier"])
             
                 result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMR", "V", "R", "delta_v_minus_r", "delta_V_minus_R",
-                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star"])
+                                                      "delta_v", "delta_r", "comp_v_minus_r", "V_star", "R_star", "iterations"])
             elif input_color == 'V-I':
                 result_check_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
-                                                      "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star", "outlier"])
+                                                      "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star", "iterations", "outlier"])
             
                 result_var_star = pd.DataFrame(columns=["type", "name", "comp", "IMV", "IMI", "V", "I", "delta_v_minus_i", "delta_V_minus_I",
-                                                      "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star"])
+                                                      "delta_v", "delta_i", "comp_v_minus_i", "V_star", "I_star", "iterations"])
             else:
                 raise Exception("two_color_photometry: unknown imput_color entered")
 
@@ -3260,14 +3312,30 @@ class MyGUI:
                     continue
                 
 
-                comp_b_minus_v = comp_star_B["inst_mag"] - comp_star_V["inst_mag"]
+                # ============================================================
+                # CHECK STAR transformation (AAVSO Recommended iterative method)
+                # ============================================================
+                comp_IM1 = comp_star_B["inst_mag"]
+                comp_IM2 = comp_star_V["inst_mag"]
+                comp_cat1 = float(comp_star_B["match_mag"])
+                comp_cat2 = float(comp_star_V["match_mag"])
+
+                B_star, V_star, n_iter = self._iterative_transform(
+                    check_IMB, check_IMV,       # star (check) instrumental mags
+                    comp_IM1, comp_IM2,          # comp instrumental mags
+                    comp_cat1, comp_cat2,        # comp catalog mags
+                    tb_bv_coefficient,           # first-filter magnitude coefficient
+                    tv_bv_coefficient            # second-filter magnitude coefficient
+                )
+
+                # Compute diagnostic columns (same values as before, for compatibility)
+                comp_b_minus_v = comp_IM1 - comp_IM2
+                delta_b = check_IMB - comp_IM1
+                delta_v = check_IMV - comp_IM2
                 delta_b_minus_v = (check_IMB - check_IMV) - comp_b_minus_v
-                delta_B_minus_V = tbv_coefficient*delta_b_minus_v
-                delta_b = check_IMB - comp_star_B["inst_mag"]
-                delta_v = check_IMV - comp_star_V["inst_mag"]
-                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + float(comp_star_B["match_mag"])
-                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + float(comp_star_V["match_mag"])
-                
+                # delta_B_minus_V: the converged standard color correction
+                delta_B_minus_V = (B_star - V_star) - (comp_cat1 - comp_cat2)
+
                 
                 if input_color == 'B-V':
                     result_check_star.loc[len(result_check_star)] =\
@@ -3275,8 +3343,8 @@ class MyGUI:
                         "type": "check",
                         "name": check_star_label,
                         "comp": comp_no_prefix,
-                        "IMB": comp_star_B["inst_mag"],
-                        "IMV": comp_star_V["inst_mag"],
+                        "IMB": comp_IM1,
+                        "IMV": comp_IM2,
                         "B": comp_star_B["match_mag"],
                         "V": comp_star_V["match_mag"],
                         "delta_b_minus_v": delta_b_minus_v,
@@ -3286,6 +3354,7 @@ class MyGUI:
                         "comp_b_minus_v": comp_b_minus_v,
                         "B_star": B_star,
                         "V_star": V_star,
+                        "iterations": n_iter,
                         "outlier": ''
                         }
                 elif input_color == 'V-R':
@@ -3294,8 +3363,8 @@ class MyGUI:
                         "type": "check",
                         "name": check_star_label,
                         "comp": comp_no_prefix,
-                        "IMV": comp_star_B["inst_mag"],
-                        "IMR": comp_star_V["inst_mag"],
+                        "IMV": comp_IM1,
+                        "IMR": comp_IM2,
                         "V": comp_star_B["match_mag"],
                         "R": comp_star_V["match_mag"],
                         "delta_v_minus_r": delta_b_minus_v,
@@ -3305,6 +3374,7 @@ class MyGUI:
                         "comp_v_minus_r": comp_b_minus_v,
                         "V_star": B_star,
                         "R_star": V_star,
+                        "iterations": n_iter,
                         "outlier": ''
                         }
                 elif input_color == 'V-I':
@@ -3313,8 +3383,8 @@ class MyGUI:
                         "type": "check",
                         "name": check_star_label,
                         "comp": comp_no_prefix,
-                        "IMV": comp_star_B["inst_mag"],
-                        "IMI": comp_star_V["inst_mag"],
+                        "IMV": comp_IM1,
+                        "IMI": comp_IM2,
                         "V": comp_star_B["match_mag"],
                         "I": comp_star_V["match_mag"],
                         "delta_v_minus_i": delta_b_minus_v,
@@ -3324,25 +3394,30 @@ class MyGUI:
                         "comp_v_minus_i": comp_b_minus_v,
                         "V_star": B_star,
                         "I_star": V_star,
+                        "iterations": n_iter,
                         "outlier": ''
                         }
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
 
-                #
-                # NOTE! Since B-V was implemented first, the B-V filternames are
-                # still used even though imput_color may be V-R; 
-                # Only when it counts does the B-V change to the real V-R or V-I
-                #
+                # ============================================================
+                # VARIABLE STAR transformation (AAVSO Recommended iterative method)
+                # ============================================================
+                B_star, V_star, n_iter = self._iterative_transform(
+                    var_IMB, var_IMV,            # star (variable) instrumental mags
+                    comp_IM1, comp_IM2,          # comp instrumental mags (same as above)
+                    comp_cat1, comp_cat2,        # comp catalog mags (same as above)
+                    tb_bv_coefficient,           # first-filter magnitude coefficient
+                    tv_bv_coefficient            # second-filter magnitude coefficient
+                )
 
-                # comp_b_minus_v , calculated above
+                # Compute diagnostic columns for variable star
+                # comp_b_minus_v already computed above
+                delta_b = var_IMB - comp_IM1
+                delta_v = var_IMV - comp_IM2
                 delta_b_minus_v = (var_IMB - var_IMV) - comp_b_minus_v
-                delta_B_minus_V = tbv_coefficient*delta_b_minus_v
-                delta_b = var_IMB - comp_star_B["inst_mag"]
-                delta_v = var_IMV - comp_star_V["inst_mag"]
-                B_star = delta_b + (tb_bv_coefficient*delta_B_minus_V) + float(comp_star_B["match_mag"])
-                V_star = delta_v + (tv_bv_coefficient*delta_B_minus_V) + float(comp_star_V["match_mag"])
-                
+                delta_B_minus_V = (B_star - V_star) - (comp_cat1 - comp_cat2)
+
                 
                 if input_color == 'B-V':
                     result_var_star.loc[len(result_var_star)] =\
@@ -3350,8 +3425,8 @@ class MyGUI:
                         "type": "var",
                         "name": var_star_label,
                         "comp": comp_no_prefix,
-                        "IMB": comp_star_B["inst_mag"],
-                        "IMV": comp_star_V["inst_mag"],
+                        "IMB": comp_IM1,
+                        "IMV": comp_IM2,
                         "B": comp_star_B["match_mag"],
                         "V": comp_star_V["match_mag"],
                         "delta_b_minus_v": delta_b_minus_v,
@@ -3360,7 +3435,8 @@ class MyGUI:
                         "delta_v": delta_v,
                         "comp_b_minus_v": comp_b_minus_v,
                         "B_star": B_star,
-                        "V_star": V_star
+                        "V_star": V_star,
+                        "iterations": n_iter
                         }
                 elif input_color == 'V-R':
                     result_var_star.loc[len(result_var_star)] =\
@@ -3368,8 +3444,8 @@ class MyGUI:
                         "type": "var",
                         "name": var_star_label,
                         "comp": comp_no_prefix,
-                        "IMV": comp_star_B["inst_mag"],
-                        "IMR": comp_star_V["inst_mag"],
+                        "IMV": comp_IM1,
+                        "IMR": comp_IM2,
                         "V": comp_star_B["match_mag"],
                         "R": comp_star_V["match_mag"],
                         "delta_v_minus_r": delta_b_minus_v,
@@ -3378,7 +3454,8 @@ class MyGUI:
                         "delta_r": delta_v,
                         "comp_v_minus_r": comp_b_minus_v,
                         "V_star": B_star,
-                        "R_star": V_star
+                        "R_star": V_star,
+                        "iterations": n_iter
                         }
                 elif input_color == 'V-I':
                     result_var_star.loc[len(result_var_star)] =\
@@ -3386,8 +3463,8 @@ class MyGUI:
                         "type": "var",
                         "name": var_star_label,
                         "comp": comp_no_prefix,
-                        "IMV": comp_star_B["inst_mag"],
-                        "IMI": comp_star_V["inst_mag"],
+                        "IMV": comp_IM1,
+                        "IMI": comp_IM2,
                         "V": comp_star_B["match_mag"],
                         "I": comp_star_V["match_mag"],
                         "delta_v_minus_i": delta_b_minus_v,
@@ -3396,7 +3473,8 @@ class MyGUI:
                         "delta_i": delta_v,
                         "comp_v_minus_i": comp_b_minus_v,
                         "V_star": B_star,
-                        "I_star": V_star
+                        "I_star": V_star,
+                        "iterations": n_iter
                         }
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
@@ -3522,8 +3600,6 @@ class MyGUI:
                                 "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
             elif input_color == 'V-R':
                 #create an aux table containing misc data needed for AAVSO report
-                #this data is appended to the notes section 
-                #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
                 result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvr", "TvrErr", "Tr_vr", "Tr_vrErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
@@ -3593,8 +3669,6 @@ class MyGUI:
                                 "  R* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
             elif input_color == 'V-I':
                 #create an aux table containing misc data needed for AAVSO report
-                #this data is appended to the notes section 
-                #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
                 result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvi", "TviErr", "Ti_vi", "Ti_viErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
@@ -3680,8 +3754,6 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) +" "+str(e), level=logging.ERROR)
-     
-
 
     #######################################################################################
     #
@@ -6357,22 +6429,32 @@ class MyGUI:
             label="Get Comparison Stars", command=self.get_comparison_stars)
         self.menubar.add_cascade(label="Photometry", menu=self.photometrymenu)
         
-        self.two_color_photo_menu = tk.Menu(self.menubar, tearoff=0)
-        self.two_color_photo_menu.add_command(
-            label="(B,V)", command=self.BV_two_color_photometry)
-        self.two_color_photo_menu.add_command(
-            label="(V,R)", command=self.VR_two_color_photometry)
-        self.two_color_photo_menu.add_command(
-            label="(V,I)", command=self.VI_two_color_photometry)
-        self.menubar.add_cascade(label="Two Color Photometry", menu=self.two_color_photo_menu)
+        self.multi_color_photo_menu = tk.Menu(self.menubar, tearoff=0)
+        """
+        self.multi_color_photo_menu.add_command(
+            label="(B,V,R,I)", command=self.BVRI_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(
+            label="(B,V,R)", command=self.BVR_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(
+            label="(B,V,I)", command=self.BVI_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(
+            label="(V,R,I)", command=self.VRI_multi_color_photometry)
+        """
+        self.multi_color_photo_menu.add_command(
+            label="(B,V)", command=self.BV_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(
+            label="(V,R)", command=self.VR_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(
+            label="(V,I)", command=self.VI_multi_color_photometry)
+        self.menubar.add_cascade(label="Multi Color Photometry", menu=self.multi_color_photo_menu)
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
         self.reportmenu.add_command(label="Single Image Photometry", command=self.generate_aavso_report_1image)
-        self.two_color_sub_menu = tk.Menu(self.reportmenu, tearoff=False)
-        self.two_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
-        self.two_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
-        self.two_color_sub_menu.add_command(label = "(V-I)", command=self.VI_generate_aavso_report_2color)
-        self.reportmenu.add_cascade(label="Two Color Photometry", menu=self.two_color_sub_menu)
+        self.multi_color_sub_menu = tk.Menu(self.reportmenu, tearoff=False)
+        self.multi_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
+        self.multi_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
+        self.multi_color_sub_menu.add_command(label = "(V-I)", command=self.VI_generate_aavso_report_2color)
+        self.reportmenu.add_cascade(label="Two Color Photometry", menu=self.multi_color_sub_menu)
 
         self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
 
