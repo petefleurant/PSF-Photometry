@@ -41,6 +41,9 @@ functionality and common tools for performing astronomy and astrophysics
  with Python. Included in the package is Photutils.psf.  See "PSF Photometry" 
  (https://photutils.readthedocs.io/en/stable/psf.html) which describes many of 
  the classes and methods used in MAOPhot 
+ 
+Note: This module was developed with AI assistance (approx. 10% of logic).
+All code has been human-verified for safety and performance.
 
 This program was derived from MetroPSF by Maxym Usatov.  
 It has been redesigned for AAVSO reporting only and includes, but not limited 
@@ -2381,7 +2384,7 @@ class MyGUI:
                     # Make unique, just in case
                     sel_comps_to_use = list(set(sel_comps_to_use))
 
-                    #make array of int csalled sel_comps            
+                    #make array of int called sel_comps            
                     for comp in sel_comps_to_use:
                         sel_comps.append(comp.strip())
 
@@ -2908,70 +2911,7 @@ class MyGUI:
     def VI_multi_color_photometry(self):
         self.two_color_photometry('V-I')
 
-    #######################################################################################
-    #
-    # _iterative_transform  (NEW — helper for two_color_photometry)
-    #
-    # Performs the AAVSO Recommended iterative transformation for a two-filter pair.
-    # This matches the algorithm used by George Silvis's TransformApplier (TA).
-    #
-    # Instead of computing delta_color = Tbv * delta(b-v) and then applying magnitude
-    # coefficients (the "Classic" sequential method), this method uses only the two
-    # magnitude coefficients (e.g., Tb_bv and Tv_bv) and iterates until convergence.
-    #
-    # Parameters:
-    #   star_IM1     - instrumental mag of star (check or variable) in first filter
-    #   star_IM2     - instrumental mag of star in second filter
-    #   comp_IM1     - instrumental mag of comp star in first filter
-    #   comp_IM2     - instrumental mag of comp star in second filter
-    #   comp_cat1    - catalog magnitude of comp star in first filter
-    #   comp_cat2    - catalog magnitude of comp star in second filter
-    #   t1_coeff     - magnitude coefficient for first filter  (e.g., Tb_bv)
-    #   t2_coeff     - magnitude coefficient for second filter (e.g., Tv_bv)
-    #
-    # Returns:
-    #   (mag1_star, mag2_star, iterations)
-    #   where mag1_star and mag2_star are the transformed magnitudes and
-    #   iterations is the number of iterations used.
-    #
-    #######################################################################################
-    MAX_TRANSFORM_ITER = 20
-    TRANSFORM_PRECISION = 1e-6
-
-    def _iterative_transform(self, star_IM1, star_IM2, comp_IM1, comp_IM2,
-                             comp_cat1, comp_cat2, t1_coeff, t2_coeff):
-        """AAVSO Recommended iterative two-filter transformation."""
-        
-        
-        # Instrumental differentials
-        delta_1 = star_IM1 - comp_IM1
-        delta_2 = star_IM2 - comp_IM2
-        
-        # Catalog color index of comp star
-        comp_color = comp_cat1 - comp_cat2
-        
-        # Initial guess: untransformed differential magnitudes
-        est_1 = delta_1 + comp_cat1
-        est_2 = delta_2 + comp_cat2
-        
-        iterations = 0
-        for iterations in range(1, self.MAX_TRANSFORM_ITER + 1):
-            prev_1, prev_2 = est_1, est_2
-            
-            # Color index from current estimates
-            delta_color = (est_1 - est_2) - comp_color
-            
-            # Apply magnitude coefficients
-            est_1 = delta_1 + t1_coeff * delta_color + comp_cat1
-            est_2 = delta_2 + t2_coeff * delta_color + comp_cat2
-            
-            # Check convergence
-            if abs(est_1 - prev_1) < self.TRANSFORM_PRECISION and \
-               abs(est_2 - prev_2) < self.TRANSFORM_PRECISION:
-                break
-        
-        return est_1, est_2, iterations
-    
+  
     #######################################################################################
     #
     # two_color_photometry
@@ -2999,6 +2939,73 @@ class MyGUI:
     ########################################################################################
     
     def two_color_photometry(self, input_color):
+
+    #######################################################################################
+    #
+    # _iterative_transform  (helper for two_color_photometry)
+    #
+    # Performs the AAVSO Recommended iterative transformation for a two-filter pair.
+    # This matches the algorithm used by George Silvis's TransformApplier (TA).
+    #
+    # Instead of computing delta_color = Tbv * delta(b-v) and then applying magnitude
+    # coefficients (the "Classic" sequential method), this method uses only the two
+    # magnitude coefficients (e.g., Tb_bv and Tv_bv) and iterates until convergence.
+    #
+    # Parameters:
+    #   star_IM1     - instrumental mag of star (check or variable) in first filter
+    #   star_IM2     - instrumental mag of star in second filter
+    #   comp_IM1     - instrumental mag of comp star in first filter
+    #   comp_IM2     - instrumental mag of comp star in second filter
+    #   comp_cat1    - catalog magnitude of comp star in first filter
+    #   comp_cat2    - catalog magnitude of comp star in second filter
+    #   t1_coeff     - magnitude coefficient for first filter  (e.g., Tb_bv)
+    #   t2_coeff     - magnitude coefficient for second filter (e.g., Tv_bv)
+    #
+    # Returns:
+    #   (mag1_star, mag2_star, iterations)
+    #   where mag1_star and mag2_star are the transformed magnitudes and
+    #   iterations is the number of iterations used.
+    #
+    #######################################################################################
+            
+
+        def _iterative_transform(star_IM1, star_IM2, comp_IM1, comp_IM2,
+                                comp_cat1, comp_cat2, t1_coeff, t2_coeff):
+            """AAVSO Recommended iterative two-filter transformation."""
+
+            MAX_TRANSFORM_ITER = 20
+            TRANSFORM_PRECISION = 1e-6
+            
+            # Instrumental differentials
+            delta_1 = star_IM1 - comp_IM1
+            delta_2 = star_IM2 - comp_IM2
+            
+            # Catalog color index of comp star
+            comp_color = comp_cat1 - comp_cat2
+            
+            # Initial guess: untransformed differential magnitudes
+            est_1 = delta_1 + comp_cat1
+            est_2 = delta_2 + comp_cat2
+            
+            iterations = 0
+            for iterations in range(1, MAX_TRANSFORM_ITER + 1):
+                prev_1, prev_2 = est_1, est_2
+                
+                # Color index from current estimates
+                delta_color = (est_1 - est_2) - comp_color
+                
+                # Apply magnitude coefficients
+                est_1 = delta_1 + t1_coeff * delta_color + comp_cat1
+                est_2 = delta_2 + t2_coeff * delta_color + comp_cat2
+                
+                # Check convergence
+                if abs(est_1 - prev_1) < TRANSFORM_PRECISION and \
+                abs(est_2 - prev_2) < TRANSFORM_PRECISION:
+                    break
+            
+            return est_1, est_2, iterations
+        
+        # Start of main part of two_color_photometry
         try:
             """
             #
@@ -3320,7 +3327,7 @@ class MyGUI:
                 comp_cat1 = float(comp_star_B["match_mag"])
                 comp_cat2 = float(comp_star_V["match_mag"])
 
-                B_star, V_star, n_iter = self._iterative_transform(
+                B_star, V_star, n_iter = _iterative_transform(
                     check_IMB, check_IMV,       # star (check) instrumental mags
                     comp_IM1, comp_IM2,          # comp instrumental mags
                     comp_cat1, comp_cat2,        # comp catalog mags
@@ -3403,7 +3410,7 @@ class MyGUI:
                 # ============================================================
                 # VARIABLE STAR transformation (AAVSO Recommended iterative method)
                 # ============================================================
-                B_star, V_star, n_iter = self._iterative_transform(
+                B_star, V_star, n_iter = _iterative_transform(
                     var_IMB, var_IMV,            # star (variable) instrumental mags
                     comp_IM1, comp_IM2,          # comp instrumental mags (same as above)
                     comp_cat1, comp_cat2,        # comp catalog mags (same as above)
