@@ -436,7 +436,6 @@ class MyGUI:
     ePSF_samples_plotted = False
     results_tab_df = pd.DataFrame()
     image_bkg_value = 0
-    bkg2D = None #if fetched, the Background2D object
     fit_shape = 5
     error_raised = False
     histogram_slider_low = 0
@@ -3301,6 +3300,10 @@ class MyGUI:
                 if comp_no_prefix == check_star_label:
                     continue
 
+                #skip commented out comps, e.g., #123
+                if not comp_no_prefix[0].isdigit():
+                    continue
+
                 #selected comp must be in both tables
                 if comp in self.results_tab_df_colorB["label"].values:
                     comp_star_B = self.results_tab_df_colorB[self.results_tab_df_colorB["label"] == comp].iloc[0]
@@ -3497,10 +3500,21 @@ class MyGUI:
             B_mean_var = result_var_star[first_filter[input_color] + "_star"].mean()
             V_mean_var = result_var_star[second_filter[input_color] + "_star"].mean()
             
-            B_std_check = result_check_star[first_filter[input_color] + "_star"].std()
-            V_std_check = result_check_star[second_filter[input_color] + "_star"].std()
-            B_std_var = result_var_star[first_filter[input_color] + "_star"].std()
-            V_std_var = result_var_star[second_filter[input_color] + "_star"].std()
+            # std is only valid for more than 1 comp; else use 1/SNR
+            if len(result_check_star[first_filter[input_color] + "_star"]) > 1:
+                B_std_check = result_check_star[first_filter[input_color] + "_star"].std()
+                V_std_check = result_check_star[second_filter[input_color] + "_star"].std()
+                B_std_var = result_var_star[first_filter[input_color] + "_star"].std()
+                V_std_var = result_var_star[second_filter[input_color] + "_star"].std()
+            else:
+                B_snr_check = check_star_B['flux_fit']/self.image_bkg_value
+                V_snr_check = check_star_V['flux_fit']/self.image_bkg_value
+                B_snr_var = var_star_B['flux_fit']/self.image_bkg_value
+                V_snr_var = var_star_V['flux_fit']/self.image_bkg_value
+                B_std_check = 1/B_snr_check
+                V_std_check = 1/V_snr_check
+                B_std_var = 1/B_snr_var
+                V_std_var = 1/V_snr_var
 
             #Find IQR and iqr 
             q3, q1 = np.percentile(result_check_star[first_filter[input_color] + "_star"], [75 ,25])
@@ -5351,7 +5365,7 @@ class MyGUI:
                 # ignore comp numbers that are not numbers like '#120' or '-120'
                 # this way you can 'remove' comp stars from list by just prepending 
                 # them with a '-' or some non-numeric char
-                if is_number(comp) and int(comp.strip()) > 0: 
+                if comp[0].isdigit() and int(comp.strip()) > 0: 
                     sel_comps.append(int(comp.strip()))
                 
             check_star_to_use = self.object_kref_entry.get().strip()
@@ -5682,6 +5696,8 @@ class MyGUI:
         comp_star_list = list(set(comp_star_list))
         # remove the check star from this list just in case
         comp_star_list = [star for star in comp_star_list if star != check_star_name]
+        # remove any commented out comps
+        comp_star_list = [star for star in comp_star_list if star[0].isdigit()]
         #check if anything left
         if len(comp_star_list) == 0:
             self.console_msg(
@@ -5808,23 +5824,16 @@ class MyGUI:
 
                     #error estimates
                     # MERR
-                    # use the  Background2D object's median level if it was fetched
-                    if not self.bkg2D == None:
-                        snr_var_star = var_star['flux_fit']/self.bkg2D.background_median
-                        snr_check_star = check_star['flux_fit']/self.bkg2D.background_median
-                    else:
-                        snr_var_star = var_star['flux_fit']/self.image_bkg_value
-                        snr_check_star = check_star['flux_fit']/self.image_bkg_value
+                    snr_var_star = var_star['flux_fit']/self.image_bkg_value
+                    snr_check_star = check_star['flux_fit']/self.image_bkg_value
 
-                    var_star_err = 2.5*np.log10(1 + 1/snr_var_star)
-                    check_star_err = 2.5*np.log10(1 + 1/snr_check_star)
-
-                    err_in_quadrature = math.sqrt(var_star_err**2 + check_star_err**2)
+                    var_star_err = 1/snr_var_star
+                    check_star_err = 1/snr_check_star
 
                     starid = var_star_name
                     date = format(float(self.date_obs_entry.get()), '.5f') 
                     mag = str(round(var_star_mag, decimal_places))
-                    merr = str(round(err_in_quadrature, decimal_places))
+                    merr = str(round(var_star_err, decimal_places))
                     filt = self.filter_entry.get().strip()
                     trans = "NO"
                     mtype = "STD"
@@ -5859,7 +5868,7 @@ class MyGUI:
                     self.console_msg(var_star_name+" Variable Star Estimates:\n" +
                                     (filt+"* Mag: " + format(var_star_mag, ' >6.3f')).rjust(79)  +
                                     '\n' +
-                                    (filt+"* Err: " + format(err_in_quadrature, ' >6.3f')).rjust(79))
+                                    (filt+"* Err: " + format(var_star_err, ' >6.3f')).rjust(79))
                 else:
                     # ENSEMBLE case
 
