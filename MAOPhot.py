@@ -2940,7 +2940,7 @@ class MyGUI:
     # two_color_photometry
     # 
     # This calculates the two color photometry process using the AAVSO Recommended
-    # iterative method, matching AAVSO TransformApplier (TA v2.71).
+    # iterative method, matching AAVSO TransformApplier (TA version 2.71).
     #
     # The parameter input_color is either 'B-V','V-R', or 'V-I'. The iterative
     # algorithm is the same for all three pairs.
@@ -2956,8 +2956,13 @@ class MyGUI:
     #     3. Update Bs and Vs from the magnitude equations
     #     4. Repeat until convergence (typically 4-11 iterations)
     #
-    #   This uses only two magnitude coefficients (Tb_bv, Tv_bv) — the color
-    #   coefficient (Tbv) is not used in the computation.
+    # The TCs used are the AAVSO recommended:
+    # 
+    #    for  B     V     R     I
+    #    BV   Tb_bv Tv_bv
+    #    VR        Tv_vr Tr_vr
+    #    VI        Tv_vi       Tvi
+    #
     #
     ########################################################################################
     
@@ -2968,7 +2973,7 @@ class MyGUI:
     # _iterative_transform  (helper for two_color_photometry)
     #
     # Performs the AAVSO Recommended iterative transformation for a two-filter pair.
-    # This matches the algorithm used by George Silvis's TransformApplier (TA).
+    # This matches the algorithm used by TransformApplier (TA version 2.71)
     #
     # There are two equation types used by TA:
     #
@@ -3178,24 +3183,30 @@ class MyGUI:
             #
             # Also get the error (+/-) figures; these are only used in the notes section of
             # the AAVSO report; they are only treated as str
+            #
+            #    The AAVSO recommended transforms the TA performs require the following coefficients:
+            #    for  B     V     R     I
+            #    BV   Tb_bv Tv_bv
+            #    VR        Tv_vr Tr_vr
+            #    VI        Tv_vi       Tvi
+
             try:
                 use_type_b = False  # default for B-V and V-R
                 if input_color == 'B-V':
-                    tbv_coefficient = float(self.tbv_entry.get().strip()); tbv_err = float(self.tbv_err_entry.get().strip())
+                    #tbv_coefficient = float(self.tbv_entry.get().strip()); tbv_err = float(self.tbv_err_entry.get().strip())
                     tb_bv_coefficient = float(self.tb_bv_entry.get().strip()); tb_bv_err = float(self.tb_bv_err_entry.get().strip())
                     tv_bv_coefficient = float(self.tv_bv_entry.get().strip()); tv_bv_err = float(self.tv_bv_err_entry.get().strip())
                 elif input_color == 'V-R':
-                    tbv_coefficient = float(self.tvr_entry.get().strip()); tbv_err = float(self.tvr_err_entry.get().strip())
+                    #tbv_coefficient = float(self.tvr_entry.get().strip()); tbv_err = float(self.tvr_err_entry.get().strip())
                     tb_bv_coefficient = float(self.tv_vr_entry.get().strip()); tb_bv_err = float(self.tv_vr_err_entry.get().strip())
                     tv_bv_coefficient = float(self.tr_vr_entry.get().strip()); tv_bv_err = float(self.tr_vr_err_entry.get().strip())
                 elif input_color == 'V-I':
                     # V-I uses Type B: I is computed directly from V using color coeff Tvi
                     # TA equation: Is = Vs - (Vc-Ic) - Tvi * ((vs-is)-(vc-ic))
-                    use_type_b = True
-                    tbv_coefficient = float(self.tvi_entry.get().strip()); tbv_err = float(self.tvi_err_entry.get().strip())
-                    tb_bv_coefficient = float(self.tv_vi_entry.get().strip()); tb_bv_err = float(self.tv_vi_err_entry.get().strip())
                     # For Type B, second coeff is the COLOR coefficient Tvi (not Ti_vi)
-                    tv_bv_coefficient = tbv_coefficient; tv_bv_err = tbv_err
+                    use_type_b = True
+                    tb_bv_coefficient = float(self.tv_vi_entry.get().strip()); tb_bv_err = float(self.tv_vi_err_entry.get().strip())
+                    tv_bv_coefficient = float(self.tvi_entry.get().strip()); tv_bv_err = float(self.tvi_err_entry.get().strip())
                 else:
                     raise Exception("two_color_photometry: unknown imput_color entered")
             except:  
@@ -3616,7 +3627,7 @@ class MyGUI:
                 #create an aux table containing misc data needed for AAVSO report
                 #this data is appended to the notes section 
                 #(See E:\Astronomy\AAVSO\Reports\AAVSO Reports\MAO\2022 8 1 V1117 Her\AAVSOReport_V1117-Her_B_20220802.txt)
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tbv", "TbvErr", "Tv_bv", "Tv_bvErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tb_bv", "Tb_bvErr", "Tv_bv", "Tv_bvErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -3625,8 +3636,8 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "Tbv" : tbv_coefficient,
-                    "TbvErr" : tbv_err,
+                    "Tb_bv" : tb_bv_coefficient,
+                    "Tb_bvErr" : tb_bv_err,
                     "Tv_bv" : tv_bv_coefficient,
                     "Tv_bvErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
@@ -3642,8 +3653,8 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "Tbv" : tbv_coefficient,
-                    "TbvErr" : tbv_err,
+                    "Tb_bv" : tb_bv_coefficient,
+                    "Tb_bvErr" : tb_bv_err,
                     "Tv_bv" : tv_bv_coefficient,
                     "Tv_bvErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
@@ -3685,7 +3696,7 @@ class MyGUI:
                                 "  V* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
             elif input_color == 'V-R':
                 #create an aux table containing misc data needed for AAVSO report
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvr", "TvrErr", "Tr_vr", "Tr_vrErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tv_vr", "Tv_vrErr", "Tr_vr", "Tr_vrErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -3694,8 +3705,8 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "Tvr" : tbv_coefficient,
-                    "TvrErr" : tbv_err,
+                    "Tv_vr" : tb_bv_coefficient,
+                    "Tv_vrErr" : tb_bv_err,
                     "Tr_vr" : tv_bv_coefficient,
                     "Tr_vrErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
@@ -3711,8 +3722,8 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "Tvr" : tbv_coefficient,
-                    "TvrErr" : tbv_err,
+                    "Tv_vr" : tb_bv_coefficient,
+                    "Tv_vrErr" : tb_bv_err,
                     "Tr_vr" : tv_bv_coefficient,
                     "Tr_vrErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
@@ -3754,7 +3765,7 @@ class MyGUI:
                                 "  R* Std: " + format(V_std_var, ' >6.3f')).rjust(137))
             elif input_color == 'V-I':
                 #create an aux table containing misc data needed for AAVSO report
-                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tvi", "TviErr", "Ti_vi", "Ti_viErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                result_aux_report = pd.DataFrame(columns=["color", "JD", "KMAGS", "KMAGINS", "KREFMAG", "Tv_vi", "Tv_viErr", "Tvi", "TviErr", "VMAGINS", "Date-Obs", "KNAME", "AMASS"])
                 
                 result_aux_report.loc[len(result_aux_report)] =\
                     {
@@ -3763,10 +3774,10 @@ class MyGUI:
                     "KMAGS" : B_mean_check,
                     "KMAGINS" : check_IMB,
                     "KREFMAG" : check_B,
-                    "Tvi" : tbv_coefficient,
-                    "TviErr" : tbv_err,
-                    "Ti_vi" : tv_bv_coefficient,
-                    "Ti_viErr" : tv_bv_err,
+                    "Tv_vi" : tb_bv_coefficient,
+                    "Tv_viErr" : tb_bv_err,
+                    "Tvi" : tv_bv_coefficient,
+                    "TviErr" : tv_bv_err,
                     "VMAGINS" : var_IMB,
                     "Date-Obs" : date_obs_B, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -3780,10 +3791,10 @@ class MyGUI:
                     "KMAGS" : V_mean_check,
                     "KMAGINS" : check_IMV,
                     "KREFMAG" : check_V,
-                    "Tvi" : tbv_coefficient,
-                    "TviErr" : tbv_err,
-                    "Ti_vi" : tv_bv_coefficient,
-                    "Ti_viErr" : tv_bv_err,
+                    "Tv_vi" : tb_bv_coefficient,
+                    "Tv_viErr" : tb_bv_err,
+                    "Tvi" : tv_bv_coefficient,
+                    "TviErr" : tv_bv_err,
                     "VMAGINS" : var_IMV,
                     "Date-Obs" : date_obs_V, #orig plus EXPOSURE/2
                     "KNAME" : check_star_label,
@@ -6480,7 +6491,7 @@ class MyGUI:
 
             with open(report_filename, mode='w') as f:
     
-                decimal_places = 3 #report is usually 3
+                decimal_places = 4
                 decimal_places_for_ra_dec = 5
                 
     
@@ -6628,9 +6639,12 @@ class MyGUI:
                     # Unknown def (ave DEC?) "|CDEC=" + str(round(ave_comp_dec, decimal_places))
                     # Unknown def (ave RA?)  "|CRA=" + str(round(ave_comp_ra, decimal_places)) 
                     # Unknown def (ENSTYPE)  "|ENSTYPE=1"
-                    # Not included in VPhot  "|CMAGINS=" + str(round(ave_comp_inst_mag, decimal_places))
-                    #                        "|CREFMAG=" + str(round(ave_comp_match_mag, decimal_places))
+                    # Not included in VPhot but required for TA:
+                    #  "|CMAGINS=" + str(round(ave_comp_inst_mag, decimal_places))
+                    #  "|CREFMAG=" + str(round(ave_comp_match_mag, decimal_places))
                     notes += \
+                            "|CMAGINS=" + str(round(ave_comp_inst_mag, decimal_places)) +\
+                            "|CREFMAG=" + str(round(ave_comp_match_mag, decimal_places)) +\
                             "|KDEC=" + str(round(check_dec, decimal_places_for_ra_dec)) +\
                             "|KMAGINS=" + str(round(check_IM, decimal_places)) +\
                             "|KMAGSTD=" + str(round(ave_check_star_mag, decimal_places)) +\
@@ -6686,24 +6700,30 @@ class MyGUI:
 
         return
         
+    #####################################################################################
     #
     #   BV_generate_aavso_report_2color: called from Menu selection 
     #   Generate AAVSO Report->Two Color Photometry->(B-V)
     #
+    #####################################################################################
     def BV_generate_aavso_report_2color(self):
         self.generate_aavso_report_2color('B-V')
 
+    #####################################################################################
     #
     #   VR_generate_aavso_report_2color: called from Menu selection 
     #   Generate AAVSO Report->Two Color Photometry->(V-R)
     #
+    #####################################################################################
     def VR_generate_aavso_report_2color(self):
         self.generate_aavso_report_2color('V-R')
 
+    #####################################################################################
     #
     #   VI_generate_aavso_report_2color: called from Menu selection 
     #   Generate AAVSO Report->Two Color Photometry->(V-I)
     #
+    #####################################################################################
     def VI_generate_aavso_report_2color(self):
         self.generate_aavso_report_2color('V-I')
 
@@ -6712,6 +6732,15 @@ class MyGUI:
     #    generate_aavso_report_2color
     # 
     #    Generates a AAVSO report in extended format for 2 filters
+    #
+    #    TCs used for two filters are the AAVSO recommended ones and are entered into 
+    #    the Notes section of the report:
+    #
+    #    for  B     V     R     I
+    #    BV   Tb_bv Tv_bv
+    #    VR        Tv_vr Tr_vr
+    #    VI        Tv_vi       Tvi
+    # 
     #
     #####################################################################################
 
@@ -6731,18 +6760,15 @@ class MyGUI:
         Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,Mittelman ATMoB Observatory|...etc.
         Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,Mittelman ATMoB Observatory|...etc.
 
-        Note:
-          DATE (in JD) is DATE-OBS + EXPOSURE/2
-
         """
 
         # use first_filter, amd second_filter dict to index into appropriate filter
         first_filter = {'B-V': 'B', 'V-R': 'V', 'V-I': 'V'}
         second_filter = {'B-V': 'V', 'V-R': 'R', 'V-I': 'I'}
-        t_coefficient_tbv = {'B-V': 'Tbv', 'V-R': 'Tvr', 'V-I': 'Tvi'}
-        t_coefficient_tv_bv = {'B-V': 'Tv_bv', 'V-R': 'Tr_vr', 'V-I': 'Ti_vi'}
-        t_coefficient_tbv_err = {'B-V': 'TbvErr', 'V-R': 'TvrErr', 'V-I': 'TviErr'}
-        t_coefficient_tv_bv_err = {'B-V': 'Tv_bvErr', 'V-R': 'Tr_vrErr', 'V-I': 'Ti_viErr'}
+        t_coefficient_tb_bv = {'B-V': 'Tb_bv', 'V-R': 'Tv_vr', 'V-I': 'Tv_vi'}
+        t_coefficient_tv_bv = {'B-V': 'Tv_bv', 'V-R': 'Tr_vr', 'V-I': 'Tvi'}
+        t_coefficient_tb_bv_err = {'B-V': 'Tb_bvErr', 'V-R': 'Tv_vrErr', 'V-I': 'Tv_viErr'}
+        t_coefficient_tv_bv_err = {'B-V': 'Tv_bvErr', 'V-R': 'Tr_vrErr', 'V-I': 'TviErr'}
 
         self.console_msg("Beginning Generate AAVSO Two Color Ensemble Report...")
         var_star_name = self.object_name_entry.get().strip()
@@ -6928,8 +6954,8 @@ class MyGUI:
                 notes += "|KMAGINS=" + str(round(float(aux_result['KMAGINS']), decimal_places)) + \
                          "|KMAGSTD=" + str(round(B_mean_check, decimal_places)) + \
                          "|KREFMAG=" + str(round(float(aux_result['KREFMAG']), decimal_places)) + \
-                         "|" + t_coefficient_tbv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv[input_color]]), decimal_places)) + \
-                         "|" + t_coefficient_tbv_err[input_color] + "="  + str(round(float(aux_result[t_coefficient_tbv_err[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tb_bv[input_color] + "="  + str(round(float(aux_result[t_coefficient_tb_bv[input_color]]), decimal_places)) + \
+                         "|" + t_coefficient_tb_bv_err[input_color] + "="  + str(round(float(aux_result[t_coefficient_tb_bv_err[input_color]]), decimal_places)) + \
                          "|VMAGINS=" + str(round(float(aux_result['VMAGINS']), decimal_places))
                 
                 
@@ -7178,7 +7204,7 @@ class MyGUI:
         self.multi_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
         self.multi_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
         self.multi_color_sub_menu.add_command(label = "(V-I)", command=self.VI_generate_aavso_report_2color)
-        self.reportmenu.add_cascade(label="Two Color Photometry", menu=self.multi_color_sub_menu)
+        self.reportmenu.add_cascade(label="Multi Color Photometry", menu=self.multi_color_sub_menu)
 
         self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
 
