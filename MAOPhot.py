@@ -2899,19 +2899,19 @@ class MyGUI:
             
 
     #
-    #   BV_multi_color_photometry: called from Menu selection  Two Color Photometry->(B-V)
+    #   BV_multi_color_photometry: called from Menu selection  Multi Color Photometry->(B-V)
     #
     def BV_multi_color_photometry(self):
         self.two_color_photometry('B-V')
 
     #
-    #   VR_multi_color_photometry: called from Menu selection  Two Color Photometry->(V-R)
+    #   VR_multi_color_photometry: called from Menu selection  Multi Color Photometry->(V-R)
     #
     def VR_multi_color_photometry(self):
         self.two_color_photometry('V-R')
 
     #
-    #   VI_multi_color_photometry: called from Menu selection  Two Color Photometry->(V-I)
+    #   VI_multi_color_photometry: called from Menu selection  Multi Color Photometry->(V-I)
     #
     def VI_multi_color_photometry(self):
         self.two_color_photometry('V-I')
@@ -4038,34 +4038,28 @@ class MyGUI:
             # ci_f2 is the filter being computed, and the coeff is a COLOR coefficient.
             # The TA equation is: f2* = f1* - (F1c-F2c) - T_color * inst_color(f1,f2)
             #
-            # color_coeffs lists the color coefficients for the AAVSO report notes.
 
             if input_color == 'VRI':
                 filters = ('V', 'R', 'I')
                 eqn_entries = {
-                    'V': ('A', 'V', 'I', self.tv_vi_entry, self.tv_vi_err_entry),
-                    'R': ('A', 'V', 'I', self.tr_vi_entry, self.tr_vi_err_entry),
-                    'I': ('B', 'V', 'I', self.tvi_entry,   self.tvi_err_entry),
+                    'V': ('A', 'V', 'I', self.tv_vi_entry, self.tv_vi_err_entry, "Tv_vi", "Tv_viErr"),
+                    'R': ('A', 'V', 'I', self.tr_vi_entry, self.tr_vi_err_entry, "Tr_vi", "Tr_viErr"),
+                    'I': ('B', 'V', 'I', self.tvi_entry,   self.tvi_err_entry, "Tvi", "TviErr"),
                 }
-                color_coeffs = [('Tvi', self.tvi_entry, self.tvi_err_entry)]
             elif input_color == 'BVR':
                 filters = ('B', 'V', 'R')
                 eqn_entries = {
-                    'B': ('A', 'B', 'V', self.tb_bv_entry, self.tb_bv_err_entry),
-                    'V': ('A', 'B', 'V', self.tv_bv_entry, self.tv_bv_err_entry),
-                    'R': ('B', 'V', 'R', self.tvr_entry,   self.tvr_err_entry),
+                    'B': ('A', 'B', 'V', self.tb_bv_entry, self.tb_bv_err_entry, "Tb_bv", "Tb_bvErr"),
+                    'V': ('A', 'B', 'V', self.tv_bv_entry, self.tv_bv_err_entry, "Tv_bv", "Tv_bvErr"),
+                    'R': ('B', 'V', 'R', self.tvr_entry,   self.tvr_err_entry, "Tvr", "TvrErr"),
                 }
-                color_coeffs = [('Tbv', self.tbv_entry, self.tbv_err_entry),
-                                ('Tvr', self.tvr_entry, self.tvr_err_entry)]
             elif input_color == 'BVI':
                 filters = ('B', 'V', 'I')
                 eqn_entries = {
-                    'B': ('A', 'B', 'V', self.tb_bv_entry, self.tb_bv_err_entry),
-                    'V': ('A', 'B', 'V', self.tv_bv_entry, self.tv_bv_err_entry),
-                    'I': ('A', 'V', 'I', self.ti_vi_entry, self.ti_vi_err_entry),
+                    'B': ('A', 'B', 'V', self.tb_bv_entry, self.tb_bv_err_entry, "Tb_bv", "Tb_bvErr"),
+                    'V': ('A', 'B', 'V', self.tv_bv_entry, self.tv_bv_err_entry, "Tv_bv", "Tv_bvErr"),
+                    'I': ('A', 'V', 'I', self.ti_vi_entry, self.ti_vi_err_entry, "Tvi", "TviErr"),
                 }
-                color_coeffs = [('Tbv', self.tbv_entry, self.tbv_err_entry),
-                                ('Tvi', self.tvi_entry, self.tvi_err_entry)]
             else:
                 raise Exception("three_color_photometry: unknown input_color: " + str(input_color))
 
@@ -4113,18 +4107,13 @@ class MyGUI:
             try:
                 eqns = {}
                 eqn_info = {}  # for aux report: {filter: (type, ci_f1, ci_f2, coeff_val, coeff_err)}
+                coeff_info = {} # Color coefficients (for AAVSO notes only, not used in iteration)
                 for filt in filters:
-                    eqn_type, ci_f1, ci_f2, coeff_entry, err_entry = eqn_entries[filt]
+                    eqn_type, ci_f1, ci_f2, coeff_entry, coeff_err_entry, coeff_text, coeff_err_text = eqn_entries[filt]
                     coeff_val = float(coeff_entry.get().strip())
-                    coeff_err = float(err_entry.get().strip())
+                    coeff_err = float(coeff_err_entry.get().strip())
                     eqns[filt] = (eqn_type, ci_f1, ci_f2, coeff_val)
-                    eqn_info[filt] = (eqn_type, ci_f1, ci_f2, coeff_val, coeff_err)
-
-                # Color coefficients (for AAVSO notes only, not used in iteration)
-                color_coeff_info = {}
-                for name, entry, err_entry in color_coeffs:
-                    color_coeff_info[name] = (float(entry.get().strip()),
-                                              float(err_entry.get().strip()))
+                    eqn_info[filt] = (eqn_type, ci_f1, ci_f2, coeff_val, coeff_err, coeff_text, coeff_err_text)
             except:  
                 self.console_msg("Cannot proceed with Three Color Photometry: Missing or non-numeric transform coefficient(s)")
                 return
@@ -4413,34 +4402,28 @@ class MyGUI:
             # Build aux report for AAVSO notes
             # ----------------------------------------------------------------
             aux_columns = ["color", "JD", "KMAGS", "KMAGINS", "KREFMAG",
-                          "color_index", "mag_coeff", "mag_coeff_err"]
-            # Add color coefficient columns
-            for name, _, _ in color_coeffs:
-                aux_columns.extend([name, name + "Err"])
-            aux_columns.extend(["VMAGINS", "Date-Obs", "KNAME", "AMASS"])
+                            "VMAGINS", "Date-Obs", "KNAME", "AMASS",
+                              "coeff_val", "coeff_err", "coeff_text", "coeff_err_text"]
             
             result_aux_report = pd.DataFrame(columns=aux_columns)
 
             for filt in filters:
-                eqn_type, ci_f1, ci_f2, coeff_val, coeff_err = eqn_info[filt]
+                eqn_type, ci_f1, ci_f2, coeff_val, coeff_err, coeff_text, coeff_err_text = eqn_info[filt]
                 row_data = {
                     "color": filt,
                     "JD": comp_star[filt]["date-obs"],  # orig
                     "KMAGS": means_check[filt],
                     "KMAGINS": check_IM[filt],
                     "KREFMAG": check_cat[filt],
-                    "color_index": ci_f1 + "-" + ci_f2,
-                    "mag_coeff": coeff_val,
-                    "mag_coeff_err": coeff_err,
                     "VMAGINS": var_IM[filt],
                     "Date-Obs": date_obs[filt],  # orig plus EXPOSURE/2
                     "KNAME": check_star_label,
-                    "AMASS": amass[filt]
+                    "AMASS": amass[filt],
+                    "coeff_val": coeff_val,
+                    "coeff_err": coeff_err,
+                    "coeff_text": coeff_text,
+                    "coeff_err_text": coeff_err_text
                 }
-                # Add color coefficient values
-                for name, _, _ in color_coeffs:
-                    row_data[name] = color_coeff_info[name][0]
-                    row_data[name + "Err"] = color_coeff_info[name][1]
                 result_aux_report.loc[len(result_aux_report)] = row_data
 
             # ----------------------------------------------------------------
@@ -6553,7 +6536,7 @@ class MyGUI:
                     check_star_err = 1/snr_check_star
 
                     starid = var_star_name
-                    date = format(float(self.date_obs_entry.get()), '.5f') 
+                    date = format(float(self.date_obs_entry.get()), '.6f') 
                     mag = str(round(var_star_mag, decimal_places))
                     merr = str(round(var_star_err, decimal_places))
                     filt = self.filter_entry.get().strip()
@@ -6622,7 +6605,7 @@ class MyGUI:
                     ave_comp_dec = np.mean(comp_data["match_dec"])
 
                     starid = var_star_name
-                    date = format(float(self.date_obs_entry.get()), '.5f') 
+                    date = format(float(self.date_obs_entry.get()), '.6f') 
                     mag = str(round(ave_var_star_mag, decimal_places))
                     merr = str(round(stdev_check_star_mag, decimal_places))
                     filt = self.filter_entry.get().strip()
@@ -6703,7 +6686,7 @@ class MyGUI:
     #####################################################################################
     #
     #   BV_generate_aavso_report_2color: called from Menu selection 
-    #   Generate AAVSO Report->Two Color Photometry->(B-V)
+    #   Generate AAVSO Report->Multi Color Photometry->(B-V)
     #
     #####################################################################################
     def BV_generate_aavso_report_2color(self):
@@ -6712,7 +6695,7 @@ class MyGUI:
     #####################################################################################
     #
     #   VR_generate_aavso_report_2color: called from Menu selection 
-    #   Generate AAVSO Report->Two Color Photometry->(V-R)
+    #   Generate AAVSO Report->Multi Color Photometry->(V-R)
     #
     #####################################################################################
     def VR_generate_aavso_report_2color(self):
@@ -6721,7 +6704,7 @@ class MyGUI:
     #####################################################################################
     #
     #   VI_generate_aavso_report_2color: called from Menu selection 
-    #   Generate AAVSO Report->Two Color Photometry->(V-I)
+    #   Generate AAVSO Report->Multi Color Photometry->(V-I)
     #
     #####################################################################################
     def VI_generate_aavso_report_2color(self):
@@ -6757,8 +6740,8 @@ class MyGUI:
         #DATE=JD
         #OBSTYPE=CCD
         #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
-        Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,Mittelman ATMoB Observatory|...etc.
-        Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,Mittelman ATMoB Observatory|...etc.
+        Z Tau,2460300.57931,13.167,0.018,V,YES,STD,ENSEMBLE,na,136,13.592,1.362,na,X29320NP,TEST Mittelman ATMoB Observatory|...etc.
+        Z Tau,2460300.58965,8.268,0.023,I,YES,STD,ENSEMBLE,na,136,12.722,1.312,na,X29320NP,TEST Mittelman ATMoB Observatory|...etc.
 
         """
 
@@ -6935,7 +6918,7 @@ class MyGUI:
                 aux_result = aux_result_first_color
                 
                 starid = str(self.object_name_entry.get())
-                date = format(float(aux_result['Date-Obs']), '.5f') 
+                date = format(float(aux_result['Date-Obs']), '.6f') 
                 mag = str(round(B_mean_var, decimal_places))
                 merr = str(round(B_std_check,decimal_places))
                 filt = first_filter[input_color]
@@ -6968,7 +6951,7 @@ class MyGUI:
                 aux_result = aux_result_second_color
                 
                 starid = str(self.object_name_entry.get())
-                date = format(float(aux_result['Date-Obs']), '.5f') 
+                date = format(float(aux_result['Date-Obs']), '.6f') 
                 mag = str(round(V_mean_var, decimal_places))
                 merr = str(round(V_std_check,decimal_places))
                 filt = second_filter[input_color]
@@ -7002,6 +6985,355 @@ class MyGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
 
+    #####################################################################################
+    #
+    #   BVR_generate_aavso_report_3color: called from Menu selection 
+    #   Generate AAVSO Report->Multi Color Photometry->(B,V,R)
+    #
+    #####################################################################################
+    def BVR_generate_aavso_report_3color(self):
+        self.generate_aavso_report_3color('BVR')
+
+    #####################################################################################
+    #
+    #   BVI_generate_aavso_report_3color: called from Menu selection 
+    #   Generate AAVSO Report->Multi Color Photometry->(B,V,I)
+    #
+    #####################################################################################
+    def BVI_generate_aavso_report_3color(self):
+        self.generate_aavso_report_3color('BVI')
+
+    #####################################################################################
+    #
+    #   VRI_generate_aavso_report_3color: called from Menu selection 
+    #   Generate AAVSO Report->Multi Color Photometry->(V,R,I)
+    #
+    #####################################################################################
+    def VRI_generate_aavso_report_3color(self):
+        self.generate_aavso_report_3color('VRI')
+
+    #####################################################################################
+    #
+    #    generate_aavso_report_3color
+    # 
+    #    Generates a AAVSO report in extended format for 3 filters
+    #
+    #    TCs used for two filters are the AAVSO recommended ones and are entered into 
+    #    the Notes section of the report:
+    #
+    #    for  B     V     R     I
+    #    BVR  Tb_bv Tv_bv Tvr
+    #    BVI  Tb_bv Tv_bv       Ti_vi
+    #    VRI        Tv_vi Tr_vi Tvi
+    # 
+    #
+    #####################################################################################
+
+    def generate_aavso_report_3color(self, input_color):
+        global image_width, image_height
+        
+        """
+        Typical AAVSO Three Color Report:
+           
+        #TYPE=EXTENDED
+        #OBSCODE=FPIA
+        #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
+        #DELIM=,
+        #DATE=JD
+        #OBSTYPE=CCD
+        #NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES
+        Z Tau,2461117.520799,9.883,0.002,V,YES,STD,ENSEMBLE,na,118,11.678,1.2010,0101,,TEST Mittelman ATMoB Observatory 
+        |CMAGINS=-8.370|CREFMAG=13.217|CX=1.1972|KDEC=15.84939|KMAGINS=-9.842
+        |KMAGSTD=11.745|KMAGTRAN=11.678|KRA=88.08993|KREFERR=0.015|KREFMAG=11.810|KX=1.1980|TAver=2.71|Tv_vi=0.0250
+        |Tv_viErr=0.0040|VERR=0.002|VMAGINS=-11.726|VMAGSTD=9.861|VX=1.1985
+        Z Tau,2461117.523704,6.513,0.005,I,YES,STD,ENSEMBLE,na,118,11.882,1.2070,0101,,TEST Mittelman ATMoB Observatory 
+        |CMAGINS=-8.356|CREFMAG=10.741|CX=1.2043|KDEC=15.84939|KMAGINS=-7.568
+        |KMAGSTD=11.529|KMAGTRAN=11.882|KRA=88.08993|KREFERR=0.023|KREFMAG=11.511|KX=1.2055|TAver=2.71|Tvi=1.1860
+        |TviErr=0.0160|VERR=0.003|VMAGINS=-12.466|VMAGSTD=6.631|VX=1.2061
+        Z Tau,2461117.525347,8.724,0.002,R,YES,STD,ENSEMBLE,na,118,11.854,1.2120,0101,,TEST Mittelman ATMoB Observatory 
+        |CMAGINS=-8.421|CREFMAG=12.787|CX=1.2093|KDEC=15.84939|KMAGINS=-9.705
+        |KMAGSTD=11.503|KMAGTRAN=11.854|KRA=88.08993|KREFERR=0.019|KREFMAG=11.666|KX=1.2100|TAver=2.71|Tr_vi=-0.1310
+        |Tr_viErr=0.0050|VERR=0.002|VMAGINS=-12.367|VMAGSTD=8.841|VX=1.2106 
+
+        """
+
+        # use first_filter, amd second_filter dict to index into appropriate filter
+        first_filter = {'BVR': 'B', 'BVI': 'B', 'VRI': 'V'}
+        second_filter = {'BVR': 'V', 'BVI': 'V', 'VRI': 'R'}
+        third_filter = {'BVR': 'R', 'BVI': 'I', 'VRI': 'I'}
+        
+        self.console_msg("Beginning Generate AAVSO Three Color Ensemble Report...")
+        var_star_name = self.object_name_entry.get().strip()
+        if len(var_star_name) == 0:
+            self.console_msg("'Object Name' must be specified; eg. 'V1117 Her'")
+            self.console_msg("Ready")
+            return
+        """
+        Report is generated from 'Saved' master_result DataFrame
+        that was saved as <object_name_entry>-XYZ-Master-Result.csv
+        where XYZ is BVR, BVI, or VRI
+        """
+        
+        #Ask user for <ObjectID>-Master-Report.csv
+        # Ask for the B and V CSV files
+        options = {}
+        options['defaultextension'] = '.csv'
+        options['filetypes'] = [('CSV', '.csv')]
+        options['title'] = 'Choose the ' + var_star_name + '-' + input_color + '-Master-Report.csv'
+
+        file_name = fd.askopenfilename(**options)
+
+        if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+            self.console_msg("Loading Master-Report from " + str(file_name))
+            master_report = pd.read_csv(str(file_name))
+        else:
+            return
+            
+        report_dir = "aavso_reports"
+        try:        
+            if os.path.isdir(os.path.dirname(str(file_name))):
+                os.chdir(os.path.dirname(str(file_name)))
+                if not os.path.exists(report_dir):
+                    os.mkdir(report_dir)
+            else:
+                raise Exception("Can't create report_dir: aavso_reports")
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+            
+
+        image_basename = os.path.basename(self.image_file)
+        report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
+            image_basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
+
+        decimal_places = 3 #report is usually 3
+        
+        #
+        # NOTE! Since BVR was implemented first, the BVR filternames are
+        # still used even though imput_color may be VRI; 
+        # Only when it counts does the BVR change to the real VRI or BVI, 
+        # like in the following..
+
+        #extract the estimates
+        result_check_star = master_report[master_report["type"] == "check"]
+        result_var_star = master_report[master_report["type"] == "var"]
+
+        B_mean_check = result_check_star[first_filter[input_color] + "_star"].mean()
+        V_mean_check = result_check_star[second_filter[input_color] + "_star"].mean()
+        R_mean_check = result_check_star[third_filter[input_color] + "_star"].mean()
+        B_mean_var = result_var_star[first_filter[input_color] + "_star"].mean()
+        V_mean_var = result_var_star[second_filter[input_color] + "_star"].mean()
+        R_mean_var = result_var_star[third_filter[input_color] + "_star"].mean()
+        
+        B_std_check = result_check_star[first_filter[input_color] + "_star"].std()
+        V_std_check = result_check_star[second_filter[input_color] + "_star"].std()
+        R_std_check = result_check_star[third_filter[input_color] + "_star"].std()
+        B_std_var = result_var_star[first_filter[input_color] + "_star"].std()
+        V_std_var = result_var_star[second_filter[input_color] + "_star"].std()
+        R_std_var = result_var_star[third_filter[input_color] + "_star"].std()
+            
+        
+        #
+        # NOTE! Since BVR was implemented first, the BVR filternames are
+        # still used even though imput_color may be VRI; 
+        # Only when it counts does the BVR change to the real VRI or BVI, 
+        # like in the following..
+
+        # need the Check data label now
+        aux_result_first_color = master_report[master_report["color"] == first_filter[input_color]]
+        aux_result_second_color = master_report[master_report["color"] == second_filter[input_color]]
+        aux_result_third_color = master_report[master_report["color"] == third_filter[input_color]]
+
+        # The "KNAME" is a float like 150.0 from AAVSO comps OR is a str like '150A_1' from APASS 
+        # Test here and create a string for either case
+        if isinstance(aux_result_first_color["KNAME"].iloc[0], str):
+            aux_result_first_color_kname = str(aux_result_first_color["KNAME"].iloc[0])
+        elif isinstance(aux_result_first_color["KNAME"].iloc[0], (np.float64, int)):
+            aux_result_first_color_kname = str(int(aux_result_first_color["KNAME"].iloc[0]))
+        else:
+            aux_result_first_color_kname = '???'
+            self.console_msg("Unrecognised KNAME type in Master-Report")
+
+        if input_color == 'BVR':
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
+                            " (B: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
+                            " (V: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" + 
+                            " (R: " + str(round(float(aux_result_third_color['KREFMAG']), decimal_places)) +")" "\n" + 
+                            ("B* Ave: " + format(B_mean_check, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_check, ' >6.3f') +
+                            "  R* Ave: " + format(R_mean_check, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_check, ' >6.3f') +
+                            "  V* Std: " + format(V_std_check, ' >6.3f') +
+                            "  R* Std: " + format(R_std_check, ' >6.3f')).rjust(72))
+
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
+                            ("B* Ave: " + format(B_mean_var, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_var, ' >6.3f') +
+                            "  R* Ave: " + format(R_mean_var, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_var, ' >6.3f') +
+                            "  V* Std: " + format(V_std_var, ' >6.3f') +
+                            "  R* Std: " + format(R_std_var, ' >6.3f')).rjust(72))
+        elif input_color == 'BVI':
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
+                            " (B: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
+                            " (V: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" + 
+                            " (I: " + str(round(float(aux_result_third_color['KREFMAG']), decimal_places)) +")" "\n" + 
+                            ("B* Ave: " + format(B_mean_check, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_check, ' >6.3f') +
+                            "  I* Ave: " + format(R_mean_check, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_check, ' >6.3f') +
+                            "  V* Std: " + format(V_std_check, ' >6.3f') +
+                            "  I* Std: " + format(R_std_check, ' >6.3f')).rjust(72))
+
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
+                            ("B* Ave: " + format(B_mean_var, ' >6.3f') +
+                            "  V* Ave: " + format(V_mean_var, ' >6.3f') +
+                            "  I* Ave: " + format(R_mean_var, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("B* Std: " + format(B_std_var, ' >6.3f') +
+                            "  V* Std: " + format(V_std_var, ' >6.3f') +
+                            "  I* Std: " + format(R_std_var, ' >6.3f')).rjust(72))
+        elif input_color == 'VRI':
+            # Old::: self.console_msg("Check Star Estimates using check star: " + str(int(aux_result_first_color["KNAME"])) + 
+            self.console_msg("Check Star Estimates using check star: " + aux_result_first_color_kname + 
+                            " (V: " + str(round(float(aux_result_first_color['KREFMAG']), decimal_places)) +")" + 
+                            " (R: " + str(round(float(aux_result_second_color['KREFMAG']), decimal_places)) +")" + 
+                            " (I: " + str(round(float(aux_result_third_color['KREFMAG']), decimal_places)) +")" "\n" + 
+                            ("V* Ave: " + format(B_mean_check, ' >6.3f') +
+                            "  R* Ave: " + format(V_mean_check, ' >6.3f') +
+                            "  I* Ave: " + format(R_mean_check, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("V* Std: " + format(B_std_check, ' >6.3f') +
+                            "  R* Std: " + format(V_mean_check, ' >6.3f') +
+                            "  I* Std: " + format(R_std_check, ' >6.3f')).rjust(72))
+
+            self.console_msg(var_star_name+" Variable Star Estimates\n" +
+                            ("V* Ave: " + format(B_mean_var, ' >6.3f') +
+                            "  R* Ave: " + format(V_mean_var, ' >6.3f') +
+                            "  I* Ave: " + format(R_mean_var, ' >6.3f')).rjust(72) +
+                            '\n' +
+                            ("V* Std: " + format(B_std_var, ' >6.3f') +
+                            "  R* Std: " + format(V_std_var, ' >6.3f') +
+                            "  I* Std: " + format(R_std_var, ' >6.3f')).rjust(72))
+        else:
+            raise Exception("generate_aavso_report_2color: unknown imput_color entered")
+
+        try:
+            with open(report_filename, mode='w') as f:
+                f.write("#TYPE=Extended\n")
+                f.write("#OBSCODE="+self.aavso_obscode_entry.get()+"\n")
+                f.write("#SOFTWARE=Self-developed; " + self.program_full_name + "\n") 
+                f.write("#DELIM=,\n")
+                f.write("#DATE=JD\n")
+                f.write("#OBSTYPE=CCD\n")
+                f.write("#NAME,DATE,MAG,MERR,FILT,TRANS,MTYPE,CNAME,CMAG,KNAME,KMAG,AMASS,GROUP,CHART,NOTES\n")
+
+                aux_result = aux_result_first_color
+                
+                starid = str(self.object_name_entry.get())
+                date = format(float(aux_result['Date-Obs']), '.6f') 
+                mag = str(round(B_mean_var, decimal_places))
+                merr = str(round(B_std_check,decimal_places))
+                filt = first_filter[input_color]
+                trans = "YES"
+                mtype = "STD"
+                cname = "ENSEMBLE"
+                cmag = "na"
+                kname = aux_result_first_color_kname
+                kmag = str(round(B_mean_check, decimal_places))
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
+                    if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
+                group = "na"
+                chart = self.vizier_catalog_entry.get().strip()
+                notes = self.object_notes_entry.get().strip()
+                notes += "|KMAGINS=" + str(round(float(aux_result_first_color["KMAGINS"].iloc[0]), decimal_places)) + \
+                         "|KMAGSTD=" + str(round(B_mean_check, decimal_places)) + \
+                         "|KREFMAG=" + str(round(float(aux_result_first_color["KREFMAG"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_first_color["coeff_text"].iloc[0]) + "="  + str(round(float(aux_result_first_color["coeff_val"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_first_color["coeff_err_text"].iloc[0]) + "="  + str(round(float(str(aux_result_first_color["coeff_err"].iloc[0])), decimal_places)) + \
+                         "|VMAGINS=" + str(round(float(aux_result_first_color["VMAGINS"].iloc[0]), decimal_places))
+                
+                
+                # Add " " after notes, because TA clobbers last char
+                f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
+                        cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
+
+                #second filter (easier just to repeat most of this)
+                
+                aux_result = aux_result_second_color
+                
+                starid = str(self.object_name_entry.get())
+                date = format(float(aux_result['Date-Obs']), '.6f') 
+                mag = str(round(V_mean_var, decimal_places))
+                merr = str(round(V_std_check,decimal_places))
+                filt = second_filter[input_color]
+                trans = "YES"
+                mtype = "STD"
+                cname = "ENSEMBLE"
+                cmag = "na"
+                kname = self.object_kref_entry.get().strip()
+                kmag = str(round(V_mean_check, decimal_places))
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
+                    if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
+                group = "na"
+                chart = self.vizier_catalog_entry.get().strip()
+                notes = self.object_notes_entry.get().strip()
+                notes += "|KMAGINS=" + str(round(float(aux_result_second_color["KMAGINS"].iloc[0]), decimal_places)) + \
+                         "|KMAGSTD=" + str(round(V_mean_check, decimal_places)) + \
+                         "|KREFMAG=" + str(round(float(aux_result_second_color["KREFMAG"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_second_color["coeff_text"].iloc[0]) + "="  + str(round(float(aux_result_second_color["coeff_val"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_second_color["coeff_err_text"].iloc[0]) + "="  + str(round(float(str(aux_result_second_color["coeff_err"].iloc[0])), decimal_places)) + \
+                         "|VMAGINS=" + str(round(float(aux_result_second_color["VMAGINS"].iloc[0]), decimal_places))
+                
+                
+                # Add " " after notes, because TA clobbers last char
+                f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
+                        cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
+
+                #third filter (easier just to repeat most of this)
+                
+                aux_result = aux_result_third_color
+                
+                starid = str(self.object_name_entry.get())
+                date = format(float(aux_result['Date-Obs']), '.6f') 
+                mag = str(round(R_mean_var, decimal_places))
+                merr = str(round(R_std_check, decimal_places))
+                filt = third_filter[input_color]
+                trans = "YES"
+                mtype = "STD"
+                cname = "ENSEMBLE"
+                cmag = "na"
+                kname = self.object_kref_entry.get().strip()
+                kmag = str(round(V_mean_check, decimal_places))
+                amass = format(float(aux_result_first_color["AMASS"]), '.3f') \
+                    if type(aux_result_first_color["AMASS"].iloc[0]) == np.float64 else "na"
+                group = "na"
+                chart = self.vizier_catalog_entry.get().strip()
+                notes = self.object_notes_entry.get().strip()
+                notes += "|KMAGINS=" + str(round(float(aux_result_third_color["KMAGINS"].iloc[0]), decimal_places)) + \
+                         "|KMAGSTD=" + str(round(R_mean_check, decimal_places)) + \
+                         "|KREFMAG=" + str(round(float(aux_result_third_color["KREFMAG"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_third_color["coeff_text"].iloc[0]) + "="  + str(round(float(aux_result_third_color["coeff_val"].iloc[0]), decimal_places)) + \
+                         "|" + str(aux_result_third_color["coeff_err_text"].iloc[0]) + "="  + str(round(float(str(aux_result_third_color["coeff_err"].iloc[0])), decimal_places)) + \
+                         "|VMAGINS=" + str(round(float(aux_result_third_color["VMAGINS"].iloc[0]), decimal_places))
+                
+                
+                # Add " " after notes, because TA clobbers last char
+                f.write(starid+","+date+","+mag+","+merr+","+filt+","+trans+","+mtype+"," +
+                        cname+","+cmag+","+kname+","+kmag+","+amass+","+group+","+chart+","+notes+" \n")
+
+            self.console_msg("AAVSO Photometry report saved to " + str(report_filename))
+            self.console_msg("Ready")
+
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+            
 
     ##########################################################################
     # 
@@ -7182,20 +7514,14 @@ class MyGUI:
         
         self.multi_color_photo_menu = tk.Menu(self.menubar, tearoff=0)
         #self.multi_color_photo_menu.add_command(
-        #    label="(B,V,R,I)", command=self.BVRI_multi_color_photometry)
-        self.multi_color_photo_menu.add_command(
-            label="(B,V,R)", command=self.BVR_multi_color_photometry)
-        self.multi_color_photo_menu.add_command(
-            label="(B,V,I)", command=self.BVI_multi_color_photometry)
-        self.multi_color_photo_menu.add_command(
-            label="(V,R,I)", command=self.VRI_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(B,V)", command=self.BV_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(V,R)", command=self.VR_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(V,I)", command=self.VI_multi_color_photometry)
         self.multi_color_photo_menu.add_separator()
-        self.multi_color_photo_menu.add_command(
-            label="(B,V)", command=self.BV_multi_color_photometry)
-        self.multi_color_photo_menu.add_command(
-            label="(V,R)", command=self.VR_multi_color_photometry)
-        self.multi_color_photo_menu.add_command(
-            label="(V,I)", command=self.VI_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(B,V,R)", command=self.BVR_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(B,V,I)", command=self.BVI_multi_color_photometry)
+        self.multi_color_photo_menu.add_command(label = "(V,R,I)", command=self.VRI_multi_color_photometry)
+        #    label="(B,V,R,I)", command=self.BVRI_multi_color_photometry)
         self.menubar.add_cascade(label="Multi Color Photometry", menu=self.multi_color_photo_menu)
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
@@ -7204,6 +7530,11 @@ class MyGUI:
         self.multi_color_sub_menu.add_command(label = "(B-V)", command=self.BV_generate_aavso_report_2color)
         self.multi_color_sub_menu.add_command(label = "(V-R)", command=self.VR_generate_aavso_report_2color)
         self.multi_color_sub_menu.add_command(label = "(V-I)", command=self.VI_generate_aavso_report_2color)
+        self.multi_color_sub_menu.add_separator()
+        self.multi_color_sub_menu.add_command(label = "(B,V,R)", command=self.BVR_generate_aavso_report_3color)
+        self.multi_color_sub_menu.add_command(label = "(B,V,I)", command=self.BVI_generate_aavso_report_3color)
+        self.multi_color_sub_menu.add_command(label = "(V,R,I)", command=self.VRI_generate_aavso_report_3color)
+        #self.multi_color_sub_menu.add_command(label = "(B,V,R,I)", command=self.BVRI__generate_aavso_report_4color)
         self.reportmenu.add_cascade(label="Multi Color Photometry", menu=self.multi_color_sub_menu)
 
         self.menubar.add_cascade(label="Generate AAVSO Report", menu=self.reportmenu)
