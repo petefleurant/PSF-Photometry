@@ -6795,9 +6795,9 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
             
 
-        image_basename = os.path.basename(self.image_file)
+        _basename = os.path.basename(file_name)
         report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
-            image_basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
+            _basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
 
 
         decimal_places = 3 #report is usually 3
@@ -7103,9 +7103,9 @@ class MyGUI:
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
             
 
-        image_basename = os.path.basename(self.image_file)
+        _basename = os.path.basename(file_name)
         report_filename = os.path.join(report_dir, "AAVSO " + os.path.splitext(
-            image_basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
+            _basename)[0] + " " + str(self.object_name_entry.get()) + ".txt")
 
         decimal_places = 3 #report is usually 3
         
