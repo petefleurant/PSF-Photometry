@@ -2934,6 +2934,12 @@ class MyGUI:
     def BVI_multi_color_photometry(self):
         self.three_color_photometry('BVI')
 
+    #
+    #   BVIR_multi_color_photometry: called from Menu selection  Multi Color Photometry->(B,V,I,R)
+    #
+    def BVRI_multi_color_photometry(self):
+        self.four_color_photometry('BVRI')
+
   
     #######################################################################################
     #
@@ -4185,14 +4191,15 @@ class MyGUI:
             # ----------------------------------------------------------------
             date_obs = {}
             amass = {}
+            raw_jd = {}                               # pre-midpoint (shutter-open) JD
             for filt in filters:
                 df = filter_data[filt]
                 row = df[df["check_star"] == True].iloc[0]
                 half_exp = row["exposure"] / 2
+                raw_jd[filt] = row["date-obs"]        # original, uncorrected
                 _obs = Time(row["date-obs"], format='jd') + TimeDelta(half_exp, format='sec')
                 date_obs[filt] = _obs.jd
                 amass[filt] = row["AMASS"]
-
             # ----------------------------------------------------------------
             # Build result DataFrames
             # ----------------------------------------------------------------
@@ -4411,7 +4418,567 @@ class MyGUI:
                 eqn_type, ci_f1, ci_f2, coeff_val, coeff_err, coeff_text, coeff_err_text = eqn_info[filt]
                 row_data = {
                     "color": filt,
-                    "JD": comp_star[filt]["date-obs"],  # orig
+                    "JD": raw_jd[filt],   # orig
+                    "KMAGS": means_check[filt],
+                    "KMAGINS": check_IM[filt],
+                    "KREFMAG": check_cat[filt],
+                    "VMAGINS": var_IM[filt],
+                    "Date-Obs": date_obs[filt],  # orig plus EXPOSURE/2
+                    "KNAME": check_star_label,
+                    "AMASS": amass[filt],
+                    "coeff_val": coeff_val,
+                    "coeff_err": coeff_err,
+                    "coeff_text": coeff_text,
+                    "coeff_err_text": coeff_err_text
+                }
+                result_aux_report.loc[len(result_aux_report)] = row_data
+
+            # ----------------------------------------------------------------
+            # Save master report
+            # ----------------------------------------------------------------
+            master_frames = [result_check_star, result_var_star, result_aux_report]
+            master_report = pd.concat(master_frames, keys=['check', 'var', 'aux'])
+            
+            dir_path = os.path.dirname(os.path.realpath(last_file_name)) + "\\"
+            report_name = self.object_name_entry.get() + "-" + input_color + "-Master-Report.csv"
+            
+            master_report.to_csv(dir_path + report_name, index=False)
+            self.console_msg("Master Report saved to " + str(dir_path + report_name))
+            self.console_msg("Ready")
+            
+        except Exception as e:
+            self.error_raised = True
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno) + " " + str(e), level=logging.ERROR)
+
+    ########################################################################################
+    #
+    # four_color_photometry
+    # 
+    # This calculates the four-color photometry process using a Gauss-Seidel
+    # iterative method to solve the coupled 3-equation system simultaneously.
+    #
+    #
+    # The parameter input_color is 'BVRI'.
+    #
+    # Each filter has one magnitude equation of the form:
+    #   f* = δf + Tf_ci · Δ(CI) + f_comp
+    # where CI is the color index used for that filter, and Tf_ci is the
+    # magnitude coefficient.  Each filter's equation is defined by which
+    # color index it uses and its magnitude coefficient.
+    #
+    # The equation structure comes from the TA transformation coefficient table.
+    # There are two equation types:
+    #
+    #   Type A (standard): f* = δf + Tf_ci · Δ(CI) + Fc
+    #     where Δ(CI) = (F1* - F2*) - (F1c - F2c) is the STANDARD color index.
+    #     The unknown f* appears on both sides (through Δ(CI)), so this is iterated.
+    #
+    #   Type B (color-coeff):
+    #       (At this time, input_color='BVRI' is the only input and uses Type A for each
+    #       filter. So Type B descriptions are not written here; see two_color_photometry
+    #       and three_color_photometry for more info.)
+    #
+    # The TA equations are:
+    #
+    #   BVRI: B* = δb + Tb_bv · Δ(B-V) + Bc           Type A, CI=B-V
+    #         V* = δv + Tv_bv · Δ(B-V) + Vc           Type A, CI=B-V
+    #         R* = δr + Tr_vi · Δ(V-I) + Rc           Type A, CI=V-I
+    #         I* = δi + Ti_vi · Δ(V-I) + Ic           Type A, CI=V-I
+    #
+    # The Gauss-Seidel iteration:
+    #   1. Guess all magnitudes from untransformed differentials
+    #   2. Compute the needed color indices from current estimates
+    #   3. Update Type A filters from their magnitude equations
+    #   4. Update Type B filters directly from their source filter
+    #   5. Repeat until convergence
+    #
+    # The internal naming uses the actual filter names (V, R, I, B) throughout,
+    # with no B-V legacy aliasing.
+    #
+    ########################################################################################
+    
+    def four_color_photometry(self, input_color):
+    #######################################################################################
+    #
+    # _iterative_transform_4  (helper for three_color_photometry)
+    #
+    # Gauss-Seidel iterative transformation for three filters, supporting
+    # both Type A (standard) and Type B (color-coefficient) equations.
+    #
+    # Parameters:
+    #   star_IM       - dict {filter: instrumental_mag} for the star
+    #   comp_IM       - dict {filter: instrumental_mag} for the comp star
+    #   comp_cat      - dict {filter: catalog_mag} for the comp star
+    #   filters       - tuple of 3 filter names, e.g., ('V', 'R', 'I')
+    #   eqns          - dict {filter: eqn_tuple} defining each filter's equation.
+    #
+    #     Type A: ('A', ci_f1, ci_f2, mag_coeff)
+    #       f* = δf + mag_coeff · Δ(CI) + Fc
+    #       where Δ(CI) = (est[ci_f1] - est[ci_f2]) - (comp_cat[ci_f1] - comp_cat[ci_f2])
+    #
+    #     Type B: ('B', ci_f1, ci_f2, color_coeff)
+    #       f* = est[ci_f1] - (comp_cat[ci_f1] - comp_cat[ci_f2]) 
+    #            - color_coeff · ((star_IM[ci_f1]-star_IM[ci_f2]) - (comp_IM[ci_f1]-comp_IM[ci_f2]))
+    #       ci_f1 is the "source" filter (must be solved by Type A first).
+    #       ci_f2 is the Type B filter itself.
+    #
+    # Returns:
+    #   (est, iterations)
+    #
+    #######################################################################################
+
+        def _iterative_transform_4(star_IM, comp_IM, comp_cat, filters, eqns):
+            """Gauss-Seidel iterative four-filter transformation (TA-matched)."""
+
+            MAX_TRANSFORM_ITER = 20
+            TRANSFORM_PRECISION = 1e-6
+
+            # Instrumental differentials
+            delta = {}
+            for filt in filters:
+                delta[filt] = star_IM[filt] - comp_IM[filt]
+
+            # Pre-compute catalog color indices and instrumental colors for each pair
+            comp_colors = {}  # (f1,f2) -> comp_cat[f1] - comp_cat[f2]
+            inst_colors = {}  # (f1,f2) -> (star_IM[f1]-star_IM[f2]) - (comp_IM[f1]-comp_IM[f2])
+            for filt in filters:
+                eqn = eqns[filt]
+                ci_f1, ci_f2 = eqn[1], eqn[2]
+                key = (ci_f1, ci_f2)
+                if key not in comp_colors:
+                    comp_colors[key] = comp_cat[ci_f1] - comp_cat[ci_f2]
+                    inst_colors[key] = (star_IM[ci_f1] - star_IM[ci_f2]) - (comp_IM[ci_f1] - comp_IM[ci_f2])
+
+            # Initial guess: untransformed differential magnitudes
+            est = {}
+            for filt in filters:
+                est[filt] = delta[filt] + comp_cat[filt]
+
+            # Separate Type A and Type B filters (Type A must be iterated first)
+            type_a_filters = [f for f in filters if eqns[f][0] == 'A']
+            type_b_filters = [f for f in filters if eqns[f][0] == 'B']
+
+            iterations = 0
+            for iterations in range(1, MAX_TRANSFORM_ITER + 1):
+                prev = {f: est[f] for f in filters}
+
+                # Update Type A filters (standard iterative equations)
+                for filt in type_a_filters:
+                    _, ci_f1, ci_f2, mag_coeff = eqns[filt]
+                    delta_color = (est[ci_f1] - est[ci_f2]) - comp_colors[(ci_f1, ci_f2)]
+                    est[filt] = delta[filt] + mag_coeff * delta_color + comp_cat[filt]
+
+                # Update Type B filters (direct from source filter)
+                for filt in type_b_filters:
+                    _, ci_f1, ci_f2, color_coeff = eqns[filt]
+                    # f* = est[ci_f1] - (comp_cat[ci_f1] - comp_cat[ci_f2]) 
+                    #       - color_coeff * inst_color
+                    est[filt] = est[ci_f1] - comp_colors[(ci_f1, ci_f2)] \
+                                - color_coeff * inst_colors[(ci_f1, ci_f2)]
+
+                # Check convergence (all three filters)
+                if all(abs(est[f] - prev[f]) < TRANSFORM_PRECISION for f in filters):
+                    break
+
+            return est, iterations
+
+        # Start of main part of four_color_photometry
+        try:
+            """
+            Four Color Photometry requires 'Object Name' to be filled; eg. 'Z Lyr'
+
+            The parameter input_color is 'BVRI' (only)
+            
+            Uses Gauss-Seidel iteration to solve 4 coupled magnitude equations
+            simultaneously, matching the TA equation forms. 
+            For 'BVRI', each filter uses a Type A equation 
+            (standard iterative, with magnitude coefficient) 
+
+            BVRI:   B* = δb + Tb_bv · Δ(B-V) + Bc           Type A, CI=B-V
+                    V* = δv + Tv_bv · Δ(B-V) + Vc           Type A, CI=B-V
+                    R* = δr + Tr_vi · Δ(V-I) + Rc           Type A, CI=V-I
+                    I* = δi + Ti_vi · Δ(V-I) + Ic           Type A, CI=V-I
+
+
+            Build result tables for check star and variable star, then produce
+            a master report CSV.
+            """
+
+            # ----------------------------------------------------------------
+            # Define the filter and equation configuration for each input_color
+            # ----------------------------------------------------------------
+            # eqn_entries maps each filter to its equation definition:
+            #   Type A: ('A', ci_f1, ci_f2, coeff_entry, err_entry)
+            #   Type B: ('B', ci_f1, ci_f2, coeff_entry, err_entry)
+            #
+            # For Type B, (ci_f1, ci_f2) defines: ci_f1 is the source filter,
+            # ci_f2 is the filter being computed, and the coeff is a COLOR coefficient.
+            # The TA equation is: f2* = f1* - (F1c-F2c) - T_color * inst_color(f1,f2)
+            #
+
+            if input_color == 'BVRI':
+                filters = ('B', 'V', 'R', 'I')
+                eqn_entries = {
+                    'B': ('A', 'B', 'V', self.tb_bv_entry, self.tb_bv_err_entry, "Tb_bv", "Tb_bvErr"),
+                    'V': ('A', 'B', 'V', self.tv_bv_entry, self.tv_bv_err_entry, "Tv_bv", "Tv_bv    Err"),
+                    'R': ('A', 'V', 'I', self.tr_vi_entry, self.tr_vi_err_entry, "Tr_vi", "Tr_viErr"),
+                    'I': ('A', 'V', 'I', self.ti_vi_entry, self.ti_vi_err_entry, "Ti_vi", "Ti_viErr"),
+                }
+            else:
+                raise Exception("four_color_photometry: unknown input_color: " + str(input_color))
+
+            variable_star = self.object_name_entry.get().strip()
+            if variable_star is None or len(variable_star) == 0:
+                self.console_msg(
+                    "Four Color Photometry requires 'Object Name' to be filled; eg. 'V1117 Her'")
+                self.console_msg("Ready")
+                return
+            
+            # ----------------------------------------------------------------
+            # Ask for the three CSV files (one per filter)
+            # ----------------------------------------------------------------
+            options = {}
+            options['defaultextension'] = '.csv'
+            options['filetypes'] = [('CSV', '.csv')]
+
+            filter_data = {}  # dict keyed by filter name -> DataFrame
+
+            for filt in filters:
+                options['title'] = 'Choose a file for filter ' + filt
+                file_name = fd.askopenfilename(**options)
+
+                if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
+                    self.console_msg("Loading filter " + filt + " from " + str(file_name))
+                    filter_data[filt] = pd.read_csv(str(file_name), dtype={'check_star': bool})
+                else:
+                    return
+
+                # Test to make sure csv file is ready                
+                if "label" not in filter_data[filt]:
+                    self.console_msg("Cannot proceed; run 'Photometry->Get Comparison Stars' for " + filt + " first.")
+                    return
+
+            # Remember last file_name for directory path at report save time
+            last_file_name = file_name
+
+            self.console_msg("Performing Four Color Photometry (Gauss-Seidel iterative method)...")
+            
+            # ----------------------------------------------------------------
+            # Get the transformation coefficients
+            # ----------------------------------------------------------------
+            # Build eqns dict: {filter: ('A'|'B', ci_f1, ci_f2, coeff_value)}
+            # Also collect coefficient info for the aux report.
+            try:
+                eqns = {}
+                eqn_info = {}  # for aux report: {filter: (type, ci_f1, ci_f2, coeff_val, coeff_err)}
+                coeff_info = {} # Color coefficients (for AAVSO notes only, not used in iteration)
+                for filt in filters:
+                    eqn_type, ci_f1, ci_f2, coeff_entry, coeff_err_entry, coeff_text, coeff_err_text = eqn_entries[filt]
+                    coeff_val = float(coeff_entry.get().strip())
+                    coeff_err = float(coeff_err_entry.get().strip())
+                    eqns[filt] = (eqn_type, ci_f1, ci_f2, coeff_val)
+                    eqn_info[filt] = (eqn_type, ci_f1, ci_f2, coeff_val, coeff_err, coeff_text, coeff_err_text)
+            except:  
+                self.console_msg("Cannot proceed with Four Color Photometry: Missing or non-numeric transform coefficient(s)")
+                return
+         
+            # ----------------------------------------------------------------
+            # CHECK STAR validation
+            # ----------------------------------------------------------------
+            check_star_in_setting = self.object_kref_entry.get().strip()
+            check_star_in_setting_with_prefix = __label_prefix__ + check_star_in_setting
+
+            # Verify check star exists in all filter tables
+            for filt in filters:
+                if not filter_data[filt]["label"].isin([check_star_in_setting_with_prefix]).any():
+                    self.console_msg("Settings check star: " + check_star_in_setting +
+                                      " not found in " + filt + "; select another check star")
+                    # Show comps common to all tables
+                    common_labels = filter_data[filters[0]]["label"]
+                    for other_filt in filters[1:]:
+                        common_labels = common_labels[common_labels.isin(filter_data[other_filt]["label"])]
+                    common_labels = common_labels[common_labels != "%"]
+                    list_good_comps = ", ".join(comp.split(maxsplit=1)[-1] for comp in common_labels.astype(str))
+                    self.console_msg("Pick from following: " + list_good_comps)
+                    return
+
+            # Verify variable star exists in all filter tables
+            for filt in filters:
+                if not filter_data[filt]["vsx_id"].isin([variable_star]).any():
+                    self.console_msg("Settings Object Name: " + variable_star +
+                                      " not found in " + filt + "; select " +
+                                          variable_star + " in " + filt +
+                                            " image with mouse; make sure you click on the same star in each image")
+                    return
+
+            # ----------------------------------------------------------------
+            # Reset and set check_star flag in each filter table
+            # ----------------------------------------------------------------
+            check_star_rows = {}  # filt -> row Series
+            for filt in filters:
+                df = filter_data[filt]
+                if df["check_star"].isin([True]).any():
+                    index = df[df["check_star"] == True].index
+                    df.loc[index, "check_star"] = False
+
+                label_index = df[df["label"] == check_star_in_setting_with_prefix].index
+                df.loc[label_index, "check_star"] = True
+                check_star_rows[filt] = df[df["label"] == check_star_in_setting_with_prefix].iloc[0]
+
+            check_star_label = check_star_in_setting  # could be new!
+            self.console_msg("Using check star " + check_star_label)
+
+            # Extract check star instrumental and catalog mags per filter
+            check_IM = {}   # filt -> instrumental mag
+            check_cat = {}  # filt -> catalog mag
+            for filt in filters:
+                check_IM[filt] = check_star_rows[filt]["inst_mag"]
+                check_cat[filt] = check_star_rows[filt]["match_mag"]
+            
+            # Find the variable star in each filter
+            var_star_rows = {}
+            var_IM = {}
+            for filt in filters:
+                var_star_rows[filt] = filter_data[filt][filter_data[filt]["vsx_id"] == variable_star].iloc[0]
+                var_IM[filt] = var_star_rows[filt]["inst_mag"]
+
+            var_star_label = var_star_rows[filters[0]]["vsx_id"]
+
+            # ----------------------------------------------------------------
+            # Date-obs and airmass (with EXPOSURE/2 correction)
+            # ----------------------------------------------------------------
+            date_obs = {}
+            amass = {}
+            raw_jd = {}                               # pre-midpoint (shutter-open) JD
+            for filt in filters:
+                df = filter_data[filt]
+                row = df[df["check_star"] == True].iloc[0]
+                half_exp = row["exposure"] / 2
+                raw_jd[filt] = row["date-obs"]        # original, uncorrected
+                _obs = Time(row["date-obs"], format='jd') + TimeDelta(half_exp, format='sec')
+                date_obs[filt] = _obs.jd
+                amass[filt] = row["AMASS"]
+
+            # ----------------------------------------------------------------
+            # Build result DataFrames
+            # ----------------------------------------------------------------
+            # Determine unique color indices used
+            ci_set = []
+            ci_seen = set()
+            for filt in filters:
+                ci = (eqns[filt][1], eqns[filt][2])
+                if ci not in ci_seen:
+                    ci_set.append(ci)
+                    ci_seen.add(ci)
+
+            result_columns = ["type", "name", "comp"]
+            for filt in filters:
+                result_columns.append("IM" + filt)   # instrumental mag of comp
+            for filt in filters:
+                result_columns.append(filt)           # catalog mag of comp
+            # Diagnostic columns for each unique color index
+            for ci_f1, ci_f2 in ci_set:
+                result_columns.append("delta_" + ci_f1.lower() + "_minus_" + ci_f2.lower())
+                result_columns.append("delta_" + ci_f1 + "_minus_" + ci_f2)
+            # Transformed magnitudes — one per filter from the coupled solution
+            for filt in filters:
+                result_columns.append(filt + "_star")
+            result_columns.append("iterations")
+
+            check_columns = result_columns + ["outlier"]
+            var_columns = result_columns[:]
+
+            result_check_star = pd.DataFrame(columns=check_columns)
+            result_var_star = pd.DataFrame(columns=var_columns)
+
+            # ----------------------------------------------------------------
+            # Loop through all selected comp stars
+            # ----------------------------------------------------------------
+            sel_comps = []
+            sel_comps_to_use = self.object_sel_comp_entry.get()
+            sel_comps_to_use = [comp.strip() for comp in sel_comps_to_use.split(',')]
+            sel_comps_to_use = list(set(sel_comps_to_use))
+
+            for comp in sel_comps_to_use:
+                sel_comps.append((comp.strip(), __label_prefix__ + comp.strip()))
+            
+            for comp_tuple in sel_comps:
+
+                comp = comp_tuple[1]
+                comp_no_prefix = comp_tuple[0]
+
+                # Don't use the check star 
+                if comp_no_prefix == check_star_label:
+                    continue
+
+                # Skip commented out comps, e.g., #123
+                if not comp_no_prefix[0].isdigit():
+                    continue
+
+                # Selected comp must be in all three filter tables
+                comp_star = {}
+                skip = False
+                for filt in filters:
+                    if comp in filter_data[filt]["label"].values:
+                        comp_star[filt] = filter_data[filt][filter_data[filt]["label"] == comp].iloc[0]
+                    else:
+                        self.console_msg("Comp star: " + comp_no_prefix + " not in " + filt + " table")
+                        skip = True
+                        break
+                if skip:
+                    continue
+
+                # Get comp instrumental and catalog mags for each filter
+                comp_IM = {}
+                comp_cat_mag = {}
+                for filt in filters:
+                    comp_IM[filt] = comp_star[filt]["inst_mag"]
+                    comp_cat_mag[filt] = float(comp_star[filt]["match_mag"])
+
+                # ============================================================
+                # Helper to run 3-filter Gauss-Seidel and build result row
+                # ============================================================
+                def _solve_and_build_row(star_IM, row_type, row_name):
+                    """Run Gauss-Seidel for a star and build the result row dict."""
+                    est, n_iter = _iterative_transform_4(
+                        star_IM, comp_IM, comp_cat_mag, filters, eqns
+                    )
+
+                    row = {"type": row_type, "name": row_name, "comp": comp_no_prefix}
+                    for filt in filters:
+                        row["IM" + filt] = comp_IM[filt]
+                    for filt in filters:
+                        row[filt] = comp_star[filt]["match_mag"]
+                    # Diagnostic columns for each unique color index
+                    for ci_f1, ci_f2 in ci_set:
+                        dinst = (star_IM[ci_f1] - star_IM[ci_f2]) - (comp_IM[ci_f1] - comp_IM[ci_f2])
+                        dstd = (est[ci_f1] - est[ci_f2]) - (comp_cat_mag[ci_f1] - comp_cat_mag[ci_f2])
+                        row["delta_" + ci_f1.lower() + "_minus_" + ci_f2.lower()] = dinst
+                        row["delta_" + ci_f1 + "_minus_" + ci_f2] = dstd
+                    # Transformed magnitudes
+                    for filt in filters:
+                        row[filt + "_star"] = est[filt]
+                    row["iterations"] = n_iter
+                    return row
+
+                # ============================================================
+                # CHECK STAR
+                # ============================================================
+                row = _solve_and_build_row(check_IM, "check", check_star_label)
+                row["outlier"] = ''
+                result_check_star.loc[len(result_check_star)] = row
+
+                # ============================================================
+                # VARIABLE STAR
+                # ============================================================
+                row = _solve_and_build_row(var_IM, "var", var_star_label)
+                result_var_star.loc[len(result_var_star)] = row
+
+            # ----------------------------------------------------------------
+            # Compute means and standard deviations
+            # ----------------------------------------------------------------
+            means_check = {}
+            stds_check = {}
+            means_var = {}
+            stds_var = {}
+
+            for filt in filters:
+                col = filt + "_star"
+                means_check[filt] = result_check_star[col].mean()
+                means_var[filt] = result_var_star[col].mean()
+
+                if len(result_check_star[col]) > 1:
+                    stds_check[filt] = result_check_star[col].std()
+                    stds_var[filt] = result_var_star[col].std()
+                else:
+                    # Use 1/SNR as fallback
+                    stds_check[filt] = 1 / (check_star_rows[filt]['flux_fit'] / self.image_bkg_value)
+                    stds_var[filt] = 1 / (var_star_rows[filt]['flux_fit'] / self.image_bkg_value)
+
+            # ----------------------------------------------------------------
+            # IQR outlier detection (on check star table)
+            # ----------------------------------------------------------------
+            for filt in filters:
+                col = filt + "_star"
+                q3, q1 = np.percentile(result_check_star[col], [75, 25])
+                iqr = q3 - q1
+                upper = q3 + (iqr * 1.5)
+                lower = q1 - (iqr * 1.5)
+
+                if (result_check_star[col] < lower).any():
+                    result_check_star.loc[result_check_star[col] < lower, "outlier"] = "<--OUTLIER"
+                if (result_check_star[col] > upper).any():
+                    result_check_star.loc[result_check_star[col] > upper, "outlier"] = "<--OUTLIER"
+
+            # ----------------------------------------------------------------
+            # Console output
+            # ----------------------------------------------------------------
+            self.console_msg("\n")
+
+            # Check star summary
+            check_msg = "Check Star Estimates using check star: " + str(check_star_label)
+            for filt in filters:
+                check_msg += " (" + filt + ": " + format(float(check_cat[filt]), ' >6.3f') + ")"
+            check_msg += ";    (qfit--->"
+            for filt in filters:
+                check_msg += " " + filt + ": " + format(check_star_rows[filt]["qfit"], ' >5.3f') + ";"
+            check_msg = check_msg.rstrip(';') + ')'
+            check_msg += '\n' + result_check_star.sort_values(by="name").to_string() + '\n'
+            
+            ave_line = ""
+            std_line = ""
+            for filt in filters:
+                ave_line += filt + "* Ave: " + format(means_check[filt], ' >6.3f') + "  "
+                std_line += filt + "* Std: " + format(stds_check[filt], ' >6.3f') + "  "
+            check_msg += ave_line.rstrip().rjust(137) + '\n'
+            check_msg += std_line.rstrip().rjust(137)
+
+            self.console_msg(check_msg)
+
+            # IQR limits
+            for filt in filters:
+                col = filt + "_star"
+                q3, q1 = np.percentile(result_check_star[col], [75, 25])
+                iqr = q3 - q1
+                upper = q3 + (iqr * 1.5)
+                lower = q1 - (iqr * 1.5)
+                self.console_msg(("Check Star IQR limit for " + filt + "*: " + 
+                                  format(lower, ' >6.3f') + ';' + format(upper, ' >6.3f')).rjust(123))
+            self.console_msg('\n')
+
+            # Variable star summary
+            var_msg = "Variable Star Estimates of Var: " + var_star_label
+            var_msg += ";    (qfit--->"
+            for filt in filters:
+                var_msg += " " + filt + ": " + format(var_star_rows[filt]["qfit"], ' >5.3f') + ";"
+            var_msg = var_msg.rstrip(';') + ')'
+            var_msg += '\n' + result_var_star.sort_values(by="name").to_string() + '\n'
+            
+            ave_line = ""
+            std_line = ""
+            for filt in filters:
+                ave_line += filt + "* Ave: " + format(means_var[filt], ' >6.3f') + "  "
+                std_line += filt + "* Std: " + format(stds_var[filt], ' >6.3f') + "  "
+            var_msg += ave_line.rstrip().rjust(137) + '\n'
+            var_msg += std_line.rstrip().rjust(137)
+
+            self.console_msg(var_msg)
+
+            # ----------------------------------------------------------------
+            # Build aux report for AAVSO notes
+            # ----------------------------------------------------------------
+            aux_columns = ["color", "JD", "KMAGS", "KMAGINS", "KREFMAG",
+                            "VMAGINS", "Date-Obs", "KNAME", "AMASS",
+                              "coeff_val", "coeff_err", "coeff_text", "coeff_err_text"]
+            
+            result_aux_report = pd.DataFrame(columns=aux_columns)
+
+            for filt in filters:
+                eqn_type, ci_f1, ci_f2, coeff_val, coeff_err, coeff_text, coeff_err_text = eqn_info[filt]
+                row_data = {
+                    "color": filt,
+                    "JD": raw_jd[filt],   # orig
                     "KMAGS": means_check[filt],
                     "KMAGINS": check_IM[filt],
                     "KREFMAG": check_cat[filt],
@@ -7521,7 +8088,8 @@ class MyGUI:
         self.multi_color_photo_menu.add_command(label = "(B,V,R)", command=self.BVR_multi_color_photometry)
         self.multi_color_photo_menu.add_command(label = "(B,V,I)", command=self.BVI_multi_color_photometry)
         self.multi_color_photo_menu.add_command(label = "(V,R,I)", command=self.VRI_multi_color_photometry)
-        #    label="(B,V,R,I)", command=self.BVRI_multi_color_photometry)
+        self.multi_color_photo_menu.add_separator()
+        self.multi_color_photo_menu.add_command(label="(B,V,R,I)", command=self.BVRI_multi_color_photometry)
         self.menubar.add_cascade(label="Multi Color Photometry", menu=self.multi_color_photo_menu)
 
         self.reportmenu = tk.Menu(self.menubar, tearoff=0)
@@ -7534,6 +8102,7 @@ class MyGUI:
         self.multi_color_sub_menu.add_command(label = "(B,V,R)", command=self.BVR_generate_aavso_report_3color)
         self.multi_color_sub_menu.add_command(label = "(B,V,I)", command=self.BVI_generate_aavso_report_3color)
         self.multi_color_sub_menu.add_command(label = "(V,R,I)", command=self.VRI_generate_aavso_report_3color)
+        #self.multi_color_sub_menu.add_separator()
         #self.multi_color_sub_menu.add_command(label = "(B,V,R,I)", command=self.BVRI__generate_aavso_report_4color)
         self.reportmenu.add_cascade(label="Multi Color Photometry", menu=self.multi_color_sub_menu)
 
