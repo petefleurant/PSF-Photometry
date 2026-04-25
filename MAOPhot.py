@@ -537,6 +537,9 @@ class MyGUI:
     # The TopLoevel window containing the settings
     es_top = None
 
+    # Some FIT files have DATE-END 
+    date_end_jd = None
+
 #######################################################################################
 #
 # console_msg
@@ -1236,6 +1239,21 @@ class MyGUI:
                         self.error_raised = True
                         exc_type, exc_obj, exc_tb = sys.exc_info()
                         self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+
+                if 'date-end' in header:
+                    try:
+                        date_end = Time(header['date-end'])
+                        _date_end_jd = Time(date_end, format='jd')
+                        self.date_end_jd = str(_date_end_jd)
+                        self.console_msg("DATE-END: " + str(_date_end_jd.to_value('iso')) + " UTC; JD: " + self.date_end_jd)
+                        
+                    except Exception as e:
+                        self.error_raised = True
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+                else:
+                    self.date_end_jd = None
+                
 
                 if 'jd' in header:
                     jd = header['jd']
@@ -2243,6 +2261,10 @@ class MyGUI:
             else:
                 self.results_tab_df["date-obs"] = float(_date_obs)
 
+            _date_end = self.date_end_jd
+            if _date_end != None and is_number(_date_end):
+                self.results_tab_df["date-end"] = float(_date_end)
+
             _airmass = self.airmass_entry.get().strip()
             if not _airmass or not is_number(_airmass):
                 self.console_msg("AIRMASS not valid setting to na")
@@ -3223,19 +3245,28 @@ class MyGUI:
             var_star_label = var_star_rows[filters[0]]["vsx_id"]
 
             # ----------------------------------------------------------------
-            # Date-obs / airmass per filter.
+            # Date-obs and airmass per filter.
             #   raw_jd[filt]   -> original shutter-open JD (aux "JD" column)
-            #   date_obs[filt] -> raw JD + EXPOSURE/2    (aux "Date-Obs" column)
+            #
+            #   If "date-end" exists 
+            #       date_obs[filt] -> (raw JD + date-end)/2    (aux "Date-Obs" column)
+            #   else
+            #       date_obs[filt] -> raw JD + EXPOSURE/2    (aux "Date-Obs" column)
+            #       
             # ----------------------------------------------------------------
             date_obs = {}
             amass    = {}
             raw_jd   = {}
             for filt in filters:
                 row = filter_data[filt][filter_data[filt]["check_star"] == True].iloc[0]
-                half_exp = row["exposure"] / 2
                 raw_jd[filt] = row["date-obs"]
-                _obs = Time(row["date-obs"], format='jd') + TimeDelta(half_exp, format='sec')
-                date_obs[filt] = _obs.jd
+                if 'date-end' in row:
+                    date_obs[filt] = (row["date-obs"] + row["date-end"])/2
+                else:
+                    half_exp = row["exposure"] / 2
+                    _obs = Time(row["date-obs"], format='jd') + TimeDelta(half_exp, format='sec')
+                    date_obs[filt] = _obs.jd
+
                 amass[filt]    = row["AMASS"]
 
             # ----------------------------------------------------------------
