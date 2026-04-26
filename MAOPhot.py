@@ -5505,6 +5505,13 @@ class MyGUI:
                 check_ra = float(check_star["match_ra"])
                 check_dec = float(check_star["match_dec"])
 
+                # ----------------------------------------------------------------
+                #   DATE in AAVSO report is DATE-OBS + EXPOSURE/2
+                #
+                half_exp = var_star["exposure"] / 2
+                _obs = Time(var_star["date-obs"], format='jd') + TimeDelta(half_exp, format='sec')
+                raw_date = _obs.jd
+
                 if not ensemble:
                     """
                     Example Single Image Report (Single comp example)
@@ -5543,7 +5550,7 @@ class MyGUI:
                     check_star_err = 1/snr_check_star
 
                     starid = var_star_name
-                    date = format(float(self.date_obs_entry.get()), '.6f') 
+                    date = format(raw_date, '.6f') 
                     mag = str(round(var_star_mag, decimal_places))
                     merr = str(round(var_star_err, decimal_places))
                     filt = self.filter_entry.get().strip()
@@ -5612,7 +5619,7 @@ class MyGUI:
                     ave_comp_dec = np.mean(comp_data["match_dec"])
 
                     starid = var_star_name
-                    date = format(float(self.date_obs_entry.get()), '.6f') 
+                    date = format(raw_date, '.6f') 
                     mag = str(round(ave_var_star_mag, decimal_places))
                     merr = str(round(stdev_check_star_mag, decimal_places))
                     filt = self.filter_entry.get().strip()
