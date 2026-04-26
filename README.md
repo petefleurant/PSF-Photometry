@@ -1,76 +1,63 @@
 # PSF-Photometry
 
-Welcome to MAOPhot 1.1.11, a PSF Photometry tool using Astropy 7.1.1 and Photutils 2.3.0
+MAOPhot 1.2.0
+Welcome to MAOPhot 1.2.0, a PSF photometry tool built with Astropy 7.1.1 and Photutils 2.3.0.
+Version 1.2.0 Changes
+1)	New feature: Multi-color photometry
+Adds support for 3-color and 4-color transformed reports. Analysis uses the AAVSO-recommended iterative solution, following the approach used by AAVSO TransformApplier (v2.7.1).
+MAOPhot applies the AAVSO-recommended transformation coefficients.
+MAOPhot requires the following coefficients:
+coeff	B		V		R		I
+-------------------------------------
+BVRI	Tb_bv	Tv_bv	Tr_vi	Ti_vi
+BVR		Tb_bv	Tv_bv	Tvr	
+BVI		Tb_bv	Tv_bv			Ti_vi
+VRI				Tv_vi	Tr_vi	Tvi
+BV		Tb_bv	Tv_bv		
+VR				Tv_vr	Tr_vr	
+VI				Tv_vi			Tvi
 
-NEW FEATURE: Support for compressed FITS files: CFITSIO, ZIP and GZIP files. 
-ZIP, and GZIP files are now supported; files of any type (FITS, GZIP, or ZIP) can be saved, and can be saved as any other type (FITS, GZIP or ZIP)
+2)	Upgraded packages:
+a.	Astropy 7.1.1   7.2
+b.	NumPy 2.3.4   2.4
+c.	Pandas 2.3.3   3.0.1
+d.	Pillow 11.0.0   12.1.1
+e.	SciPy 1.16.2   1.17.1
+f.	tqdm 4.67.1   4.67.3
 
-## Version 1.1.11 Changes
-
-1)	Corrected problem with VSX catalog entries overriding comparison star entries in photometry table
-2)  Check for valid AIRMASS and DATE-OBS; print user object's qfit at end of VSX list
-3)	FITS file format selection has been improved
-
-## Version 1.1.10 Changes
-
-NEW FEATURE introduced in 1.1.10: PSF Estimation of FITS image file. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot is displayed.
-
-1)	Corrected problem with Moffat alpha value
-2)  Corrected "Shift+Button-1" which drags drags inmage on screeen
-3)  Added qfit metrics to console output after Two Color Photometry
-4)	Corrected problem with Object Name’s alpha and delta values
-5)	Replace Min Separation Factor with Min Separation Bias
-6)	Added PSF Estimation and it is optionally executed after a FITS file is opened. FWHM and Beta (Moffat) are estimated and inserted automatically into settings. A plot displaying the work is popped up
-7)  In all DAOStarFinder calls, set min_separation to fwhm parameter value (fwhm or fwhm_estimate)
-8)  Updated V1117 Her and Z Tau example settings 
-
-## Version 1.1.9 Changes
-
-1)	Fixed problem with yellow circles after star is rejected
-2)	"Fitting width/height, px” need not be odd
-
-## Version 1.1.8 Changes
-
-1)	Intermediate results display qfit metrics
-2)	Button-2 click centers image
-3)	Button-1 + Shift drags image
-4)	Mouse wheel zooms image in and out
-5)	Added View-->Invert; this inverts image
-6)	Added Effective PSF-->Load... and Effective PSF-->Save As...
-7)	ENSEMBLE calculated for Single Image Photometry
-8)	ENSEMBLE outliers displayed for Single Image Photometry
-9)	Replace IRAFStarFinder with DAOStarFinder
-10)	SourceGrouper is used in IterativePSFPhotometry
-11)	In APASS DR10, remove any entries with Johnson (V) > maglimit until cgi-bin/apass_dr10_download.pl is fixed
-12)	Added Moffat with beta parameter as option for PSF model
-13)	Added option to generate residual image
-14)	MAOPhot 1.1.7 has been merged into MAOPhot 1.1.8
-
-
-**Note:** Version 1.1.7 has been merged into 1.1.8
+3)	Settings changes:
+a.	Added Oversampling, used when building the ePSF model (default: 2).
+b.	Added additional transformation coefficients (e.g., Tb_br, Tb_bi, Tr_ri).
+c.	Added User Note.
+d.	Added Date-Obs (UTC).
+e.	Date-Obs (JD) and Date-Obs (UTC) are read-only and are obtained from the FITS file.
+4)	Saved the current oversampling value in the exported ePSF file.
+5)	Corrected the single-comparison-star error calculation (uses 1/SNR).
+6)	Added Minimum SNR to Settings. If any comparison star or check star has an SNR below the minimum, that star is excluded.
+7)	Corrected a case where the check star was not labeled.
+8)	Reports now record the correct transformation coefficients in the Notes section of the AEFF (AAVSO Extended File Format) report.
+9)	AAVSO report names are now derived from the Master Report name rather than the loaded FITS file.
 
 
 ## Overview
 
-MAOPhot calculates stellar magnitudes from FITS formatted digital photographs using PSF photometry. It produces an extended AAVSO (American Association of Variable Star Observers) report (https://www.aavso.org/aavso-extended-file-format) which can be submitted to AAVSO using their online tool WebObs (https://www.aavso.org/webobs).
+MAOPhot calculates stellar magnitudes from FITS-formatted images using PSF photometry. It produces an AAVSO Extended File Format (AEFF) report that can be submitted to the AAVSO via WebObs.
 MAOPhot uses PSF (point spread function) photometry exclusively.
-
-MAOPhot is written in Python using Astropy (a common core package for astronomy). MAOPhot also uses Photutils. See "PSF Photometry" which describes many of the classes and methods used in MAOPhot: https://photutils.readthedocs.io/en/stable/user_guide/psf.html
-
-## Key Features
-
-MAOPhot has been redesigned for AAVSO reporting only and includes, but is not limited to, the following enhancements:
-•	Uses Astropy 7.1.1 and Photutils 2.3.0
-•	Generation of an Effective PSF model (EPSF model) following the prescription of Anderson and King (2000; PASP 112, 1360), with the ability to create a 'rejection list' of stars that the user can select that will not be part of the EPSF model generated
+MAOPhot is written in Python using Astropy (a common core package for astronomy) and Photutils. For background on the Photutils classes and methods used by MAOPhot, see the Photutils “PSF Photometry” user guide.
+Key Features
+MAOPhot is designed for AAVSO reporting and includes the following features:
+•	Built with Astropy and Photutils
+•	Generates an effective PSF (ePSF) model following Anderson and King (2000; PASP 112, 1360), with optional creation of a rejection list of stars to exclude from the ePSF build
 •	Option to use a Circular Gaussian PRF (Pixel Response Function) as a model
 •	Option to use a Moffat PSF model
-•	Uses Iterative PSF Photometry - an iterative version of PSF Photometry (IterativePSFPhotometry class from Photutils) where new sources are detected in the residual image after the fit sources are subtracted. This is particularly useful for crowded fields where faint sources are very close to bright sources and may not be detected in the first pass
+•	Supports iterative PSF photometry (Photutils IterativePSFPhotometry), where new sources are detected in the residual image after fitted sources are subtracted—useful for crowded fields
 •	PSF Photometry using an ensemble of comparison stars or a single comp star
-•	Generation of Two-Color Photometry (B, V), (V, R) or (V, I), and Single Image Photometry reports in AAVSO extended format
-•	Use of telescope Transformation Coefficients (needed for Two Color Photometry)
+•	Generates multi-color photometry reports (BV, VR, VI, BVR, BVI, VRI, and BVRI) using transformation coefficients (TCs) in AAVSO extended format; single-image photometry reports are also supported
+•	Use of telescope Transformation Coefficients (needed for Color Photometry)
 •	User can specify check star and list of comp stars
 •	Manually select a star for measurement
 •	Intermediate results are saved as .csv files
 •	Optionally enter an AAVSO Chart ID when retrieving comparison star data
-## Documentation
+•	When image file is loaded, optionally elect to find weighted median Moffat β value and weighted median FWHM value
+
 See HelpFile.pdf for more information.
