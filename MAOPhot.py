@@ -363,9 +363,9 @@ def save_background_image(stretch_min, stretch_max, zoom_level, image_data):
     width, height = background_image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
     background_image = background_image.resize(new_size, Image.LANCZOS)
-    background_image = ImageMath.eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
+    background_image = ImageMath.unsafe_eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
                                       ") * 255 / " + str(stretch_max / 100 * FITS_maximum), a=background_image)
-    background_image = ImageMath.eval("convert(a, 'L')", a=background_image)
+    background_image = ImageMath.unsafe_eval("convert(a, 'L')", a=background_image)
     background_image.save('background.jpg')
 
 
@@ -376,11 +376,11 @@ def save_image(stretch_min, stretch_max, zoom_level, image_data, filename):
     width, height = _image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
     _image = _image.resize(new_size, Image.LANCZOS)
-    _image = ImageMath.eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
+    _image = ImageMath.unsafe_eval("(a + " + str(stretch_min / 100 * FITS_maximum) +
                             ") * 255 / " +
                             str(stretch_max / 100 * FITS_maximum),
                             a=background_image)
-    _image = ImageMath.eval("convert(a, 'L')", a=background_image)
+    _image = ImageMath.unsafe_eval("convert(a, 'L')", a=background_image)
     _image.save(filename)
 
 
@@ -414,7 +414,7 @@ def generate_FITS_thumbnail(stretch_min, stretch_max, zoom_level,
     width, height = generated_image.size
     new_size = (int(width * zoom_level), int(height * zoom_level))
     generated_image = generated_image.resize(new_size, Image.LANCZOS)
-    generated_image = ImageMath.eval("(a + " +
+    generated_image = ImageMath.unsafe_eval("(a + " +
                                      str(stretch_min / 100 * FITS_maximum) +
                                      ") * 255 / " +
                                      str(stretch_max / 100 * FITS_maximum),
@@ -449,8 +449,12 @@ class MyGUI:
     photometry_circles = {}
     valid_parameter_list = {} # contains user's settings
     valid_config_list = {} # contains 'global' MAOPhot settings/config parameters
-    ePSF_rejection_list = pd.DataFrame({'x':[],'y':[],"stale":[]})
-    ePSF_pending_rejection_list = pd.DataFrame({'x':[],'y':[], "stale":[]})
+    ePSF_rejection_list = pd.DataFrame({'x': pd.Series(dtype='float'),
+                                        'y': pd.Series(dtype='float'),
+                                        'stale': pd.Series(dtype='bool')})
+    ePSF_pending_rejection_list = pd.DataFrame({'x': pd.Series(dtype='float'),
+                                                'y': pd.Series(dtype='float'),
+                                                'stale': pd.Series(dtype='bool')})
     epsf_model = None
     stars_tbl = None
     isolated_stars_tbl = None
@@ -1091,7 +1095,7 @@ class MyGUI:
             
             # Apply inversion if enabled
             if self.is_inverted:
-                generated_image = ImageMath.eval("255 - a", a=generated_image)
+                generated_image = ImageMath.unsafe_eval("255 - a", a=generated_image)
                 
             self.image = ImageTk.PhotoImage(generated_image)
             self.image_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image)
@@ -3669,7 +3673,11 @@ class MyGUI:
                     comparison_stars[dec_column_name])
                 #here not using aavso cat so we need check star info
                 check_star_to_use = self.object_kref_entry.get().strip()
-                
+
+            # Because these columns can have mixed types 
+            for col in ["match_id", "match_ra", "match_dec", "match_mag", "match_mag_error"]:
+                self.results_tab_df[col] = pd.Series(dtype='object')
+
             for index, row in self.results_tab_df.iterrows():
                 photometry_star_coordinates = SkyCoord(
                     ra=row["ra_fit"] * u.deg, dec=row["dec_fit"] * u.deg)
@@ -5853,7 +5861,7 @@ class MyGUI:
         first_kname_raw = aux[filters[0]]["KNAME"].iloc[0]
         if isinstance(first_kname_raw, str):
             check_kname_str = first_kname_raw
-        elif isinstance(first_kname_raw, (np.float64, int)):
+        elif isinstance(first_kname_raw, (float, np.float64, int)):
             check_kname_str = str(int(first_kname_raw))
         else:
             check_kname_str = '???'
@@ -5866,7 +5874,7 @@ class MyGUI:
         check_hdr = "Check Star Estimates using check star: " + check_kname_str
         for f in filters:
             check_hdr += " (" + f + ": " + \
-                str(round(float(aux[f]['KREFMAG']), decimal_places)) + ")"
+                str(round(float(aux[f]['KREFMAG'].iloc[0]), decimal_places)) + ")"
         ave_line = ""
         std_line = ""
         for f in filters:
@@ -5893,7 +5901,7 @@ class MyGUI:
             with open(report_filename, mode='w') as f_out:
                 f_out.write("#TYPE=Extended\n")
                 f_out.write("#OBSCODE=" + self.aavso_obscode_entry.get() + "\n")
-                f_out.write("#SOFTWARE=Self-developed; " + self.program_full_name + "\n")
+                f_out.write("#SOFTWARE=developed-by-FPIA; " + self.program_full_name + "\n")
                 f_out.write("#DELIM=,\n")
                 f_out.write("#DATE=JD\n")
                 f_out.write("#OBSTYPE=CCD\n")
@@ -5916,7 +5924,7 @@ class MyGUI:
 
                     amass_val = aux_row["AMASS"].iloc[0]
                     amass = (format(float(amass_val), '.3f')
-                             if type(amass_val) == np.float64 else "na")
+                             if isinstance(amass_val, (int, float, np.floating)) else "na")
 
                     group = "na"
                     chart = self.vizier_catalog_entry.get().strip()
