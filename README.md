@@ -61,3 +61,4 @@ MAOPhot is designed for AAVSO reporting and includes the following features:
 •	When image file is loaded, optionally elect to find weighted median Moffat β value and weighted median FWHM value
 
 See HelpFile.pdf for more information.
+
