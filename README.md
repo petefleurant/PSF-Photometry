@@ -7,15 +7,16 @@ Version 1.2.0 Changes
 Adds support for 3-color and 4-color transformed reports. Analysis uses the AAVSO-recommended iterative solution, following the approach used by AAVSO TransformApplier (v2.7.1).
 MAOPhot applies the AAVSO-recommended transformation coefficients.
 MAOPhot requires the following coefficients:
-coeff	B		V		R		I
--------------------------------------
-BVRI	Tb_bv	Tv_bv	Tr_vi	Ti_vi
-BVR		Tb_bv	Tv_bv	Tvr	
-BVI		Tb_bv	Tv_bv			Ti_vi
-VRI				Tv_vi	Tr_vi	Tvi
-BV		Tb_bv	Tv_bv		
-VR				Tv_vr	Tr_vr	
-VI				Tv_vi			Tvi
+
+| coeff | B     | V     | R     | I     |
+|-------|-------|-------|-------|-------|
+| BVRI  | Tb_bv | Tv_bv | Tr_vi | Ti_vi |
+| BVR   | Tb_bv | Tv_bv | Tvr   |       |
+| BVI   | Tb_bv | Tv_bv |       | Ti_vi |
+| VRI   |       | Tv_vi | Tr_vi | Tvi   |
+| BV    | Tb_bv | Tv_bv |       |       |
+| VR    |       | Tv_vr | Tr_vr |       |
+| VI    |       | Tv_vi |       | Tvi   |
 
 2)	Upgraded packages:
 a.	Astropy 7.2
@@ -46,18 +47,31 @@ MAOPhot uses PSF (point spread function) photometry exclusively.
 MAOPhot is written in Python using Astropy (a common core package for astronomy) and Photutils. For background on the Photutils classes and methods used by MAOPhot, see the Photutils “PSF Photometry” user guide.
 Key Features
 MAOPhot is designed for AAVSO reporting and includes the following features:
+
 •	Built with Astropy and Photutils
+
 •	Generates an effective PSF (ePSF) model following Anderson and King (2000; PASP 112, 1360), with optional creation of a rejection list of stars to exclude from the ePSF build
+
 •	Option to use a Circular Gaussian PRF (Pixel Response Function) as a model
+
 •	Option to use a Moffat PSF model
+
 •	Supports iterative PSF photometry (Photutils IterativePSFPhotometry), where new sources are detected in the residual image after fitted sources are subtracted—useful for crowded fields
+
 •	PSF Photometry using an ensemble of comparison stars or a single comp star
+
 •	Generates multi-color photometry reports (BV, VR, VI, BVR, BVI, VRI, and BVRI) using transformation coefficients (TCs) in AAVSO extended format; single-image photometry reports are also supported
+
 •	Use of telescope Transformation Coefficients (needed for Color Photometry)
+
 •	User can specify check star and list of comp stars
+
 •	Manually select a star for measurement
+
 •	Intermediate results are saved as .csv files
+
 •	Optionally enter an AAVSO Chart ID when retrieving comparison star data
+
 •	When image file is loaded, optionally elect to find weighted median Moffat β value and weighted median FWHM value
 
 See HelpFile.pdf for more information.
