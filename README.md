@@ -18,12 +18,12 @@ VR				Tv_vr	Tr_vr
 VI				Tv_vi			Tvi
 
 2)	Upgraded packages:
-a.	Astropy 7.1.1   7.2
-b.	NumPy 2.3.4   2.4
-c.	Pandas 2.3.3   3.0.1
-d.	Pillow 11.0.0   12.1.1
-e.	SciPy 1.16.2   1.17.1
-f.	tqdm 4.67.1   4.67.3
+a.	Astropy 7.2
+b.	NumPy 2.4
+c.	Pandas 3.0.1
+d.	Pillow 12.1.1
+e.	SciPy 1.17.1
+f.	tqdm 4.67.3
 
 3)	Settings changes:
 a.	Added Oversampling, used when building the ePSF model (default: 2).
