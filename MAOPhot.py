@@ -9,17 +9,17 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-   #        #####        ###   
-  ##       #     #      #   #  
- # #             #     #     # 
-   #        #####      #     # 
-   #   ### #       ### #     # 
-   #   ### #       ###  #   #  
- ##### ### ####### ###   ###   
-                                                                                                                                                                                          
-Welcome to MAOPhot 1.2.0, a PSF Photometry tool using Astropy and Photutils.psf
+   #        #####        #   
+  ##       #     #      ##   
+ # #             #     # #   
+   #        #####        #   
+   #   ### #       ###   #   
+   #   ### #       ###   #   
+ ##### ### ####### ### ##### 
+                                                                                                                                                                                                                       
+Welcome to MAOPhot 1.2.1, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.2.0 Revision
+    1.2.1 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -134,7 +134,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -3850,8 +3850,8 @@ class MyGUI:
 
                         # Found a match within matching_radius
                         self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
-                        self.results_tab_df.loc[index, "RAJ2000"] = str(match_ra)
-                        self.results_tab_df.loc[index, "DEJ2000"] = str(match_dec)
+                        self.results_tab_df.loc[index, "RAJ2000"] = match_ra
+                        self.results_tab_df.loc[index, "DEJ2000"] = match_dec
                         self.results_tab_df.loc[index, "separation"] = str(separation)
                         self.console_msg("Match VSX source:" +\
                                           " (qfit:" + format(self.results_tab_df.loc[index, "qfit"], '0.4f') +") " +\
@@ -5526,7 +5526,7 @@ class MyGUI:
                     
                         #TYPE=EXTENDED
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.2.1 using photutils.psf
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
@@ -5604,7 +5604,7 @@ class MyGUI:
                                 
                         #TYPE=Extended
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.0 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.2.1 using photutils.psf
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
