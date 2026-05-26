@@ -1,7 +1,9 @@
 # PSF-Photometry
 
-MAOPhot 1.2.0
-Welcome to MAOPhot 1.2.0, a PSF photometry tool built with Astropy 7.1.1 and Photutils 2.3.0.
+MAOPhot 1.2.1
+Welcome to MAOPhot 1.2.1, a PSF photometry tool built with Astropy 7.1.1 and Photutils 2.3.0.
+Version 1.2.1 Changes
+1)	Fixed problem when reloading photometry data
 Version 1.2.0 Changes
 1)	New feature: Multi-color photometry
 Adds support for 3-color and 4-color transformed reports. Analysis uses the AAVSO-recommended iterative solution, following the approach used by AAVSO TransformApplier (v2.7.1).
