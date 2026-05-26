@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "MAOPhot"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "Pete Fleurant"
 #define MyAppURL "https://github.com/petefleurant/PSF-Photometry"
 #define MyAppExeName "MAOPhot.exe"
