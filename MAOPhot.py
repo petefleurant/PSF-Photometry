@@ -9,17 +9,18 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-   #        #####        #   
-  ##       #     #      ##   
- # #             #     # #   
-   #        #####        #   
-   #   ### #       ###   #   
-   #   ### #       ###   #   
- ##### ### ####### ### ##### 
+   #        #####       #####  
+  ##       #     #     #     # 
+ # #             #           # 
+   #        #####       #####  
+   #   ### #       ### #       
+   #   ### #       ### #       
+ ##### ### ####### ### ####### 
+                            
                                                                                                                                                                                                                        
-Welcome to MAOPhot 1.2.1, a PSF Photometry tool using Astropy and Photutils.psf
+Welcome to MAOPhot 1.2.2, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.2.1 Revision
+    1.2.2 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -134,7 +135,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -2705,7 +2706,7 @@ class MyGUI:
                                         self.zoom_level, y_fit*self.zoom_level - 10*self.zoom_level, fill="white")  # Draw "target" lines
                 self.canvas.create_line(x_fit*self.zoom_level+35*self.zoom_level, y_fit*self.zoom_level,
                                         x_fit*self.zoom_level + 10*self.zoom_level, y_fit*self.zoom_level, fill="white")
-                self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux (ADU): " + str(
+                self.console_msg("Photometry fits, X: " + str(round(x_fit, 2)) + " Y: " + str(round(y_fit, 2)) + " Flux: " + str(
                     round(flux_fit, 2)) + " Instrumental magnitude: " + str(round(inst_mag, 3)) + " " + sky_coordinate_string)
 
                 if "match_id" in self.results_tab_df:
@@ -3503,6 +3504,33 @@ class MyGUI:
             else:
                 min_snr = 20
                 self.set_entry_text(self.object_min_snr_entry, "20")
+
+            #
+            # Get the linearity (saturation) limit. peakmax passed to
+            # DAOStarFinder does NOT reliably keep saturated stars out of the
+            # matched comp/check/VSX set (the matched stars come from the
+            # catalog + results_tab_df, which has no peak-ADU column), so we
+            # test the actual peak ADU of every matched star against this
+            # limit below.
+            #
+            linearity_limit_str = self.linearity_limit_entry.get().strip()
+            if linearity_limit_str and linearity_limit_str.isnumeric():
+                linearity_limit = float(linearity_limit_str)
+            else:
+                self.console_msg("Get Comparison Stars: linearity limit not valid; using 60000")
+                linearity_limit = 60000.0
+
+            #
+            # Saturation is a property of the physical (catalog) star, NOT of a
+            # single PSF detection. IterativePSFPhotometry can split one
+            # saturated star into several detections; only the brightest core
+            # exceeds the linearity limit, while residual siblings (found after
+            # the core was subtracted) fall below it. Checking peak ADU per
+            # detection therefore lets a sub-limit sibling keep the comp/check
+            # label. To avoid that, record the LABEL of any star found saturated
+            # in any of its detections and exclude every detection of that star.
+            #
+            saturated_comp_labels = set()  # raw match_label strings, e.g. "102"
               
 
             frame_center_coordinates = SkyCoord(ra=frame_center.ra, dec=frame_center.dec)
@@ -3684,6 +3712,7 @@ class MyGUI:
                 match_index, d2d_match, d3d_match = photometry_star_coordinates.match_to_catalog_sky(
                     catalog_comparison)
 
+                match_is_check = False  # default; set True below for the check (kref) star
                 #Catalog specific hacks
                 if using_aavso_catalog:
                     match_id = comparison_stars.iloc[match_index]["AUID"]
@@ -3727,6 +3756,9 @@ class MyGUI:
                 if separation < (matching_radius * u.deg):
                     # Check for minimum SNR
                     comp_snr = self.results_tab_df.loc[index, "flux_fit"] / self.image_bkg_value
+                    # Check for saturation / non-linearity using the raw peak
+                    # ADU of this matched star (see linearity_limit above).
+                    comp_peak_adu = self.get_star_peak_adu(row["x_fit"], row["y_fit"])
                     if comp_snr < min_snr:
                         self.console_msg("Comp star: " + str(match_label) + 
                                         " SNR too low " + 
@@ -3739,7 +3771,36 @@ class MyGUI:
                         self.results_tab_df.loc[index, "match_dec"] = ""
                         self.results_tab_df.loc[index, "match_mag"] = ""
                         self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
+                    elif comp_peak_adu > linearity_limit:
+                        #Here if saturated / above the linearity limit.
+                        #Blacklist the LABEL so that no detection of this star
+                        #(including sub-limit split siblings) is used. Warn once.
+                        if str(match_label) not in saturated_comp_labels:
+                            self.console_msg(("Check star: " if match_is_check else "Comp star: ") + str(match_label) +
+                                            " SATURATED; peak ADU " +
+                                            format(comp_peak_adu, '.0f') +
+                                            " exceeds linearity limit " +
+                                            format(linearity_limit, '.0f') +
+                                            "; excluding all detections of this star from the ensemble",
+                                            level=logging.WARNING)
+                        saturated_comp_labels.add(str(match_label))
+                        self.results_tab_df.loc[index, "match_id"] = ""
+                        self.results_tab_df.loc[index, "label"] = __empty_cell__ # prevent nan
+                        self.results_tab_df.loc[index, "match_ra"] = ""
+                        self.results_tab_df.loc[index, "match_dec"] = ""
+                        self.results_tab_df.loc[index, "match_mag"] = ""
+                        self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
                     else:
+                        #If this catalog star was found saturated in ANY of its
+                        #detections, do not use this (sub-limit sibling) detection.
+                        if str(match_label) in saturated_comp_labels:
+                            self.results_tab_df.loc[index, "match_id"] = ""
+                            self.results_tab_df.loc[index, "label"] = __empty_cell__ # prevent nan
+                            self.results_tab_df.loc[index, "match_ra"] = ""
+                            self.results_tab_df.loc[index, "match_dec"] = ""
+                            self.results_tab_df.loc[index, "match_mag"] = ""
+                            self.results_tab_df.loc[index, "check_star"] = False
+                            continue
                         #For a given comp star and matching_radius, there could be 
                         #more than one match. Choose the entry with the lowest qfit (Quality of Fit Score)
                         if "label" in self.results_tab_df:
@@ -3785,7 +3846,27 @@ class MyGUI:
                     self.results_tab_df.loc[index, "match_dec"] = ""
                     self.results_tab_df.loc[index, "match_mag"] = ""
                     self.results_tab_df.loc[index, "check_star"] = False # all values in this column must be of boolean 
-            
+
+            #
+            # Final safety sweep: remove any comp/check row still carrying the
+            # label of a star found saturated in any detection. This catches the
+            # case where a sub-limit sibling detection was labeled BEFORE the
+            # saturated core detection was processed.
+            #
+            if saturated_comp_labels and "label" in self.results_tab_df:
+                for _sat_label in saturated_comp_labels:
+                    _sat_mask = self.results_tab_df["label"] == (__label_prefix__ + str(_sat_label))
+                    if _sat_mask.any():
+                        self.console_msg("Comp/Check star: " + str(_sat_label) +
+                                        " removing surviving (split) detection of saturated star from ensemble",
+                                        level=logging.WARNING)
+                        self.results_tab_df.loc[_sat_mask, "match_id"] = ""
+                        self.results_tab_df.loc[_sat_mask, "label"] = __empty_cell__
+                        self.results_tab_df.loc[_sat_mask, "match_ra"] = ""
+                        self.results_tab_df.loc[_sat_mask, "match_dec"] = ""
+                        self.results_tab_df.loc[_sat_mask, "match_mag"] = ""
+                        self.results_tab_df.loc[_sat_mask, "check_star"] = False
+
             self.console_msg("Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
 
 
@@ -3802,6 +3883,10 @@ class MyGUI:
             #Look for any and all VSX stars
             #first init this flag 
             found_user_object = False
+            #Track saturation of the user target and other VSX stars (per
+            #physical star, robust to PSF split detections).
+            target_saturated = False   # True if the user object (target) is saturated
+            warned_vsx = set()         # VSX names already warned as saturated (dedupe)
             if len(vsx_result) > 0:
 
                 vsx_stars = vsx_result[0]
@@ -3830,6 +3915,29 @@ class MyGUI:
                     separation = photometry_star_coordinates.separation(match_coordinates)
                     
                     if separation < (matching_radius * u.deg):
+                        # Saturation is a property of the physical star. Every
+                        # split detection of the same star arrives here with the
+                        # same match_id, so testing peak ADU here (before the qfit
+                        # dedup) is robust to IterativePSFPhotometry splitting one
+                        # star into several detections.
+                        vsx_peak_adu = self.get_star_peak_adu(row["x_fit"], row["y_fit"])
+                        vsx_is_target = object_name_exist and (object_name == str(match_id))
+                        if vsx_peak_adu > linearity_limit:
+                            if vsx_is_target:
+                                if not target_saturated:
+                                    self.console_msg("TARGET SATURATED: " + str(match_id) +
+                                                    "; peak ADU " + format(vsx_peak_adu, '.0f') +
+                                                    " exceeds linearity limit " + format(linearity_limit, '.0f') +
+                                                    "; target will be removed",
+                                                    level=logging.WARNING)
+                                target_saturated = True
+                            elif str(match_id) not in warned_vsx:
+                                self.console_msg("VSX source: " + str(match_id) +
+                                                " SATURATED; peak ADU " + format(vsx_peak_adu, '.0f') +
+                                                " exceeds linearity limit " + format(linearity_limit, '.0f') +
+                                                "; photometry for this star is unreliable",
+                                                level=logging.WARNING)
+                                warned_vsx.add(str(match_id))
                         if "vsx_id" in self.results_tab_df:
                             already_gotten = self.results_tab_df.loc[self.results_tab_df["vsx_id"] == match_id]    
                             if not already_gotten.empty:
@@ -3888,9 +3996,32 @@ class MyGUI:
                         found_user_object_qfit = self.results_tab_df.loc[index, "qfit"]
                         found_user_object = True
                         self.console_msg("Found Object using α:" +  object_alpha + "; δ:" + object_delta)
+                        # Saturation check for the target located via α/δ
+                        if self.get_star_peak_adu(row["x_fit"], row["y_fit"]) > linearity_limit:
+                            if not target_saturated:
+                                self.console_msg("TARGET SATURATED: " + object_name +
+                                                "; peak ADU exceeds linearity limit " + format(linearity_limit, '.0f') +
+                                                "; target will be removed",
+                                                level=logging.WARNING)
+                            target_saturated = True
                         break
 
-            if object_name_exist and not found_user_object:
+            if target_saturated:
+                # The user target is saturated: remove it from the table and flag clearly.
+                self.console_msg("TARGET SATURATED: " + object_name +
+                                " removed from the table; target not usable in this image",
+                                level=logging.WARNING)
+                if "vsx_id" in self.results_tab_df:
+                    _tmask = self.results_tab_df["vsx_id"] == object_name
+                    self.results_tab_df.loc[_tmask, "vsx_id"] = __empty_cell__
+                    # RAJ2000/DEJ2000 are float64 columns (populated with catalog
+                    # coordinates), so the correct empty/null value is np.nan, not "".
+                    # This mirrors how never-matched VSX rows look (coords left NaN).
+                    self.results_tab_df.loc[_tmask, "RAJ2000"] = np.nan
+                    self.results_tab_df.loc[_tmask, "DEJ2000"] = np.nan
+                    self.results_tab_df.loc[_tmask, "separation"] = np.nan
+                found_user_object = False
+            elif object_name_exist and not found_user_object:
                 self.console_msg("DID NOT FIND Object Name:" + object_name + "!!!!")
             else:
                 # Reprint at the bottom of list for convenience
@@ -3915,6 +4046,9 @@ class MyGUI:
                 found_check = False #init
                 for comp in comp_stars_found:
                     (label, ischeck, qfit) = comp
+                    #Skip stars that were excluded for saturation
+                    if str(label) in saturated_comp_labels:
+                        continue
                     found_check |= ischeck == True
                     comp_list += str(label) + " (" + format(qfit, '0.4f') + "); " 
                 self.console_msg("AAVSO comp stars (qfit) found: " + comp_list)
@@ -3934,6 +4068,48 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+
+    ############################################################################################
+    #
+    # get_star_peak_adu
+    #
+    # Return the maximum raw pixel value (ADU) in a small box centered on a
+    # star's fitted (x_fit, y_fit) position. Used by get_comparison_stars to
+    # detect saturated / non-linear comp, check, and VSX stars, because the
+    # IterativePSFPhotometry results table carries no peak-ADU column and
+    # DAOStarFinder's peakmax does not reliably exclude such stars from the
+    # matched catalog set.
+    #
+    # The raw (NOT background-subtracted) global image_data is used on purpose:
+    # the linearity_limit is a raw-ADU detector threshold.
+    #
+    # box_half=2 -> a 5x5 window, large enough to capture the peak despite a
+    # small centroid offset, small enough to avoid grabbing a neighbor.
+    #
+    ############################################################################################
+
+    def get_star_peak_adu(self, x_fit, y_fit, box_half=2):
+        global image_data
+        try:
+            if image_data is None or len(image_data) == 0:
+                return 0.0
+            if not is_number(x_fit) or not is_number(y_fit):
+                return 0.0
+            xc = int(round(float(x_fit)))
+            yc = int(round(float(y_fit)))
+            # image_data is indexed [row=y, col=x]
+            height, width = image_data.shape
+            x0 = max(0, xc - box_half)
+            x1 = min(width, xc + box_half + 1)
+            y0 = max(0, yc - box_half)
+            y1 = min(height, yc + box_half + 1)
+            if x1 <= x0 or y1 <= y0:
+                return 0.0
+            return float(np.max(image_data[y0:y1, x0:x1]))
+        except Exception:
+            # Be conservative: if we cannot measure the peak, do not falsely
+            # flag the star as saturated.
+            return 0.0
 
     def set_entry_text(self, entry, text):
         entry.delete(0, tk.END)
@@ -5526,7 +5702,7 @@ class MyGUI:
                     
                         #TYPE=EXTENDED
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.1 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.2.2 using photutils.psf
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
@@ -5604,7 +5780,7 @@ class MyGUI:
                                 
                         #TYPE=Extended
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.1 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.2.2 using photutils.psf
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
