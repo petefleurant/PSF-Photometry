@@ -2,10 +2,12 @@
 
 MAOPhot 1.2.2
 Welcome to MAOPhot 1.2.2, a PSF photometry tool built with Astropy 7.1.1 and Photutils 2.3.0.
+
 Version 1.2.2 Changes
 1)	Added much needed check for saturated (above linearity limit) target, check, and comp stars when calling Photometry-->Get Comparison Stars
 Version 1.2.1 Changes
 1)	Fixed problem when reloading photometry data
+
 Version 1.2.0 Changes
 1)	New feature: Multi-color photometry
 Adds support for 3-color and 4-color transformed reports. Analysis uses the AAVSO-recommended iterative solution, following the approach used by AAVSO TransformApplier (v2.7.1).
