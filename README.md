@@ -5,7 +5,6 @@ Welcome to MAOPhot 1.2.2, a PSF photometry tool built with Astropy 7.1.1 and Pho
 
 Version 1.2.2 Changes
 1)	Added much needed check for saturated (above linearity limit) target, check, and comp stars when calling Photometry-->Get Comparison Stars
-
 Version 1.2.1 Changes
 1)	Fixed problem when reloading photometry data
 
