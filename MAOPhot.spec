@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas = []
 binaries = []
@@ -8,7 +8,12 @@ tmp_ret = collect_all('photutils')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('astroquery')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pyvo')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# Version checks (astropy minversion / importlib.metadata) need dist-info
+for pkg in ('scipy', 'numpy', 'astropy'):
+    datas += copy_metadata(pkg)
 
 a = Analysis(
     ['MAOPhot.py'],
