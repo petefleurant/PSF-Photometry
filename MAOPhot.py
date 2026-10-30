@@ -9,18 +9,18 @@
  #     # #     # ####### #       #    #  ####    #   
 
 
-   #        #####       #####  
-  ##       #     #     #     # 
- # #             #           # 
-   #        #####       #####  
-   #   ### #       ### #       
-   #   ### #       ### #       
- ##### ### ####### ### ####### 
-                            
-                                                                                                                                                                                                                       
-Welcome to MAOPhot 1.2.2, a PSF Photometry tool using Astropy and Photutils.psf
+   #        #####        ###   
+  ##       #     #      #   #  
+ # #             #     #     # 
+   #        #####      #     # 
+   #   ###       # ### #     # 
+   #   ### #     # ###  #   #  
+ ##### ###  #####  ###   ###   
+                                
+                                                                                                                                                                                                                      
+Welcome to MAOPhot 1.3.0, a PSF Photometry tool using Astropy and Photutils.psf
 
-    1.2.2 Revision
+    1.3.0 Revision
 
 MAOPhot calculates stellar magnitudes from 2 dimensional digital photographs. 
 It produces an extended AAVSO (American Association of Variable Star Observers)
@@ -135,7 +135,7 @@ print("MAOPhot is loading...please wait for GUI")
 #
 # Constants
 #
-__version__ = "1.2.2"
+__version__ = "1.3.0"
 __label_prefix__ = "comp " # prepended to comp stars label's; forces type to str
 __empty_cell__ = "%" #this forces cell to be type string
 __our_padding__ = 10
@@ -169,7 +169,7 @@ from photutils.background import MMMBackground
 from photutils.detection import DAOStarFinder
 from photutils.detection import find_peaks
 from photutils.psf import CircularGaussianPRF, MoffatPSF, SourceGrouper
-from photutils.psf import EPSFBuilder,EPSFFitter
+from photutils.psf import EPSFBuilder
 from photutils.psf import extract_stars
 from photutils.psf import IterativePSFPhotometry, PSFPhotometry
 from PIL import Image, ImageTk, ImageMath
@@ -688,11 +688,9 @@ class MyGUI:
             daofind = DAOStarFinder(
                 fwhm=fwhm_estimate,
                 threshold=threshold,
-                sharplo=0.2,
-                sharphi=1.0,
-                roundlo=-1.0,
-                roundhi=1.0,
-                peakmax=float(saturation_limit) * 0.9,  # Stay below saturation
+                sharpness_range=(0.2, 1.0),
+                roundness_range=(-1.0, 1.0),
+                peak_max=float(saturation_limit) * 0.9,  # Stay below saturation
                 exclude_border=True,
                 min_separation=fwhm_estimate
             )
@@ -713,12 +711,12 @@ class MyGUI:
             
             selected_sources = []
             for row in sources:
-                x, y = row['xcentroid'], row['ycentroid']
+                x, y = row['x_centroid'], row['y_centroid']
                 
                 # Check isolation
                 is_isolated = True
                 for selected in selected_sources:
-                    sx, sy = selected['xcentroid'], selected['ycentroid']
+                    sx, sy = selected['x_centroid'], selected['y_centroid']
                     dist = np.sqrt((x - sx)**2 + (y - sy)**2)
                     if dist < min_separation:
                         is_isolated = False
@@ -734,7 +732,7 @@ class MyGUI:
             # Fit Moffat to each star
             results = []
             for row in selected_sources:
-                x, y = row['xcentroid'], row['ycentroid']
+                x, y = row['x_centroid'], row['y_centroid']
                 
                 # Extract cutout from background-subtracted data
                 cutout, x_local, y_local = extract_star_cutout(data_sub, x, y, size=cutout_size)
@@ -1519,8 +1517,8 @@ class MyGUI:
             # now ready to find peaks
             star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
                                        fwhm=fwhm,
-                                        peakmax=float(linearity_limit),
-                                        brightest=user_npeaks,
+                                        peak_max=float(linearity_limit),
+                                        n_brightest=user_npeaks,
                                         exclude_border=True,
                                         min_separation=fwhm
                                        )
@@ -1554,8 +1552,8 @@ class MyGUI:
             
             size = 2*self.fit_shape + 1 # Eg., 11
             hsize = (size - 1)/2 
-            x = peaks_tbl['xcentroid']  
-            y = peaks_tbl['ycentroid']  
+            x = peaks_tbl['x_centroid']  
+            y = peaks_tbl['y_centroid']  
             peak = peaks_tbl['peak']
             _image = Image.fromarray(image_data)
             width, height = _image.size
@@ -2124,9 +2122,9 @@ class MyGUI:
 
             star_find = DAOStarFinder(threshold = star_detection_threshold_factor*std,
                                       fwhm=fwhm,
-                                      sharplo=sharplo,
-                                      peakmax=float(linearity_limit),
-                                      brightest=user_npeaks,
+                                      sharpness_range=(sharplo, 1.0),
+                                      peak_max=float(linearity_limit),
+                                      n_brightest=user_npeaks,
                                       exclude_border=True,  
                                       min_separation=fwhm  
                                       )
@@ -2174,7 +2172,7 @@ class MyGUI:
                                                 fitter = selected_fitter,
                                                 #fitter_maxiters = 10,
                                                 maxiters = iterations,
-                                                localbkg_estimator = local_bkg,
+                                                local_bkg_estimator = local_bkg,
                                                 aperture_radius=1.5*fwhm,
                                                 sub_shape=None, #defaults to model bounding box
                                                 progress_bar=True
@@ -3958,8 +3956,10 @@ class MyGUI:
 
                         # Found a match within matching_radius
                         self.results_tab_df.loc[index, "vsx_id"] = str(match_id)
-                        self.results_tab_df.loc[index, "RAJ2000"] = match_ra
-                        self.results_tab_df.loc[index, "DEJ2000"] = match_dec
+                        # float() forces float64: VSX RAJ2000/DEJ2000 arrive as float32, and
+                        # under pandas 3 a float32 column rejects later float64 assignments.
+                        self.results_tab_df.loc[index, "RAJ2000"] = float(match_ra)
+                        self.results_tab_df.loc[index, "DEJ2000"] = float(match_dec)
                         self.results_tab_df.loc[index, "separation"] = str(separation)
                         self.console_msg("Match VSX source:" +\
                                           " (qfit:" + format(self.results_tab_df.loc[index, "qfit"], '0.4f') +") " +\
@@ -5702,7 +5702,7 @@ class MyGUI:
                     
                         #TYPE=EXTENDED
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.2 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.3.0 using photutils.psf
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
@@ -5780,7 +5780,7 @@ class MyGUI:
                                 
                         #TYPE=Extended
                         #OBSCODE=Zzzz
-                        #SOFTWARE=Self-developed; MAOPhot 1.2.2 using photutils.psf
+                        #SOFTWARE=Self-developed; MAOPhot 1.3.0 using photutils.psf 
                         #DELIM=,
                         #DATE=JD
                         #OBSTYPE=CCD
