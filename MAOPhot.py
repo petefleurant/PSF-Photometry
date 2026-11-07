@@ -156,6 +156,40 @@ from astropy.visualization import SqrtStretch, LogStretch, AsinhStretch, simple_
 from astropy.wcs import WCS
 from astroquery.astrometry_net import AstrometryNet
 from astroquery.vizier import Vizier
+
+# VizieR mirror to query (hostname only; astroquery prepends "https://").
+# CDS primary is "vizier.cds.unistra.fr"
+#__vizier_server__ = "vizier.cds.unistra.fr"
+# Harvard 
+__vizier_server__ = "vizier.cfa.harvard.edu"
+# Canada
+#__vizier_server__ = "vizier.hia.nrc.ca"
+# Japan
+#__vizier_server__ = "vizier.nao.ac.jp"
+# South Africa
+#__vizier_server__ = "vizier.idia.ac.za"
+# Cambridge
+#__vizier_server__ = "vizier.ast.cam.ac.uk"
+# Hawaii
+#__vizier_server__ = "www.ukirt.jach.hawaii.edu"
+#
+# NOTE: __vizier_server__ is passed explicitly as vizier_server= on every
+# Vizier() instance below, which is the only reliable way to pin the mirror at
+# run time. Setting astroquery.vizier.conf.server after import does NOT work:
+# VizierClass.__init__ binds conf.server as a default argument at import time.
+#
+# Read/connect timeout (seconds) for VizieR queries. The astroquery default
+# (conf.timeout) is 60 s, which a heavily loaded mirror can exceed on
+# unlimited-row (row_limit=-1) queries.
+__vizier_timeout__ = 300
+#
+# Where to get VSX field variables. "AAVSO" queries the VSX API at
+# www.aavso.org directly (the source catalog; independent of CDS and its
+# VizieR mirrors). "VizieR" queries B/vsx/vsx at __vizier_server__. Whichever
+# is primary, the other is tried automatically if the primary fails.
+__vsx_primary_source__ = "AAVSO"
+#__vsx_primary_source__ = "VizieR"
+__vsx_api_timeout__ = 120   # seconds, AAVSO VSX API request
 from matplotlib import cm
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -3654,12 +3688,14 @@ class MyGUI:
                 self.console_msg(
                     "Inquiring VizieR Catalog " + catalog_selection + ", center α δ " +
                         frame_center.to_string("hmsdms", precision=2) +
-                        ", radius " + str(frame_radius))
+                        ", radius " + str(frame_radius) + " at " + __vizier_server__)
     
                 # [0] implies I/345/gaia2; [1] implies I/345/varres
                 comparison_stars = Vizier(catalog=catalog,
                                           columns=catalog_columns,
-                                          row_limit=-1).query_region(frame_center, radius=frame_radius)[0] 
+                                          row_limit=-1,
+                                          timeout=__vizier_timeout__,
+                                          vizier_server=__vizier_server__).query_region(frame_center, radius=frame_radius)[0] 
 
 
                 # print(comparison_stars)
@@ -3865,13 +3901,10 @@ class MyGUI:
                         self.results_tab_df.loc[_sat_mask, "match_mag"] = ""
                         self.results_tab_df.loc[_sat_mask, "check_star"] = False
 
-            self.console_msg("Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
-
-
-            # B/vsx : AAVSO International Variable Star Index VSX 
-            # B/vsx/vsx : Variable Star indeX,
-            vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1).query_region(frame_center,
-                                                                                 radius=frame_radius)
+            # VSX field variables: AAVSO VSX API and/or VizieR B/vsx/vsx
+            # (see __vsx_primary_source__). Returns a Table with Name,
+            # RAJ2000, DEJ2000 (deg); empty Table if both sources fail.
+            vsx_stars = self.get_vsx_variables(frame_center, frame_radius)
 
 
             # Prep object_name
@@ -3885,9 +3918,8 @@ class MyGUI:
             #physical star, robust to PSF split detections).
             target_saturated = False   # True if the user object (target) is saturated
             warned_vsx = set()         # VSX names already warned as saturated (dedupe)
-            if len(vsx_result) > 0:
+            if len(vsx_stars) > 0:
 
-                vsx_stars = vsx_result[0]
                 self.console_msg(
                     "Found " + str(len(vsx_stars)) + " VSX sources in the field. Matching...")
                 catalog_vsx = SkyCoord(
@@ -5319,6 +5351,103 @@ class MyGUI:
             self.error_raised = True
             exc_type, exc_obj, exc_tb = sys.exc_info()
             self.console_msg("Exception at line no: " + str(exc_tb.tb_lineno)  + " " + str(e), level=logging.ERROR)
+
+############################################################
+#
+#  get_vsx_variables
+#
+############################################################
+
+    def get_vsx_variables(self, frame_center, frame_radius):
+        """
+        Return VSX variables within frame_radius of frame_center as an
+        astropy Table with columns Name, RAJ2000 (deg), DEJ2000 (deg),
+        the same columns the VizieR B/vsx/vsx path provides. The primary
+        source is __vsx_primary_source__; on any failure the other source
+        is tried. Returns an empty Table if both fail (logged as an error).
+        """
+        if __vsx_primary_source__ == "VizieR":
+            sources = [("VizieR", self.vsx_query_vizier), ("AAVSO", self.vsx_query_aavso_api)]
+        else:
+            sources = [("AAVSO", self.vsx_query_aavso_api), ("VizieR", self.vsx_query_vizier)]
+
+        for source_name, query_function in sources:
+            try:
+                vsx_stars = query_function(frame_center, frame_radius)
+                self.console_msg("VSX query via " + source_name + " succeeded (" +
+                                 str(len(vsx_stars)) + " sources)")
+                return vsx_stars
+            except Exception as e:
+                self.console_msg("VSX query via " + source_name + " failed: " + str(e),
+                                 level=logging.WARNING)
+
+        self.console_msg("VSX query failed on all sources; continuing with NO VSX identification",
+                         level=logging.ERROR)
+        return Table(names=("Name", "RAJ2000", "DEJ2000"), dtype=(str, float, float))
+
+    def vsx_query_vizier(self, frame_center, frame_radius):
+        # B/vsx : AAVSO International Variable Star Index VSX
+        # B/vsx/vsx : Variable Star indeX
+        self.console_msg("Inquiring VizieR (B/vsx/vsx) at " + __vizier_server__ +
+                         " for VSX variables in the field...")
+        vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1,
+                            timeout=__vizier_timeout__,
+                            vizier_server=__vizier_server__).query_region(frame_center,
+                                                                          radius=frame_radius)
+        if len(vsx_result) == 0:
+            return Table(names=("Name", "RAJ2000", "DEJ2000"), dtype=(str, float, float))
+        return vsx_result[0]
+
+    def vsx_query_aavso_api(self, frame_center, frame_radius):
+        # AAVSO VSX API, cone search; ra, dec and radius are in degrees.
+        ra_deg = frame_center.icrs.ra.deg
+        dec_deg = frame_center.icrs.dec.deg
+        radius_deg = frame_radius.to(u.deg).value
+        self.console_msg("Inquiring AAVSO VSX API for VSX variables in the field...")
+        r = requests.get("https://www.aavso.org/vsx/index.php",
+                         params={"view": "api.list",
+                                 "ra": format(ra_deg, ".6f"),
+                                 "dec": format(dec_deg, "+.6f"),
+                                 "radius": format(radius_deg, ".6f"),
+                                 "format": "json"},
+                         headers={"User-Agent": "MAOPhot/" + __version__},
+                         timeout=__vsx_api_timeout__)
+        r.raise_for_status()
+        reply = r.json()
+
+        # Expected shape: {"VSXObjects": {"VSXObject": [ {...}, ... ]}}
+        # Tolerate a single object returned as a dict, and an empty result
+        # returned as [] / {} / missing key.
+        container = reply.get("VSXObjects", {}) if isinstance(reply, dict) else {}
+        objects = container.get("VSXObject", []) if isinstance(container, dict) else []
+        if isinstance(objects, dict):
+            objects = [objects]
+
+        names, ras, decs = [], [], []
+        for obj in objects:
+            name = obj.get("Name")
+            ra_value = obj.get("RA2000")
+            dec_value = obj.get("Declination2000")
+            if name is None or ra_value is None or dec_value is None:
+                continue
+            try:
+                ra_value, dec_value = float(ra_value), float(dec_value)
+            except (TypeError, ValueError):
+                # Sexagesimal fallback ("hh mm ss.s", "+dd mm ss")
+                c = SkyCoord(str(ra_value), str(dec_value), unit=(u.hourangle, u.deg))
+                ra_value, dec_value = c.ra.deg, c.dec.deg
+            names.append(str(name))
+            ras.append(ra_value)
+            decs.append(dec_value)
+
+        if len(objects) > 0 and len(names) == 0:
+            raise ValueError("AAVSO VSX API reply had objects but no usable Name/RA2000/Declination2000")
+
+        vsx_stars = Table([names, ras, decs], names=("Name", "RAJ2000", "DEJ2000"),
+                          dtype=(str, float, float))
+        vsx_stars["RAJ2000"].unit = u.deg
+        vsx_stars["DEJ2000"].unit = u.deg
+        return vsx_stars
 
 ############################################################
 #
