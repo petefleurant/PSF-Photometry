@@ -157,35 +157,44 @@ from astropy.wcs import WCS
 from astroquery.astrometry_net import AstrometryNet
 from astroquery.vizier import Vizier
 
-# VizieR mirror to query (hostname only; astroquery prepends "https://").
-# CDS primary is "vizier.cds.unistra.fr"
-#__vizier_server__ = "vizier.cds.unistra.fr"
-# Harvard 
-__vizier_server__ = "vizier.cfa.harvard.edu"
-# Canada
-#__vizier_server__ = "vizier.hia.nrc.ca"
-# Japan
-#__vizier_server__ = "vizier.nao.ac.jp"
-# South Africa
-#__vizier_server__ = "vizier.idia.ac.za"
-# Cambridge
-#__vizier_server__ = "vizier.ast.cam.ac.uk"
-# Hawaii
-#__vizier_server__ = "www.ukirt.jach.hawaii.edu"
+# VizieR mirrors (hostname only; astroquery prepends "https://"), tried in
+# order by query_vizier_region() until one returns at least one table. A mirror
+# that raises (connect timeout, SSL error, ...) or answers with no tables is
+# skipped.
 #
-# NOTE: __vizier_server__ is passed explicitly as vizier_server= on every
-# Vizier() instance below, which is the only reliable way to pin the mirror at
-# run time. Setting astroquery.vizier.conf.server after import does NOT work:
-# VizierClass.__init__ binds conf.server as a default argument at import time.
+# Reachability from MAO on 07 Nov 2026 (check_servers_1.py, cone search
+# around X Dra for II/336 APASS DR9 and I/345 Gaia DR2):
+#   vizier.idia.ac.za          South Africa  II/336 OK, I/345 OK
+#   vizier.cfa.harvard.edu     Harvard       II/336 NO TABLES, I/345 OK
+#   vizier.cds.unistra.fr      CDS primary   ConnectTimeout
+#   vizier.hia.nrc.ca          Canada        ConnectTimeout
+#   vizier.nao.ac.jp           Japan         ConnectTimeout
+#   vizier.ast.cam.ac.uk       Cambridge     SSLError
+#   www.ukirt.jach.hawaii.edu  Hawaii        ConnectionError
+# CDS is kept last in the list so it is used again once it is reachable.
+__vizier_servers__ = [
+    "vizier.idia.ac.za",        # South Africa
+    "vizier.cfa.harvard.edu",   # Harvard
+    "vizier.cds.unistra.fr",    # CDS primary (Strasbourg)
+]
 #
-# Read/connect timeout (seconds) for VizieR queries. The astroquery default
-# (conf.timeout) is 60 s, which a heavily loaded mirror can exceed on
-# unlimited-row (row_limit=-1) queries.
+# NOTE: the mirror is passed explicitly as vizier_server= on every Vizier()
+# instance (see query_vizier_region), which is the only reliable way to pin the
+# mirror at run time. Setting astroquery.vizier.conf.server after import does
+# NOT work: VizierClass.__init__ binds conf.server as a default argument at
+# import time.
+#
+# Timeouts (seconds) for VizieR queries, passed to requests as a
+# (connect, read) tuple. The connect timeout bounds how long an unreachable
+# mirror holds up the fallback. The read timeout is kept long because the
+# astroquery default (conf.timeout, 60 s) can be exceeded by a heavily loaded
+# mirror on unlimited-row (row_limit=-1) queries.
+__vizier_connect_timeout__ = 15
 __vizier_timeout__ = 300
 #
 # Where to get VSX field variables. "AAVSO" queries the VSX API at
 # www.aavso.org directly (the source catalog; independent of CDS and its
-# VizieR mirrors). "VizieR" queries B/vsx/vsx at __vizier_server__. Whichever
+# VizieR mirrors). "VizieR" queries B/vsx/vsx on __vizier_servers__. Whichever
 # is primary, the other is tried automatically if the primary fails.
 __vsx_primary_source__ = "AAVSO"
 #__vsx_primary_source__ = "VizieR"
@@ -3641,22 +3650,26 @@ class MyGUI:
                 # Default value
                 # Changes for some catalogs
                 mag_column_name = self.filter + "mag"
-                mag_error_column_name = self.filter + "mag error"  #<--- needs to be verified/fixed
+
+                catalog_columns = ["*"]  # astroquery default; overridden below where needed
 
                 #Use VizierR catalog
                 if catalog_selection == "APASS DR9":
                     catalog = "II/336"
                     ra_column_name = "RAJ2000"
                     dec_column_name = "DEJ2000"
-                    catalog_columns = ["RAJ2000", "DEJ2000", "Vmag", "Bmag", "r'mag", "i'mag"]
-                    DR9_Mag_name = {
-                        "V" : "Vmag",
-                        "B" : "Bmag",
-                        "R" : "r_mag", # Sloan
-                        "I" : "i_mag", # Sloan
-                        }
-                    mag_column_name = DR9_Mag_name[self.filter]
-                    #mag_error_column_name = DR9_Mag_Error_name[self.filter]   #<--- needs to be fixed
+                    # II/336/apass9 has Johnson B, V and Sloan g', r', i'
+                    # (columns Bmag, e_Bmag, Vmag, e_Vmag, r'mag, e_r'mag, ...).
+                    # Sloan r', i' are NOT Cousins R, I, so R and I are not
+                    # taken from DR9.
+                    if self.filter not in ("B", "V"):
+                        self.console_msg(
+                            "APASS DR9 has no Cousins " + self.filter + " magnitudes (only Sloan r', i'); " +
+                            "use the AAVSO catalog for " + self.filter + ".", level=logging.ERROR)
+                        self.console_msg("Ready")
+                        return
+                    mag_column_name = self.filter + "mag"   # "Bmag" or "Vmag"
+                    catalog_columns = ["RAJ2000", "DEJ2000", "Bmag", "e_Bmag", "Vmag", "e_Vmag"]
                     using_apass_dr9 = True
     
                 elif catalog_selection == "URAT1":
@@ -3685,24 +3698,62 @@ class MyGUI:
                     self.console_msg("UNEXPECTED ERROR UNKOWN CATALOG SELECTION!!!!!", level=logging.ERROR)
                     return
 
-                self.console_msg(
-                    "Inquiring VizieR Catalog " + catalog_selection + ", center α δ " +
-                        frame_center.to_string("hmsdms", precision=2) +
-                        ", radius " + str(frame_radius) + " at " + __vizier_server__)
-    
-                # [0] implies I/345/gaia2; [1] implies I/345/varres
-                comparison_stars = Vizier(catalog=catalog,
-                                          columns=catalog_columns,
-                                          row_limit=-1,
-                                          timeout=__vizier_timeout__,
-                                          vizier_server=__vizier_server__).query_region(frame_center, radius=frame_radius)[0] 
+                # VizieR convention: the uncertainty of column X is "e_X"
+                # (e.g. e_Bmag, e_Vmag in II/336/apass9).
+                mag_error_column_name = "e_" + mag_column_name
 
+                self.console_msg(
+                    "Inquiring VizieR Catalog " + catalog_selection + " (" + catalog + "), center α δ " +
+                        frame_center.to_string("hmsdms", precision=2) +
+                        ", radius " + str(frame_radius))
+
+                try:
+                    vizier_result, vizier_server = self.query_vizier_region(
+                        catalog, frame_center, frame_radius, columns=catalog_columns)
+                except ConnectionError as e:
+                    self.console_msg(str(e), level=logging.ERROR)
+                    self.console_msg("Ready")
+                    return
+
+                if vizier_server is None:
+                    self.console_msg(
+                        "No VizieR mirror returned " + catalog_selection + " (" + catalog +
+                        ") data for this field.", level=logging.ERROR)
+                    self.console_msg("Ready")
+                    return
+
+                # [0] implies I/345/gaia2; [1] implies I/345/varres
+                comparison_stars = vizier_result[0]
 
                 # print(comparison_stars)
                 if mag_column_name not in comparison_stars.colnames:
                     self.console_msg(
                         "Catalog " + self.catalog_stringvar.get() + " does not list " + self.filter + " magnitudes.")
+                    self.console_msg("Ready")
                     return
+
+                if mag_error_column_name not in comparison_stars.colnames:
+                    self.console_msg(
+                        "Catalog " + self.catalog_stringvar.get() + " does not list " + mag_error_column_name +
+                        " (" + self.filter + " magnitude uncertainties).", level=logging.ERROR)
+                    self.console_msg("Ready")
+                    return
+
+                # Drop catalog stars with no usable magnitude or uncertainty
+                # (masked or NaN; e.g. Bmag/e_Bmag are nullable in APASS DR9).
+                # Kept, a masked value is labeled "--B" and written to the CSV
+                # as "--", which pandas 3 then reads back as a text column.
+                unusable = np.zeros(len(comparison_stars), dtype=bool)
+                for col in (mag_column_name, mag_error_column_name):
+                    values = comparison_stars[col]
+                    unusable |= np.ma.getmaskarray(values)
+                    unusable |= ~np.isfinite(np.asarray(np.ma.filled(values, np.nan), dtype=float))
+                if unusable.any():
+                    self.console_msg(
+                        "Catalog " + self.catalog_stringvar.get() + ": " + str(int(unusable.sum())) + " of " +
+                        str(len(comparison_stars)) + " stars have no " + mag_column_name + " or " +
+                        mag_error_column_name + "; not used as comp stars.")
+                    comparison_stars = comparison_stars[~unusable]
 
             if len(comparison_stars) == 0:
                 self.console_msg(
@@ -5385,15 +5436,53 @@ class MyGUI:
                          level=logging.ERROR)
         return Table(names=("Name", "RAJ2000", "DEJ2000"), dtype=(str, float, float))
 
+    def query_vizier_region(self, catalog, center, radius, columns=None):
+        """
+        Cone search `catalog` on the VizieR mirrors in __vizier_servers__, in
+        order. Returns (TableList, server) from the first mirror that returns
+        at least one table.
+
+        A mirror that raises (connect timeout, SSL error, ...) is skipped. A
+        mirror that answers with NO tables is also skipped: VizieR answers that
+        way both when the field has no matching rows and when the mirror is not
+        serving the catalog (vizier.cfa.harvard.edu and II/336, Nov 2026), and
+        only another mirror can tell the two apart.
+
+        If every mirror that answered returned no tables, returns
+        (empty TableList, None). If no mirror answered at all, raises
+        ConnectionError.
+        """
+        if columns is None:
+            columns = ["*"]  # astroquery default
+        empty_result = None
+        for server in __vizier_servers__:
+            try:
+                result = Vizier(catalog=catalog,
+                                columns=columns,
+                                row_limit=-1,
+                                timeout=(__vizier_connect_timeout__, __vizier_timeout__),
+                                vizier_server=server).query_region(center, radius=radius)
+            except Exception as e:
+                self.console_msg("VizieR mirror " + server + " failed for " + catalog + ": " +
+                                 type(e).__name__, level=logging.WARNING)
+                continue
+            if len(result) > 0:
+                self.console_msg("VizieR mirror " + server + " returned " + catalog)
+                return result, server
+            self.console_msg("VizieR mirror " + server + " returned no tables for " + catalog,
+                             level=logging.WARNING)
+            empty_result = result
+        if empty_result is not None:
+            return empty_result, None
+        raise ConnectionError("No VizieR mirror answered for " + catalog)
+
     def vsx_query_vizier(self, frame_center, frame_radius):
         # B/vsx : AAVSO International Variable Star Index VSX
         # B/vsx/vsx : Variable Star indeX
-        self.console_msg("Inquiring VizieR (B/vsx/vsx) at " + __vizier_server__ +
-                         " for VSX variables in the field...")
-        vsx_result = Vizier(catalog="B/vsx/vsx", row_limit=-1,
-                            timeout=__vizier_timeout__,
-                            vizier_server=__vizier_server__).query_region(frame_center,
-                                                                          radius=frame_radius)
+        self.console_msg("Inquiring VizieR (B/vsx/vsx) for VSX variables in the field...")
+        # Raises ConnectionError if no mirror answers; the caller then tries
+        # the other VSX source.
+        vsx_result, vizier_server = self.query_vizier_region("B/vsx/vsx", frame_center, frame_radius)
         if len(vsx_result) == 0:
             return Table(names=("Name", "RAJ2000", "DEJ2000"), dtype=(str, float, float))
         return vsx_result[0]
@@ -5764,6 +5853,13 @@ class MyGUI:
         if len(str(file_name)) > 0 and os.path.isfile(str(file_name)):
             self.console_msg("Loading Single Image data from " + str(file_name))
             self.results_tab_df_color = pd.read_csv(str(file_name))
+            # pandas 3 reads a column containing any non-numeric cell (e.g.
+            # "--" written for a masked catalog value) as text, which breaks
+            # the arithmetic below. Force the catalog columns numeric;
+            # non-numeric cells become NaN and are rejected by the checks below.
+            for col in ("match_ra", "match_dec", "match_mag", "match_mag_error"):
+                if col in self.results_tab_df_color:
+                    self.results_tab_df_color[col] = pd.to_numeric(self.results_tab_df_color[col], errors="coerce")
         else:
             return
 
@@ -5784,12 +5880,45 @@ class MyGUI:
                 if not (__label_prefix__ + comp_star_name) in self.results_tab_df_color["label"].values:
                     self.console_msg("Comp star not found in table; "+ comp_star_name + " not found!", level=logging.ERROR)
                     return
+                comp_rows = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + comp_star_name)]
+                if comp_rows["match_mag"].isna().all():
+                    self.console_msg("Comp star " + comp_star_name + " has no catalog magnitude in table!", level=logging.ERROR)
+                    return
             else:
                 #Check if any comp star has been measured
                 comp_star_list_with_prefix = [__label_prefix__ + x for x in comp_star_list]
                 if not self.results_tab_df_color["label"].isin(comp_star_list_with_prefix).any():
                     self.console_msg("No comp stars found in table!", level=logging.ERROR)
                     return
+                #Only comps with a catalog magnitude can contribute to the ensemble
+                comp_rows = self.results_tab_df_color[self.results_tab_df_color["label"].isin(comp_star_list_with_prefix)]
+                has_mag = comp_rows["match_mag"].notna()
+                if not has_mag.all():
+                    self.console_msg("Comp star(s) without catalog magnitude excluded from ensemble: " +
+                                     ", ".join(comp_rows.loc[~has_mag, "label"].astype(str).str[len(__label_prefix__):]),
+                                     level=logging.WARNING)
+                if not has_mag.any():
+                    self.console_msg("No comp stars with a catalog magnitude found in table!", level=logging.ERROR)
+                    return
+                comp_star_list_with_prefix = list(comp_rows.loc[has_mag, "label"].astype(str).unique())
+
+            #Check if the check star has been measured (it may have been
+            #skipped as low SNR or saturated, or the label may not exist in
+            #this catalog/filter). Checked before the report file is opened.
+            if not (__label_prefix__ + check_star_name) in self.results_tab_df_color["label"].values:
+                self.console_msg("Settings check star: " + check_star_name +
+                                 " not found in table; select another check star", level=logging.ERROR)
+                measured_labels = self.results_tab_df_color["label"].dropna().astype(str)
+                measured_labels = measured_labels[measured_labels.str.startswith(__label_prefix__)]
+                list_good_comps = ", ".join(
+                    sorted(set(label[len(__label_prefix__):] for label in measured_labels)))
+                self.console_msg("Pick from following: " + list_good_comps)
+                return
+            check_rows = self.results_tab_df_color[self.results_tab_df_color["label"] == (__label_prefix__ + check_star_name)]
+            if check_rows["match_mag"].isna().all():
+                self.console_msg("Settings check star: " + check_star_name +
+                                 " has no catalog magnitude in table; select another check star", level=logging.ERROR)
+                return
             
 
             with open(report_filename, mode='w') as f:
@@ -5892,7 +6021,8 @@ class MyGUI:
 
                     # Print the results to console (this is the Not Ensemble case)
                     self.console_msg("Check Star Estimates using check star: " + check_star_name +
-                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) + ")\n" +
+                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) +
+                                     " ± " + str(round(float(check_star_mag_ref_error), decimal_places)) + ")\n" +
                                      (filt+"* Mag: " + format(check_star_mag, ' >6.3f')).rjust(79) +
                                      '\n' +
                                      (filt+"* Err: " + format(check_star_err, ' >6.3f')).rjust(79))
@@ -5970,7 +6100,13 @@ class MyGUI:
                     pretty_comp_data["IM"] = comp_data["inst_mag"]
                     pretty_comp_data["X"] = comp_data["x_fit"]
                     pretty_comp_data["Y"] = comp_data["y_fit"]
+                    # Catalog position (identifies the physical star) and catalog magnitude/error
+                    comp_coords = SkyCoord(comp_data["match_ra"].to_numpy(dtype=float) * u.deg,
+                                           comp_data["match_dec"].to_numpy(dtype=float) * u.deg)
+                    pretty_comp_data["RA"] = comp_coords.ra.to_string(unit=u.hourangle, sep=":", precision=2, pad=True)
+                    pretty_comp_data["Dec"] = comp_coords.dec.to_string(unit=u.deg, sep=":", precision=1, alwayssign=True, pad=True)
                     pretty_comp_data[filt+"-mag"] = comp_data["match_mag"]
+                    pretty_comp_data[filt+"-err"] = comp_data["match_mag_error"]
                     pretty_comp_data["TargetEstimate"] = round(var_IM - comp_data["inst_mag"] + comp_data["match_mag"], decimal_places)
 
                     #determine the OUTLIERS, IQR, Interquartile Range 
@@ -5986,7 +6122,8 @@ class MyGUI:
 
                     # Print the results to console (this is the Ensemble case)
                     self.console_msg("Check Star Estimates using check star: " + check_star_name +
-                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) + ")\n" +
+                                     " ("+filt+": " + str(round(float(check_star_mag_ref), decimal_places)) +
+                                     " ± " + str(round(float(check_star_mag_ref_error), decimal_places)) + ")\n" +
                                      (filt+"* Mag: " + format(ave_check_star_mag, ' >6.3f')).rjust(79) +
                                      '\n' +
                                      (filt+"* Err: " + format(stdev_check_star_mag, ' >6.3f')).rjust(79))
